@@ -44,6 +44,14 @@
 #define ACULELE_NOINLINE
 #endif
 
+// The bridge's modes step their two lanes as one SSE2 pair
+// (BridgeLoad::advanceModes); elsewhere each lane steps on its own.
+#if defined(__SSE2__) && defined(__x86_64__) && (defined(__clang__) || defined(__GNUC__))
+#define ACULELE_PACKED_BRIDGE_MODES 1
+#else
+#define ACULELE_PACKED_BRIDGE_MODES 0
+#endif
+
 namespace aculele
 {
 namespace
@@ -2833,18 +2841,36 @@ constexpr double centsPerWeightedRadian
 
 // The loop-phase residuals of a design, weighted, at the partials. The
 // design is x = { delay, decayRatio0, poleRatio0, decayRatio1, poleRatio1 }
-// read at tap anchor. When jacobian is given it receives the derivatives in
-// the delay and in the first section's two ratios, the unknowns the fit
-// moves: a section's lag is 2 omega + 2 arg A(e^{j omega}) for its
-// denominator A, whose derivative in a coefficient is Im(z^-k / A), and its
-// coefficients are smooth in the ratios, so only the delay is differenced.
+// read at tap anchor. A section's lag is 2 omega + 2 arg A(e^{j omega}) for
+// its denominator A.
 constexpr int dispersionDesignValues = 1 + 2 * dispersionSectionCount;
 
+// The tap plus Thiran allpass, the lag thiranDelayPhase returns, and one
+// section's lag, at the partial `item`.
+double dispersionReadLag(const DispersionPartials& partials, std::size_t item,
+                         int anchor, const double coefficients[2]) noexcept
+{
+    return static_cast<double>(anchor + 2) * partials.omega[item] + 2.0 * std::atan2(
+        -coefficients[0] * partials.sine[item] - coefficients[1] * partials.sine2[item],
+        1.0 + coefficients[0] * partials.cosine[item] + coefficients[1] * partials.cosine2[item]);
+}
+
+double dispersionSectionLag(const DispersionPartials& partials, std::size_t item,
+                            double a1, double a2) noexcept
+{
+    const double real = 1.0 + a1 * partials.cosine[item] + a2 * partials.cosine2[item];
+    const double imaginary = -a1 * partials.sine[item] - a2 * partials.sine2[item];
+    return 2.0 * partials.omega[item] + 2.0 * std::atan2(imaginary, real);
+}
+
+// secondLag, when given, is the second section's lag at each partial
+// (dispersionSectionLag), which a refinement holds fixed while it moves
+// the first: the same values this would compute.
 void dispersionResiduals(
     const DispersionPartials& partials,
     const double x[dispersionDesignValues], int anchor,
     double residuals[DispersionPartials::capacity],
-    double (*jacobian)[3]) noexcept
+    const double* secondLag = nullptr) noexcept
 {
     const double omega0 = partials.omega0;
     double a1[dispersionSectionCount] {};
@@ -2852,6 +2878,34 @@ void dispersionResiduals(
     for (int section = 0; section < dispersionSectionCount; ++section)
         secondOrderAllpassCoefficients(omega0, x[1 + 2 * section],
             x[2 + 2 * section], a1[section], a2[section]);
+    double thiran[2] {};
+    thiranCoefficients(x[0] - static_cast<double>(anchor), thiran[0], thiran[1]);
+    for (int index = 0; index < partials.highest; ++index)
+    {
+        const auto item = static_cast<std::size_t>(index);
+        double lag = dispersionReadLag(partials, item, anchor, thiran)
+            + partials.fixedLag[item];
+        lag += dispersionSectionLag(partials, item, a1[0], a2[0]);
+        // An unused second section is bypassed.
+        if (x[3] > 0.0)
+            lag += secondLag != nullptr ? secondLag[item]
+                : dispersionSectionLag(partials, item, a1[1], a2[1]);
+        residuals[index] = partials.weight[item] * lag;
+    }
+}
+
+// The residuals' derivatives in the delay and in the first section's two
+// ratios, the unknowns a refinement moves: a section's lag's derivative in
+// a coefficient is Im(z^-k / A), and its coefficients are smooth in the
+// ratios, so only the delay is differenced.
+void dispersionJacobian(
+    const DispersionPartials& partials,
+    const double x[dispersionDesignValues], int anchor,
+    double (*jacobian)[3]) noexcept
+{
+    const double omega0 = partials.omega0;
+    double a1 = 0.0, a2 = 0.0;
+    secondOrderAllpassCoefficients(omega0, x[1], x[2], a1, a2);
     // The first section's coefficients' derivatives in its two ratios.
     const double radius = std::exp(-omega0 * x[1]);
     const double angle = omega0 * x[2];
@@ -2859,52 +2913,29 @@ void dispersionResiduals(
     const double a1ByPole = 2.0 * omega0 * radius * std::sin(angle);
     const double a2ByDecay = -2.0 * omega0 * radius * radius;
     constexpr double delayStep = 1.0e-3;
-    double thiran[3][2] {};
-    thiranCoefficients(x[0] - static_cast<double>(anchor),
-                       thiran[0][0], thiran[0][1]);
+    double longer[2] {}, shorter[2] {};
     thiranCoefficients(x[0] + delayStep - static_cast<double>(anchor),
-                       thiran[1][0], thiran[1][1]);
+                       longer[0], longer[1]);
     thiranCoefficients(x[0] - delayStep - static_cast<double>(anchor),
-                       thiran[2][0], thiran[2][1]);
+                       shorter[0], shorter[1]);
     for (int index = 0; index < partials.highest; ++index)
     {
         const auto item = static_cast<std::size_t>(index);
-        const double omega = partials.omega[item];
         const double c1 = partials.cosine[item];
         const double s1 = partials.sine[item];
         const double c2 = partials.cosine2[item];
         const double s2 = partials.sine2[item];
         const double weight = partials.weight[item];
-        // Tap plus Thiran allpass: the lag thiranDelayPhase returns.
-        const auto read = [&] (const double* coefficients)
-        {
-            return static_cast<double>(anchor + 2) * omega + 2.0 * std::atan2(
-                -coefficients[0] * s1 - coefficients[1] * s2,
-                1.0 + coefficients[0] * c1 + coefficients[1] * c2);
-        };
-        double lag = read(thiran[0]) + partials.fixedLag[item];
-        for (int section = 0; section < dispersionSectionCount; ++section)
-        {
-            // An unused second section is bypassed.
-            if (section == 1 && !(x[3] > 0.0))
-                continue;
-            const double real = 1.0 + a1[section] * c1 + a2[section] * c2;
-            const double imaginary = -a1[section] * s1 - a2[section] * s2;
-            lag += 2.0 * omega + 2.0 * std::atan2(imaginary, real);
-            if (jacobian != nullptr && section == 0)
-            {
-                const double norm = real * real + imaginary * imaginary;
-                const double byA1 = (-s1 * real - c1 * imaginary) / norm;
-                const double byA2 = (-s2 * real - c2 * imaginary) / norm;
-                jacobian[index][1] = 2.0 * weight
-                    * (byA1 * a1ByDecay + byA2 * a2ByDecay);
-                jacobian[index][2] = 2.0 * weight * byA1 * a1ByPole;
-            }
-        }
-        residuals[index] = weight * lag;
-        if (jacobian != nullptr)
-            jacobian[index][0] = weight * (read(thiran[1]) - read(thiran[2]))
-                               / (2.0 * delayStep);
+        const double real = 1.0 + a1 * c1 + a2 * c2;
+        const double imaginary = -a1 * s1 - a2 * s2;
+        const double norm = real * real + imaginary * imaginary;
+        const double byA1 = (-s1 * real - c1 * imaginary) / norm;
+        const double byA2 = (-s2 * real - c2 * imaginary) / norm;
+        jacobian[index][1] = 2.0 * weight
+            * (byA1 * a1ByDecay + byA2 * a2ByDecay);
+        jacobian[index][2] = 2.0 * weight * byA1 * a1ByPole;
+        jacobian[index][0] = weight * (dispersionReadLag(partials, item, anchor, longer)
+            - dispersionReadLag(partials, item, anchor, shorter)) / (2.0 * delayStep);
     }
 }
 
@@ -2957,12 +2988,25 @@ void refineDispersionDesign(const DispersionPartials& partials,
         return sum + decayOffset * decayOffset + poleOffset * poleOffset;
     };
     const double pullScale[3] { 0.0, pull / startDecay, pull / startPole };
+    // Only the delay and the first section move, so the second section's
+    // lag at each partial is the same in every evaluation: compute it once.
+    // Most of a note-on's spike is these evaluations' arctangents.
+    double secondLag[capacity] {};
+    if (x[3] > 0.0)
+    {
+        double a1 = 0.0, a2 = 0.0;
+        secondOrderAllpassCoefficients(partials.omega0, x[3], x[4], a1, a2);
+        for (int index = 0; index < count; ++index)
+            secondLag[index] = dispersionSectionLag(partials,
+                static_cast<std::size_t>(index), a1, a2);
+    }
     for (int round = 0; round < 4; ++round)
     {
         const int anchor = delayAnchor(x[0]);
         double residuals[capacity] {};
         double jacobian[capacity][3] {};
-        dispersionResiduals(partials, x, anchor, residuals, jacobian);
+        dispersionResiduals(partials, x, anchor, residuals, secondLag);
+        dispersionJacobian(partials, x, anchor, jacobian);
         double current = cost(residuals, x);
         double damping = 1.0e-4;
         for (int iteration = 0; iteration < 60; ++iteration)
@@ -3006,7 +3050,7 @@ void refineDispersionDesign(const DispersionPartials& partials,
                 bound(candidate);
                 double candidateResiduals[capacity] {};
                 dispersionResiduals(partials, candidate, anchor,
-                                    candidateResiduals, nullptr);
+                                    candidateResiduals, secondLag);
                 const double candidateCost = cost(candidateResiduals,
                                                   candidate);
                 if (candidateCost < current)
@@ -3014,6 +3058,8 @@ void refineDispersionDesign(const DispersionPartials& partials,
                     improvement = (current - candidateCost) / current;
                     std::copy(candidate, candidate + dispersionDesignValues,
                               x);
+                    std::copy(candidateResiduals, candidateResiduals + capacity,
+                              residuals);
                     current = candidateCost;
                     damping = std::max(damping * 0.2, 1.0e-12);
                     improved = true;
@@ -3023,7 +3069,7 @@ void refineDispersionDesign(const DispersionPartials& partials,
             }
             if (!improved || improvement < 1.0e-10)
                 break;
-            dispersionResiduals(partials, x, anchor, residuals, jacobian);
+            dispersionJacobian(partials, x, anchor, jacobian);
         }
         if (delayAnchor(x[0]) == anchor)
             break;
@@ -3139,7 +3185,7 @@ DispersionCalibration calibrateDispersion(
             design.poleRatio[0], design.decayRatio[1], design.poleRatio[1] };
         double residuals[DispersionPartials::capacity] {};
         dispersionResiduals(partials, x, delayAnchor(design.delay),
-                            residuals, nullptr);
+                            residuals);
         return worstPartialCents(partials, residuals);
     };
     // How far the second section is switched in: none up to B N^2 = 0.015,
@@ -4098,17 +4144,6 @@ void AculeleEngine::StringLoop::applyGestureContact() noexcept
     secondNext += w[3] * changeSecond;
 }
 
-double AculeleEngine::BridgeMode::processPast(double input) noexcept
-{
-    const double output = numerator1 * input + numerator2 * input1
-                        - denominator1 * output1
-                        - denominator2 * output2;
-    input1 = input;
-    output2 = output1;
-    output1 = output;
-    return output;
-}
-
 void AculeleEngine::BridgeLoad::reset() noexcept
 {
     pastHeave = 0.0f;
@@ -4119,9 +4154,7 @@ void AculeleEngine::BridgeLoad::reset() noexcept
     mainIntegratedMoment = 0.0f;
     bodyIntegratedForce = 0.0f;
     bodyIntegratedMoment = 0.0f;
-    for (auto& mode : heaveModes)
-        mode.reset();
-    for (auto& mode : rockModes)
+    for (auto& mode : modes)
         mode.reset();
 }
 
@@ -4130,45 +4163,56 @@ void AculeleEngine::BridgeLoad::advanceModes(float bodyForce,
 {
     double nextPastHeave = 0.0;
     double nextPastRock = 0.0;
-    for (int active = 0; active < activeModeCount; ++active)
+    const int count = activeModeCount;
+    // Each lane's arithmetic is the scalar section's, and the residue sums
+    // below stay serial, so packing changes no bit.
+#if ACULELE_PACKED_BRIDGE_MODES
+    typedef double Vector __attribute__((vector_size(16)));
+    const auto load = [] (const BridgeMode::Lanes& lanes)
+    {
+        Vector vector;
+        std::memcpy(&vector, lanes.data(), sizeof vector);
+        return vector;
+    };
+    const Vector input = { bodyForce, bodyMoment };
+#endif
+    for (int active = 0; active < count; ++active)
     {
         const std::size_t index = activeModes[static_cast<std::size_t>(active)];
-        double heaveState, rockState;
-        // Pack this mode's heave and rock with their own coefficients and history.
-        // Preserve each lane's arithmetic and the serial residue sums below.
-#if defined(__SSE2__) && defined(__x86_64__) && (defined(__clang__) || defined(__GNUC__))
+        auto& mode = modes[index];
+        double heaveState, rockState = 0.0;
+#if ACULELE_PACKED_BRIDGE_MODES
         if (rocking[index])
         {
-            typedef double Vector __attribute__((vector_size(16)));
-            auto& h = heaveModes[index];
-            auto& r = rockModes[index];
-            const Vector input = { bodyForce, bodyMoment };
-            const Vector n1 = { h.numerator1, r.numerator1 };
-            const Vector n2 = { h.numerator2, r.numerator2 };
-            const Vector d1 = { h.denominator1, r.denominator1 };
-            const Vector d2 = { h.denominator2, r.denominator2 };
-            const Vector i1 = { h.input1, r.input1 };
-            const Vector o1 = { h.output1, r.output1 };
-            const Vector o2 = { h.output2, r.output2 };
-            const Vector output = n1 * input + n2 * i1 - d1 * o1 - d2 * o2;
-            h.input1 = bodyForce;
-            r.input1 = bodyMoment;
-            h.output2 = h.output1;
-            r.output2 = r.output1;
-            h.output1 = output[0];
-            r.output1 = output[1];
+            const Vector o1 = load(mode.output1);
+            const Vector output = load(mode.numerator1) * input
+                + load(mode.numerator2) * load(mode.input1)
+                - load(mode.denominator1) * o1
+                - load(mode.denominator2) * load(mode.output2);
+            std::memcpy(mode.input1.data(), &input, sizeof input);
+            std::memcpy(mode.output2.data(), &o1, sizeof o1);
+            std::memcpy(mode.output1.data(), &output, sizeof output);
             heaveState = output[0];
             rockState = output[1];
         }
         else
-        {
-            heaveState = heaveModes[index].processPast(bodyForce);
-            rockState = 0.0;
-        }
-#else
-        heaveState = heaveModes[index].processPast(bodyForce);
-        rockState = rocking[index] ? rockModes[index].processPast(bodyMoment) : 0.0;
 #endif
+        {
+            const auto step = [&mode] (std::size_t lane, double input)
+            {
+                const double output = mode.numerator1[lane] * input
+                    + mode.numerator2[lane] * mode.input1[lane]
+                    - mode.denominator1[lane] * mode.output1[lane]
+                    - mode.denominator2[lane] * mode.output2[lane];
+                mode.input1[lane] = input;
+                mode.output2[lane] = mode.output1[lane];
+                mode.output1[lane] = output;
+                return output;
+            };
+            heaveState = step(0, bodyForce);
+            if (rocking[index])
+                rockState = step(1, bodyMoment);
+        }
         nextPastHeave += residueHeave[index] * heaveState;
         if (!rocking[index])
             continue;
@@ -5557,11 +5601,10 @@ void AculeleEngine::configureBridge(bool keepModalState) noexcept
                                 float heave, float cross, float rock,
                                 bool sharedPole = false)
     {
-        auto& heaveMode = bridgeLoad_.heaveModes[index];
-        auto& rockMode = bridgeLoad_.rockModes[index];
-        bridgeLoad_.residueHeave[index] = 0.0f;
-        bridgeLoad_.residueCross[index] = 0.0f;
-        bridgeLoad_.residueRock[index] = 0.0f;
+        auto& mode = bridgeLoad_.modes[index];
+        bridgeLoad_.residueHeave[index] = 0.0;
+        bridgeLoad_.residueCross[index] = 0.0;
+        bridgeLoad_.residueRock[index] = 0.0;
         bridgeLoad_.rocking[index] = false;
         // The plate conductance floor is broadband: it is kept at every
         // rate, from its 48 kHz design (below), rather than dropped with the
@@ -5571,12 +5614,7 @@ void AculeleEngine::configureBridge(bool keepModalState) noexcept
                           && (plateFloor || frequency < (sharedPole ? 0.46f : 0.45f) * rate);
         if (!active)
         {
-            for (auto* mode : { &heaveMode, &rockMode })
-            {
-                mode->denominator1 = mode->denominator2 = 0.0;
-                mode->numerator1 = mode->numerator2 = 0.0;
-                mode->reset();
-            }
+            mode = BridgeMode {};
             return;
         }
         const double rateD = sampleRate_;
@@ -5599,18 +5637,17 @@ void AculeleEngine::configureBridge(bool keepModalState) noexcept
         const double denominator2 = (bilinearD * bilinearD
             - 2.0 * damping * bilinearD + omega * omega) / denominator0;
         const float immediate = static_cast<float>(bilinearD / denominator0);
-        for (auto* mode : { &heaveMode, &rockMode })
-        {
-            mode->denominator1 = denominator1;
-            mode->denominator2 = denominator2;
-            mode->numerator1 = -static_cast<double>(immediate) * denominator1;
-            mode->numerator2 = -static_cast<double>(immediate)
-                * (1.0 + denominator2);
-            // The same bank retuned (Shape, Wood) keeps ringing as it was;
-            // the new coefficients carry the state on from here.
-            if (!keepModalState)
-                mode->reset();
-        }
+        const double numerator1 = -static_cast<double>(immediate) * denominator1;
+        const double numerator2 = -static_cast<double>(immediate)
+            * (1.0 + denominator2);
+        mode.denominator1 = { denominator1, denominator1 };
+        mode.denominator2 = { denominator2, denominator2 };
+        mode.numerator1 = { numerator1, numerator1 };
+        mode.numerator2 = { numerator2, numerator2 };
+        // The same bank retuned (Shape, Wood) keeps ringing as it was;
+        // the new coefficients carry the state on from here.
+        if (!keepModalState)
+            mode.reset();
         bridgeLoad_.residueHeave[index] = heave;
         bridgeLoad_.residueCross[index] = cross;
         bridgeLoad_.residueRock[index] = rock;
@@ -5675,17 +5712,14 @@ void AculeleEngine::configureBridge(bool keepModalState) noexcept
     configuredBridgeShape_ = parameters_.shape;
     configuredBridgeMaterial_ = parameters_.bodyMaterial;
     bridgeLoad_.activeModeCount = 0;
-    for (std::size_t index = 0; index < bridgeLoad_.heaveModes.size(); ++index)
+    for (std::size_t index = 0; index < bridgeLoad_.modes.size(); ++index)
     {
-        const auto zero = [] (const BridgeMode& mode)
-        {
-            return mode.denominator1 == 0.0 && mode.denominator2 == 0.0
-                && mode.numerator1 == 0.0 && mode.numerator2 == 0.0;
-        };
-        if (zero(bridgeLoad_.heaveModes[index]) && zero(bridgeLoad_.rockModes[index])
-            && bridgeLoad_.residueHeave[index] == 0.0f
-            && bridgeLoad_.residueCross[index] == 0.0f
-            && bridgeLoad_.residueRock[index] == 0.0f)
+        const auto& mode = bridgeLoad_.modes[index];
+        if (mode.denominator1[0] == 0.0 && mode.denominator2[0] == 0.0
+            && mode.numerator1[0] == 0.0 && mode.numerator2[0] == 0.0
+            && bridgeLoad_.residueHeave[index] == 0.0
+            && bridgeLoad_.residueCross[index] == 0.0
+            && bridgeLoad_.residueRock[index] == 0.0)
             continue;
         bridgeLoad_.activeModes[static_cast<std::size_t>(
             bridgeLoad_.activeModeCount++)] = static_cast<std::uint8_t>(index);
@@ -7981,7 +8015,7 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
     voice.returnSamples = 0;
     // A new pluck ends a key-up's touch still sounding: its drive stops and
     // what its stages and travel hold runs out on its own.
-    voice.releaseNoiseTouch = voice.releaseNoiseBrush = 0.0f;
+    voice.releaseNoiseTouch = 0.0f;
     voice.peakLevel = voice.level;
     voice.releaseVelocity = -1.0f;
 }
@@ -8022,9 +8056,8 @@ void AculeleEngine::returnToOpenString(Voice& voice, int stringIndex,
     if (clearDelay)
     {
         voice.releaseNoiseSamples = 0;
-        voice.releaseNoiseTouch = voice.releaseNoiseBrush = 0.0f;
+        voice.releaseNoiseTouch = 0.0f;
         voice.releaseNoiseStage1 = voice.releaseNoiseStage2 = 0.0f;
-        voice.releaseNoiseBand1 = voice.releaseNoiseBand2 = 0.0f;
         voice.releaseNoiseLaunched = 0.0f;
         voice.releaseNoiseTravel.active = false;
         voice.releaseStepAge = -1;
@@ -8660,8 +8693,7 @@ void AculeleEngine::beginRelease(Voice& voice, int stringIndex) noexcept
     beginGestureDamping(voice);
     beginReleaseFall(voice);
     if (targetParameters_.releaseNoise > 0.0f)
-        startReleaseNoise(voice, stringIndex,
-                          voice.fret > 0 && voice.harmonic <= 1);
+        startReleaseNoise(voice, voice.fret > 0 && voice.harmonic <= 1);
     voice.releaseVelocity = -1.0f;
 }
 
@@ -10487,8 +10519,7 @@ void AculeleEngine::muteVacatedString(Voice& voice, int stringIndex) noexcept
         (releaseSeconds + 0.08f) * static_cast<float>(sampleRate_));
     beginGestureDamping(voice);
     if (targetParameters_.releaseNoise > 0.0f)
-        startReleaseNoise(voice, stringIndex,
-                          voice.fret > 0 && voice.harmonic <= 1);
+        startReleaseNoise(voice, voice.fret > 0 && voice.harmonic <= 1);
 }
 
 int AculeleEngine::heldString(int midiNote, int midiChannel) const noexcept
@@ -11380,19 +11411,16 @@ std::array<float, 2> AculeleEngine::ContactTravel::processFractional(float sourc
 // the upper modes far more than the fundamental (a thin "tk", not a thud);
 // an open string or a natural harmonic is stopped by the picking hand, a
 // fingertip returning to where it plucked, or under Pick the palm's edge
-// just in front of the saddle, broader and softer. On the four wound
-// strings the lifting pad also brushes the winding: a faint band of noise
-// a few milliseconds later, whose level follows the note as it was played
-// rather than what is left of it (the brush happens whether or not the
-// string still rings). Release velocity sets how firmly the hand lands.
+// just in front of the saddle, broader and softer. No ukulele string is
+// wound, so the lifting pad brushes no winding, as Acustra's does. Release
+// velocity sets how firmly the hand lands.
 // Every level, corner and time draws its own take, from the voice's own
 // generator, so no two key-ups are the same and every other draw stays as
-// it was. The two levels are set so that at 0.5 a key-up sounds 30-45 dB
+// it was. The level is set so that at 0.5 a key-up sounds 30-45 dB
 // under its note's attack (measured on rendered notes, chords and lines at
 // 44.1-96 kHz), neither fitted nor chosen by ear: no recording in the
 // corpus isolates a key-up.
-void AculeleEngine::startReleaseNoise(Voice& voice, int stringIndex,
-                                      bool fretSide) noexcept
+void AculeleEngine::startReleaseNoise(Voice& voice, bool fretSide) noexcept
 {
     const float amount = targetParameters_.releaseNoise;
     if (!(amount > 0.0f) || !voice.played)
@@ -11415,15 +11443,6 @@ void AculeleEngine::startReleaseNoise(Voice& voice, int stringIndex,
         ? clamp(std::pow(std::max(rv, 0.02f) / nominalRelease, 0.75f),
                 0.35f, 1.7f)
         : 1.0f;
-    // A key-up's brush approximates the pad slipping obliquely across a
-    // fixed short length of winding. Use the existing bounded firmness as
-    // its relative slip speed: ridge-crossing frequency follows speed and
-    // traversal duration its inverse (Pakarinen, Penttinen and Bank, 2007,
-    // "Analysis of handling noises on wound strings"). This is an authored
-    // gesture mapping, not a measurement of winding pitch or finger speed.
-    // Missing/nominal release velocity leaves the previous brush exact.
-    const bool wound = woundStringCount > 0 && stringIndex < woundStringCount;
-    const float brushSpeed = wound ? firmness : 1.0f;
     const bool pick = parameters_.picking == PickingTechnique::Pick;
     const bool thumb = parameters_.picking == PickingTechnique::Thumb;
     const float speakingLength = std::max(voice.speakingLengthMetres, 0.05f);
@@ -11452,13 +11471,15 @@ void AculeleEngine::startReleaseNoise(Voice& voice, int stringIndex,
     float corner = blend(pick ? 600.0f : thumb ? 700.0f : 1000.0f, 1400.0f);
     float fallSeconds = blend(pick ? 0.018f : 0.014f, 0.010f);
     float touchLevel = blend(pick ? 0.6f : 0.25f, 1.0f);
-    float brushLevel = blend(pick ? 0.3f : 0.4f, 1.0f);
     position = clamp(position, 0.02f, 0.98f);
     corner = clamp(corner * (1.0f + 0.15f * cornerDraw) * std::sqrt(firmness),
                    100.0f, 0.2f * rate);
     fallSeconds *= 1.0f + 0.2f * draw();
     touchLevel *= std::pow(10.0f, 1.5f * draw() / 20.0f);
-    brushLevel *= std::pow(10.0f, 2.0f * draw() / 20.0f);
+    // Acustra's brush level and fall draw here and next; their draws stay so
+    // every later draw is where it was, and the fall still sets how long
+    // the touch runs (releaseNoiseSamples).
+    static_cast<void>(draw());
     // A force F at the contact leaves as displacement steps F / (2 Z) each
     // way per 48 kHz reference sample; the bridge's own force is the level
     // the note is measured by (finishVoice), so a share of it is a level
@@ -11470,19 +11491,11 @@ void AculeleEngine::startReleaseNoise(Voice& voice, int stringIndex,
     const float unit = 48000.0f / rate / (2.0f * impedance);
     const float scale = amount / 0.5f * firmness * unit;
     constexpr float touchShare = 0.07f;
-    constexpr float brushShare = 0.0005f;
     const float touchRms = touchShare * touchLevel * scale * voice.level;
-    const float brushRms = wound
-        ? brushShare * brushLevel * scale * voice.peakLevel
-            * std::sqrt(std::min(brushSpeed, 1.0f)) : 0.0f;
-    if (!(touchRms > 0.0f || brushRms > 0.0f))
+    if (!(touchRms > 0.0f))
         return;
-    // Each part's envelope is the difference of a rise and a fall, zero at
-    // the key-up and normalised to peak at one: the landing takes 1.5 ms,
-    // the nominal brush follows the pad's lift at 5 ms. The existing
-    // firmness already controls force RMS, so do not add another speed
-    // gain. Slower, longer brushes receive sqrt(speed) compensation: the
-    // integrated squared envelope never exceeds the former force budget.
+    // The envelope is the difference of a rise and a fall, zero at the
+    // key-up and normalised to peak at one: the landing takes 1.5 ms.
     const auto envelope = [rate] (float riseSeconds, float fallTime,
                                   float& riseDecay, float& fallDecay)
     {
@@ -11495,9 +11508,7 @@ void AculeleEngine::startReleaseNoise(Voice& voice, int stringIndex,
     };
     const float touchPeak = envelope(0.0015f, fallSeconds,
         voice.releaseNoiseRiseDecay, voice.releaseNoiseFallDecay);
-    const float brushFall = 0.016f * (1.0f + 0.25f * draw()) / brushSpeed;
-    const float brushPeak = envelope(0.005f / brushSpeed, brushFall,
-        voice.releaseNoiseBrushRiseDecay, voice.releaseNoiseBrushFallDecay);
+    const float brushFall = 0.016f * (1.0f + 0.25f * draw());
     // The touch is white under two one-pole stages at the skin's corner,
     // scaled to unit RMS for the uniform draw (variance 1/3): the pair's
     // impulse response a^2 (n + 1) r^n has energy a^4 (1 + r^2)/(1 - r^2)^3.
@@ -11509,27 +11520,8 @@ void AculeleEngine::startReleaseNoise(Voice& voice, int stringIndex,
     const float touchGain = static_cast<float>(
         1.0 / std::sqrt(pairEnergy / 3.0));
     voice.releaseNoiseCoefficient = static_cast<float>(a);
-    // The brush is a band of the winding's pulse rate, higher on the finer
-    // windings: a state-variable band-pass at unit peak gain, scaled to unit
-    // RMS by its noise bandwidth (pi / 2) f / Q.
-    constexpr std::array<float, 4> brushCentres { 2000.0f, 2400.0f,
-                                                  2900.0f, 3500.0f };
-    const float centre = std::min(wound
-        ? brushCentres[static_cast<std::size_t>(stringIndex)]
-            * (1.0f + 0.15f * draw()) * brushSpeed : 2500.0f, 0.3f * rate);
-    constexpr float q = 2.5f;
-    const float g = std::tan(pi * centre / rate);
-    const float k = 1.0f / q;
-    voice.releaseNoiseBandA1 = 1.0f / (1.0f + g * (g + k));
-    voice.releaseNoiseBandA2 = g * voice.releaseNoiseBandA1;
-    voice.releaseNoiseBandA3 = g * voice.releaseNoiseBandA2;
-    voice.releaseNoiseBandK = k;
-    const float bandGain = 1.0f / std::sqrt(
-        (0.5f * pi * centre / q) / (0.5f * rate) / 3.0f);
     voice.releaseNoiseTouch = touchRms * touchGain * touchPeak;
-    voice.releaseNoiseBrush = brushRms * bandGain * brushPeak;
     voice.releaseNoiseFall = voice.releaseNoiseRise = 1.0f;
-    voice.releaseNoiseBrushFall = voice.releaseNoiseBrushRise = 1.0f;
     // What a period's worth of force does is the string's own motion; the
     // launched displacement leaks at the fundamental (or half the corner),
     // which keeps it bounded.
@@ -11537,7 +11529,7 @@ void AculeleEngine::startReleaseNoise(Voice& voice, int stringIndex,
         * static_cast<double>(std::min(fundamental, 0.5f * corner))
         / static_cast<double>(rate));
     voice.releaseNoiseLeak = static_cast<float>(1.0 - low);
-    // Twelve fall times (-104 dB) of the longer part and the stages'
+    // Twelve fall times (-104 dB) of the longer fall and the stages'
     // ring-down. A touch still running from an earlier key-up is replaced:
     // its stages carry on from where they are, so nothing steps.
     const float longest = std::max(fallSeconds, brushFall);
@@ -11871,9 +11863,8 @@ float AculeleEngine::renderReleaseNoise(Voice& voice) noexcept
         return 0.0f;
     if (--voice.releaseNoiseSamples == 0)
     {
-        voice.releaseNoiseTouch = voice.releaseNoiseBrush = 0.0f;
+        voice.releaseNoiseTouch = 0.0f;
         voice.releaseNoiseStage1 = voice.releaseNoiseStage2 = 0.0f;
-        voice.releaseNoiseBand1 = voice.releaseNoiseBand2 = 0.0f;
         voice.releaseNoiseLaunched = 0.0f;
         return 0.0f;
     }
@@ -11886,26 +11877,8 @@ float AculeleEngine::renderReleaseNoise(Voice& voice) noexcept
     voice.releaseNoiseStage1 += a * (white - voice.releaseNoiseStage1);
     voice.releaseNoiseStage2 += a * (voice.releaseNoiseStage1
                                      - voice.releaseNoiseStage2);
-    float force = voice.releaseNoiseStage2;
-    if (voice.releaseNoiseBrush != 0.0f)
-    {
-        const float brush = voice.releaseNoiseBrush
-            * (voice.releaseNoiseBrushFall - voice.releaseNoiseBrushRise);
-        voice.releaseNoiseBrushFall *= voice.releaseNoiseBrushFallDecay;
-        voice.releaseNoiseBrushRise *= voice.releaseNoiseBrushRiseDecay;
-        const float input = xorshiftNoise(voice.releaseNoiseState) * brush;
-        const float v3 = input - voice.releaseNoiseBand2;
-        const float v1 = voice.releaseNoiseBandA1 * voice.releaseNoiseBand1
-                       + voice.releaseNoiseBandA2 * v3;
-        const float v2 = voice.releaseNoiseBand2
-            + voice.releaseNoiseBandA2 * voice.releaseNoiseBand1
-            + voice.releaseNoiseBandA3 * v3;
-        voice.releaseNoiseBand1 = 2.0f * v1 - voice.releaseNoiseBand1;
-        voice.releaseNoiseBand2 = 2.0f * v2 - voice.releaseNoiseBand2;
-        force += voice.releaseNoiseBandK * v1;
-    }
     voice.releaseNoiseLaunched = voice.releaseNoiseLeak
-        * voice.releaseNoiseLaunched + force;
+        * voice.releaseNoiseLaunched + voice.releaseNoiseStage2;
     return voice.releaseNoiseLaunched;
 }
 
@@ -12215,8 +12188,22 @@ void AculeleEngine::BodyBank::CaptureFilter::render(BodyOutput& output) noexcept
 void AculeleEngine::BodyBank::load(const std::array<BodyMode, bodyModeCount>& modes,
                                    int modeCount, int orderedCount) noexcept
 {
+    const auto sounds = [&modes] (int index)
+    {
+        const auto& mode = modes[static_cast<std::size_t>(index)];
+        return mode.leftReal != 0.0f || mode.leftImaginary != 0.0f
+            || mode.rightReal != 0.0f || mode.rightImaginary != 0.0f
+            || mode.leftMomentReal != 0.0f || mode.leftMomentImaginary != 0.0f
+            || mode.rightMomentReal != 0.0f || mode.rightMomentImaginary != 0.0f;
+    };
     count = std::clamp(modeCount, 0, bodyModeCount);
     ordered = std::clamp(orderedCount, 0, count);
+    soundingOrdered = ordered;
+    while (soundingOrdered > 0 && !sounds(soundingOrdered - 1))
+        --soundingOrdered;
+    const int parallel = (ordered + lanes - 1) / lanes * lanes;
+    while (count > parallel && !sounds(count - 1))
+        --count;
     for (int index = 0; index < capacity; ++index)
     {
         const auto slot = static_cast<std::size_t>(index);
@@ -12231,7 +12218,9 @@ void AculeleEngine::BodyBank::load(const std::array<BodyMode, bodyModeCount>& mo
         leftMomentImaginary[slot] = mode.leftMomentImaginary;
         rightMomentReal[slot] = mode.rightMomentReal;
         rightMomentImaginary[slot] = mode.rightMomentImaginary;
-        if (index >= count)
+        // A mode render skips rests, so it starts from rest if a later
+        // Shape or Wood sounds it.
+        if (index >= count || (index >= soundingOrdered && index < ordered))
             real[slot] = imaginary[slot] = momentReal[slot] = momentImaginary[slot] = 0.0f;
     }
 }
@@ -12358,13 +12347,11 @@ AculeleEngine::BodyOutput AculeleEngine::BodyBank::render(float force, float mom
         }
     };
     int index = 0;
-    for (; index + lanes <= ordered; index += lanes)
+    for (; index + lanes <= soundingOrdered; index += lanes)
         group(index, lanes);
-    if (index < ordered)
-    {
-        group(index, ordered - index);
-        index += lanes;
-    }
+    if (index < soundingOrdered)
+        group(index, soundingOrdered - index);
+    index = (ordered + lanes - 1) / lanes * lanes;
     if (index < count)
     {
         Vector leftSum = { 0.0f, 0.0f, 0.0f, 0.0f };
@@ -12393,6 +12380,8 @@ AculeleEngine::BodyOutput AculeleEngine::BodyBank::render(float force, float mom
 #else
     for (int index = 0; index < count; ++index)
     {
+        if (index >= soundingOrdered && index < ordered)
+            continue;
         const auto i = static_cast<std::size_t>(index);
         const float nextReal = force + poleReal[i] * real[i] - poleImaginary[i] * imaginary[i];
         const float nextImaginary = poleImaginary[i] * real[i] + poleReal[i] * imaginary[i];

@@ -155,10 +155,10 @@ struct EngineParameters
     bool piezoPolarityInverted { false };
     // Finger handling sound, 0 none to 1 twice the nominal level: the
     // damping finger or palm landing on the still-vibrating string, launched
-    // into it from where it touches, and a faint brush of skin on a wound
-    // string's winding (startReleaseNoise in AculeleEngine.cpp). 0.5 is the
-    // nominal level. Sampled at damping onset (after grace/sustain) and live
-    // for stopped-wound sliding. Zero bypasses new noise; waves continue.
+    // into it from where it touches (startReleaseNoise in AculeleEngine.cpp).
+    // 0.5 is the nominal level. Sampled at damping onset (after
+    // grace/sustain) and live for stopped-wound sliding. Zero bypasses new
+    // noise; waves continue.
     float releaseNoise { 0.0f };
     // The room send around the microphones, 0 none to 1 its maximum level:
     // a small studio's early reflections and nominal 0.45 s low decay.
@@ -981,20 +981,24 @@ private:
     // theta^2 of 2 and 1, and at 384 kHz a float held the bridge's air-mode
     // group's pole angles to only about 5%, which turned the heave's H1 by
     // 90 degrees against the rock.
+    // One bridge mode's section, which both coordinates share: lane 0 is
+    // driven by the net force and lane 1 by the moment. Each lane holds the
+    // same coefficients beside its own history, so advanceModes steps the
+    // pair with whole-pair loads instead of gathering them field by field.
     struct BridgeMode
     {
-        double denominator1 { 0.0 };
-        double denominator2 { 0.0 };
-        double numerator1 { 0.0 };
-        double numerator2 { 0.0 };
-        double input1 { 0.0 };
-        double output1 { 0.0 };
-        double output2 { 0.0 };
+        using Lanes = std::array<double, 2>;
+        alignas(16) Lanes denominator1 {};
+        alignas(16) Lanes denominator2 {};
+        alignas(16) Lanes numerator1 {};
+        alignas(16) Lanes numerator2 {};
+        alignas(16) Lanes input1 {};
+        alignas(16) Lanes output1 {};
+        alignas(16) Lanes output2 {};
 
-        double processPast(double input) noexcept;
         void reset() noexcept
         {
-            input1 = output1 = output2 = 0.0;
+            input1 = output1 = output2 = Lanes {};
         }
     };
 
@@ -1025,11 +1029,11 @@ private:
         // [cross, rock]] of MeasuredBridgeData.h, so it needs two states:
         // one driven by the net force and one by the moment. A mode with no
         // rocking residue leaves its second state alone.
-        std::array<BridgeMode, bridgeModeCount + 1> heaveModes {};
-        std::array<BridgeMode, bridgeModeCount + 1> rockModes {};
-        std::array<float, bridgeModeCount + 1> residueHeave {};
-        std::array<float, bridgeModeCount + 1> residueCross {};
-        std::array<float, bridgeModeCount + 1> residueRock {};
+        std::array<BridgeMode, bridgeModeCount + 1> modes {};
+        // Single-precision residues, held widened once for the double sums.
+        std::array<double, bridgeModeCount + 1> residueHeave {};
+        std::array<double, bridgeModeCount + 1> residueCross {};
+        std::array<double, bridgeModeCount + 1> residueRock {};
         std::array<bool, bridgeModeCount + 1> rocking {};
         // The slots process() runs, in index order: configureBridge drops
         // the ones whose section and residues are all zero (the padding past
@@ -1564,11 +1568,10 @@ private:
         // The key-up's sound (startReleaseNoise): the release velocity the
         // key came up with (negative when not sent), the largest bridge force
         // since the pluck, and the release noise's generator state - the
-        // touch's white amplitude and its rise and fall, the brush's, two
-        // one-pole stages at the contact's corner, the brush's band-pass,
-        // the leaky integrator that launches the displacement, the samples
-        // left, the stroke's normal and parallel shares, its own draws and
-        // its travel from the damping point.
+        // touch's white amplitude and its rise and fall, two one-pole stages
+        // at the contact's corner, the leaky integrator that launches the
+        // displacement, the samples left, the stroke's normal and parallel
+        // shares, its own draws and its travel from the damping point.
         // An explicitly requested connected finger articulation: a smooth
         // finite contact pulse and filtered fret friction, transported from
         // the finger's point on the string. Their combined slope energy is
@@ -1591,20 +1594,9 @@ private:
         float releaseNoiseRise { 0.0f };
         float releaseNoiseFallDecay { 0.0f };
         float releaseNoiseRiseDecay { 0.0f };
-        float releaseNoiseBrush { 0.0f };
-        float releaseNoiseBrushFall { 0.0f };
-        float releaseNoiseBrushRise { 0.0f };
-        float releaseNoiseBrushFallDecay { 0.0f };
-        float releaseNoiseBrushRiseDecay { 0.0f };
         float releaseNoiseCoefficient { 0.0f };
         float releaseNoiseStage1 { 0.0f };
         float releaseNoiseStage2 { 0.0f };
-        float releaseNoiseBandA1 { 0.0f };
-        float releaseNoiseBandA2 { 0.0f };
-        float releaseNoiseBandA3 { 0.0f };
-        float releaseNoiseBandK { 0.0f };
-        float releaseNoiseBand1 { 0.0f };
-        float releaseNoiseBand2 { 0.0f };
         float releaseNoiseLeak { 0.0f };
         float releaseNoiseLaunched { 0.0f };
         float releaseNoiseNormal { 0.0f };
@@ -1672,6 +1664,13 @@ private:
         // the rest (the steel blend's parallel parts, starting on a group of
         // four) in vector accumulators.
         int ordered { 0 };
+        // The ordered modes up to the last that sounds. A mode this rate
+        // cannot sound, at or above 0.46 fs, has no residues
+        // (buildBodyConfiguration) and adds exactly zero, so render skips
+        // it; count likewise stops after the last parallel part that sounds.
+        // Scaled down from a guitar, the soprano's bank puts 64 of 160 modes
+        // there at 48 kHz.
+        int soundingOrdered { 0 };
         CaptureFilter captureFilter {};
 
         // The first modeCount modes' coefficients, their states kept. Slots
@@ -1977,8 +1976,7 @@ private:
     // The key-up's sound (EngineParameters::releaseNoise): started by
     // beginRelease and muteVacatedString, rendered and launched from the
     // damping contact.
-    void startReleaseNoise(Voice& voice, int stringIndex,
-                           bool fretSide) noexcept;
+    void startReleaseNoise(Voice& voice, bool fretSide) noexcept;
     void queueReleaseNoisePaths(Voice& voice,
                                const std::array<float, 2>& paths,
                                int offset = 0) noexcept;

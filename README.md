@@ -105,7 +105,7 @@ cmake -S . -B build-dsp -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
 cmake --build build-dsp
 ctest --test-dir build-dsp -L '^(unit|audio|perf)$' --output-on-failure
 ./build-dsp/RenderAculelePresetDemos --jobs 4 Docs/audio/midi <out-dir>
-./build-dsp/AculeleProbe <preset> <in.mid> <out.wav> [seconds] [--float] [--shape N] [--wood N] [--strings N] [--picking N] [--position X]
+./build-dsp/AculeleProbe <preset> <in.mid> <out.wav> [seconds] [--float] [--shape N] [--wood N] [--strings N] [--picking N] [--position X] [--capture N] [--piezo-mix X]
 python3 Tools/analyse_probe.py <out.wav> <midi>:<start-seconds> ...
 ./build-dsp/AculeleBodyModes
 ```

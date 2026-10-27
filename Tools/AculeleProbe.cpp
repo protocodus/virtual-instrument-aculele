@@ -3,11 +3,12 @@
 //
 //   AculeleProbe <preset-index> <in.mid> <out.wav> [seconds] [--float]
 //                [--shape N] [--wood N] [--strings N] [--picking N]
-//                [--position X]
+//                [--position X] [--capture N] [--piezo-mix X]
 //
 // The --options replace one field of the preset (the enums' numbers in
-// AculeleEngine.h, Pluck Position 0-1), so one phrase can be compared across
-// constructions without a preset for each.
+// AculeleEngine.h: Capture 0 stereo, 7 mono, 6 piezo; Pluck Position and
+// Piezo Mix 0-1), so one phrase can be compared across constructions and
+// captures without a preset for each.
 // The phrase plays through the Performer exactly as the demo renderer drives
 // it (48 kHz, 256-sample blocks, events at their sample). The output is
 // 48 kHz stereo, 24-bit PCM, or 32-bit float with --float, unnormalised.
@@ -90,6 +91,10 @@ int main(int argc, char** argv)
             parameters.picking = static_cast<aculele::PickingTechnique>(std::atoi(argv[++i]));
         else if (valued && std::strcmp(argv[i], "--position") == 0)
             parameters.pluckPosition = static_cast<float>(std::atof(argv[++i]));
+        else if (valued && std::strcmp(argv[i], "--capture") == 0)
+            parameters.capture = static_cast<aculele::CaptureType>(std::atoi(argv[++i]));
+        else if (valued && std::strcmp(argv[i], "--piezo-mix") == 0)
+            parameters.piezoMix = static_cast<float>(std::atof(argv[++i]));
         else
             seconds = std::atof(argv[i]);
     }

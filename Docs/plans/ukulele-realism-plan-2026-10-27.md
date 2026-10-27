@@ -44,15 +44,13 @@ where to look. It is not a target to fit.
    - 0.009 s/kg with its usual 7 g rosewood bridge;
    - 0.0094 s/kg with a lightened 6 g rosewood bridge.
 
-   The shipping model's G string read 0.0051 s/kg. The level is now pinned
-   to 0.009 at Concert Mahogany's G string, and `Aculele.BridgeMobility`
-   checks it.
-
-   The paper's "base of the lowest string" can also be read as the C string,
-   the lowest in pitch, which would put the level twice as high. Both
-   readings are rendered as a lettered listening set for the owner. The
-   shipping candidate is the G reading, and the choice is open until the
-   owner picks.
+   The paper's "base of the lowest string" has two readings on a ukulele.
+   By the guitars' convention it is the bass-side edge, the G string. By
+   pitch it is the C string. Both were rendered as a lettered set with the
+   old level, and the owner chose the C reading by ear. Concert Mahogany's C
+   string, which read 0.0025 s/kg before, is now pinned to 0.009, and
+   `Aculele.BridgeMobility` checks it. The bridge is about 3.6 times as
+   mobile as it was.
 
    Changing the bridge did not move the 1-1.6 kHz excess. That excess is
    +5.6 to +10.1 dB at every level tried (0.274, 0.50 and 1.0), so it does
@@ -165,8 +163,8 @@ soprano, one concert and one tenor (solid and laminate, if possible) the way
 g21 was measured:
 
 - bridge admittance by impact hammer and accelerometer at the base of both
-  the G and the C string. This also settles the open reading in the bridge
-  listening set;
+  the G and the C string. This would also check the C reading the owner
+  chose by ear;
 - radiated pressure at the microphone positions the capture model assumes,
   in a dead room;
 - the strings damped, the instrument hung by its headstock.
@@ -177,8 +175,6 @@ outright, as Mores' archive gave Acustra its own.
 
 ## What needs the owner
 
-- Pick a letter in the bridge listening set
-  (`bridge-listening-2026-10-27/`, with an unread `key.md`).
 - Decide whether koa is worth a new Wood choice.
 - Decide whether to measure an instrument. It needs a real ukulele and
   hardware that this environment does not have.

@@ -19,10 +19,10 @@
 // for 1-2, 2-4 and 4-6 kHz and over 1-6 kHz, on a log-spaced grid of 2400
 // points, at the normal port of each string.
 //
-// --check is Aculele.BridgeMobility: Concert Mahogany's G string, at the
-// bass-side edge where the paper's accelerometer sat on its guitars, must
-// read 0.009 s/kg over 1-6 kHz within 3%, the level ukuleleTopMobilityRatio
-// pins, and every body's within 10%, the equal-thickness plate law's claim.
+// --check is Aculele.BridgeMobility: Concert Mahogany's C string, the lowest
+// in pitch, at whose base the paper's accelerometer sat, must read
+// 0.009 s/kg over 1-6 kHz within 3%, the level ukuleleTopMobilityRatio pins,
+// and every body's within 10%, the equal-thickness plate law's claim.
 
 #include "DSP/AculeleEngine.h"
 
@@ -81,11 +81,11 @@ int main(int argc, char** argv)
         for (int shape = 0; shape < 3; ++shape)
         {
             const auto engine = configured(shape, mahogany);
-            const double g = meanConductance(*engine, 0, 1000.0, 6000.0);
+            const double c = meanConductance(*engine, 1, 1000.0, 6000.0);
             const double tolerance = shape == concert ? 0.03 : 0.10;
-            const bool pass = std::abs(g / measured - 1.0) <= tolerance;
-            std::printf("%s %s mahogany G string %.5f s/kg (%.5f +- %.0f%%)\n",
-                        pass ? "ok  " : "FAIL", shapes[shape], g, measured, 100.0 * tolerance);
+            const bool pass = std::abs(c / measured - 1.0) <= tolerance;
+            std::printf("%s %s mahogany C string %.5f s/kg (%.5f +- %.0f%%)\n",
+                        pass ? "ok  " : "FAIL", shapes[shape], c, measured, 100.0 * tolerance);
             failures += pass ? 0 : 1;
         }
         return failures == 0 ? 0 : 1;

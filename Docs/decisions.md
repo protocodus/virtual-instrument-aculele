@@ -25,7 +25,7 @@ recommended as fitting the portfolio's naming (repository
 `virtual-instrument-aculele`, product `Aculele`, bundle and CLAP id
 `cz.protocodus.aculele`), and the owner took it by creating the repository.
 
-## 2026-10-27 — the bridge level comes from the one measured ukulele (measured; the reading is open)
+## 2026-10-27 — the bridge level comes from the one measured ukulele (measured; its reading chosen by ear)
 
 Aculele inherited Acustra's `steelTopMobilityRatio`, 0.274, which brings the
 flamenco guitar g21's bridge to a steel-string guitar's. That corrects
@@ -33,17 +33,24 @@ Acustra's proxy and says nothing about a ukulele. Elie, Gautier, David and
 Curtit (Forum Acusticum 2011, Fig. 5) measured one ukulele at 0.009 s/kg
 characteristic mobility, 1-6 kHz, with its usual rosewood bridge. With the
 inherited ratio, Concert Mahogany's G string read 0.0051 s/kg
-(`Tools/AculeleBridgeMobility.cpp`). The ratio is now 0.485, which puts that
-string at 0.009 s/kg; `Aculele.BridgeMobility` holds it within 3%.
+(`Tools/AculeleBridgeMobility.cpp`), and its C string 0.0025.
 
 The level is the measurement's. Where it applies is not: the accelerometer
 sat "at the base of the lowest string". On the paper's guitars that is the
-bass-side edge, the G string's place. By pitch it is the C string, which
-would make the ratio 0.982. Both readings are defensible, so the shipping
-level, the G reading and the C reading went to the owner as a lettered set
-(`bridge-listening-2026-10-27`, key unread by design). The G reading ships
-until the owner chooses. The letters and the choice will be recorded here,
-as chosen by ear.
+bass-side edge, the G string's place. By pitch it is the C string. Each
+reading is defensible and neither needs an invented number, so they went to
+the owner as a lettered set (`bridge-listening-2026-10-27`). The set used
+tab input of open C, open G, C5 on the A string, then a C downstroke,
+through Concert Strum, level-matched on whole-file RMS:
+
+- A: the shipping engine, ratio 0.274.
+- B: the G reading, ratio 0.485 (G string 0.009 s/kg).
+- C: the C reading, ratio 0.982 (C string 0.009 s/kg).
+
+The owner liked B and C and chose C as a bit better, by ear. The ratio is
+now 0.982, and `Aculele.BridgeMobility` holds Concert Mahogany's C string
+at 0.009 s/kg within 3%. This licenses the C reading of one measurement,
+not a fitted level: a bridge measured at both strings would settle it.
 
 Against the one comparison recording (Duke Sonic Dictionary, CC BY-NC 4.0,
 compared only), 1-1.6 kHz stays +5.6 to +10.1 dB too strong at every level

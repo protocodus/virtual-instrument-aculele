@@ -32,7 +32,8 @@ struct FactoryPreset
     float piezoMix;
     float releaseNoise;
     float room;
-    // The Output control, -24..+6 dB: each preset's demo plays at -18 LUFS.
+    // The Output control, -24..+6 dB. Each preset's hardest chords at
+    // velocity 127 peak 2 dB under the safety limiter (Tests/HeadroomTests.cpp).
     float outputDecibels;
 };
 
@@ -40,31 +41,31 @@ inline constexpr std::array<FactoryPreset, 7> factoryPresets {{
     { "Concert Strum", "concert-strum",
       BodyShape::Concert, BodyMaterial::Mahogany, StringMaterial::Nylon,
       Tuning::Standard, PickingTechnique::Strum, CaptureType::StereoMic,
-      0.15f, 0.50f, 0.55f, 0.82f, 0.62f, 0.0f, 0.10f, 0.10f, 2.9f },
+      0.15f, 0.50f, 0.55f, 0.82f, 0.62f, 0.0f, 0.10f, 0.10f, -3.8f },
     { "Soprano D Tuning", "soprano-d-tuning",
       BodyShape::Soprano, BodyMaterial::Mahogany, StringMaterial::Nylon,
       Tuning::DTuning, PickingTechnique::Strum, CaptureType::StereoMic,
-      0.10f, 0.50f, 0.62f, 0.82f, 0.62f, 0.0f, 0.10f, 0.10f, 0.5f },
+      0.10f, 0.50f, 0.62f, 0.82f, 0.62f, 0.0f, 0.10f, 0.10f, -4.9f },
     { "Tenor Fluorocarbon Fingerstyle", "tenor-fluorocarbon-fingerstyle",
       BodyShape::Tenor, BodyMaterial::Spruce, StringMaterial::Fluorocarbon,
       Tuning::Standard, PickingTechnique::Finger, CaptureType::StereoMic,
-      0.10f, 0.40f, 0.55f, 0.86f, 0.62f, 0.0f, 0.10f, 0.10f, 1.5f },
+      0.10f, 0.40f, 0.55f, 0.86f, 0.62f, 0.0f, 0.10f, 0.10f, -6.4f },
     { "Low G Tenor", "low-g-tenor",
       BodyShape::Tenor, BodyMaterial::Mahogany, StringMaterial::Nylon,
       Tuning::LowG, PickingTechnique::Finger, CaptureType::StereoMic,
-      0.20f, 0.38f, 0.50f, 0.86f, 0.62f, 0.0f, 0.10f, 0.12f, 0.9f },
+      0.20f, 0.38f, 0.50f, 0.86f, 0.62f, 0.0f, 0.10f, 0.12f, -5.8f },
     { "Soprano Thumb", "soprano-thumb",
       BodyShape::Soprano, BodyMaterial::Mahogany, StringMaterial::Nylon,
       Tuning::Standard, PickingTechnique::Thumb, CaptureType::StereoMic,
-      0.30f, 0.45f, 0.40f, 0.86f, 0.55f, 0.0f, 0.10f, 0.10f, 5.2f },
+      0.30f, 0.45f, 0.40f, 0.86f, 0.55f, 0.0f, 0.10f, 0.10f, -2.4f },
     { "Tenor Picked Melody", "tenor-picked-melody",
       BodyShape::Tenor, BodyMaterial::Maple, StringMaterial::Fluorocarbon,
       Tuning::LowG, PickingTechnique::Pick, CaptureType::MonoMic,
-      0.10f, 0.30f, 0.60f, 0.82f, 0.62f, 0.0f, 0.10f, 0.10f, 0.3f },
+      0.10f, 0.30f, 0.60f, 0.82f, 0.62f, 0.0f, 0.10f, 0.10f, -6.6f },
     { "Concert Piezo Stage", "concert-piezo-stage",
       BodyShape::Concert, BodyMaterial::Spruce, StringMaterial::Nylon,
       Tuning::Standard, PickingTechnique::Strum, CaptureType::Piezo,
-      0.15f, 0.50f, 0.60f, 0.60f, 0.62f, 0.0f, 0.10f, 0.0f, 4.4f },
+      0.15f, 0.50f, 0.60f, 0.60f, 0.62f, 0.0f, 0.10f, 0.0f, -2.5f },
 }};
 
 inline EngineParameters engineParameters(const FactoryPreset& preset) noexcept

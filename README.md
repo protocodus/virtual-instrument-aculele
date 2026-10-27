@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.3.1 — 2026-10-27 — Headroom for hard playing
+
+Played hard, every preset drove its output into the -1 dBFS safety limiter, which is heard as overdrive: four-note chords at velocity 127 peaked at +2.4 to +4.9 dBFS before it, Tenor Picked Melody's at +3.9. The presets' Output levels now bring those chords, struck in eighths, to -3 dBFS, and the same chords as a sixteenth-note tremolo stay under the limiter. The presets are 5.4 to 7.9 dB quieter than before: a strum at velocity 100 plays at -19 to -23 LUFS, and the demos at -23 to -26 LUFS instead of -18. Nothing else about the sound changes.
+
 ### 0.3.0 — 2026-10-27 — The strumming hand: nail and pad, its swing, chucks
 
 A Strum downstroke now meets the strings with the index finger's nail, as hard as a plectrum, and an upstroke with the pad. Strokes with no direction keyswitch follow the hand's down-up swing in eighths, or sixteenths, so the island strum D, D-U, U-D-U plays as written; before, a stroke alternated with the last within a dotted eighth and restarted after it. Holding F0 makes each stroke a chuck, every string muted under the fretting hand. A fretted note's pitch spread now follows each nylon string's own stiffness: about 4 cents on the soprano's C string, 1.6-2.6 on the tenor. Under Finger the thumb plucks the G string with its broader pad. The demos latch their directions and play no chucks. The engine also takes about 18% less CPU, rendering the same samples ([measurement](Docs/benchmarks/cpu-2026-10-27.md)).
@@ -73,7 +77,7 @@ Most of the engine and Performer are Acustra's, unchanged: dual-polarisation sti
 | 6 | Tenor Picked Melody | Tenor, maple, fluorocarbon, Low G, mono mic | Pick |
 | 7 | Concert Piezo Stage | Concert, spruce, nylon, Standard, piezo | Strum |
 
-Each preset's Output level brings its demo to -18 LUFS. The demo phrases in `Docs/audio/midi/` come from `Tools/write_preset_midi.py`.
+Each preset's Output level brings its hardest playing, four-note chords struck in eighths at velocity 127, to -3 dBFS, 2 dB under the safety limiter; `Aculele.Headroom` checks it. The demo phrases in `Docs/audio/midi/` come from `Tools/write_preset_midi.py`.
 
 ## Known gaps
 

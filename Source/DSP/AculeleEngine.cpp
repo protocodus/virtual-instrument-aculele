@@ -421,8 +421,8 @@ constexpr float radiationReferenceGain = 18.0f;
 // Each construction and Picking is levelled on top of it
 // (outputReferenceFor, ConstructionLoudnessData.h).
 // A ukulele's light strings put far less energy into the body than steel:
-// 5.9 dB more brings the Concert Strum demo to -18 LUFS (BS.1770) on the
-// stereo microphones, and every capture follows it.
+// 5.9 dB more brought the Concert Strum demo to the -18 LUFS (BS.1770) the
+// presets then played at on the stereo microphones, and every capture follows it.
 constexpr float stringsReference = 1.8637f * 1.97f;
 // The share of a pluck's energy released normal to the soundboard at a Touch,
 // with a pluck's own draw about it; initialisePluck says where it comes from.

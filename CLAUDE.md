@@ -197,7 +197,8 @@ ctest --test-dir build-dsp -L unit --output-on-failure
 
 Every test is `Aculele.<Suite>`: `Tuning`, `DspFuzzReplay` and
 `DemoMidiSources` (`unit`), `AudioDemos` (`audio`, every preset demo rendered
-twice), `CpuBudget` (`perf`, Release builds without sanitizers) and, with
+twice), `Headroom` (`audio`, each preset's level against the safety limiter),
+`CpuBudget` (`perf`, Release builds without sanitizers) and, with
 `-DACULELE_BUILD_FUZZER=ON` and Clang, `DspFuzz` (`fuzz`).
 `-DACULELE_ENABLE_SANITIZERS=ON` builds everything under ASan + UBSan, as the
 `sanitizers` job does. Select the suites that cover a change with `-R`, then

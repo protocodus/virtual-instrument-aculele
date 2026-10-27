@@ -83,3 +83,20 @@ compared them, so none of this is a by-ear verdict.
 - **Fingerstyle thumb** (`fingerstyleThumb`). In p-i-m-a fingerpicking the
   thumb plays the G string, so under Finger that string takes the Thumb's
   pad footprint.
+
+## 2026-10-27 — preset levels leave headroom for hard playing (owner's direction, measured)
+
+Playing 0.3.0 in Reason, the owner heard Tenor Picked Melody overdrive and
+the other presets come out too loud with several notes at high velocity, and
+asked for headroom without the presets sounding quiet. The presets had been
+trimmed so each demo played at -18 LUFS. Measured before the -1 dBFS safety
+limiter, four-note chords at velocity 127 in eighths peaked at +2.4 to
++4.9 dBFS, so every preset's hard playing was being limited.
+
+The Output trims now bring the louder of two eighth-note phrases at velocity
+127, the open triads and four-note chords up the neck, to -3 dBFS
+(`Tests/HeadroomTests.cpp`). -3 dBFS is the highest whole-decibel level at
+which the same chords as a sixteenth-note tremolo also stay under the limiter
+(the closest, Tenor Picked Melody, peaks at -1.3 dBFS). A strum at velocity
+100 now plays at -19 to -23 LUFS; three of Acustra's presets play the same
+phrase at -16 to -18 LUFS. No listener has judged the new levels.

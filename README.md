@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.3.0 — 2026-10-27 — The strumming hand: nail and pad, its swing, chucks
+
+A Strum downstroke now meets the strings with the index finger's nail, as hard as a plectrum, and an upstroke with the pad. Strokes with no direction keyswitch follow the hand's down-up swing in eighths, or sixteenths, so the island strum D, D-U, U-D-U plays as written; before, a stroke alternated with the last within a dotted eighth and restarted after it. Holding E0 makes each stroke a chuck, every string muted under the fretting hand. A fretted note's pitch spread now follows each nylon string's own stiffness: about 4 cents on the soprano's C string, 1.6-2.6 on the tenor. Under Finger the thumb plucks the G string with its broader pad. The demos latch their directions and play no chucks.
+
 ### 0.2.0 — 2026-10-27 — A ukulele's bridge, and full strums on one channel
 
 The bridge is now as mobile as the one published ukulele measurement, so the strings give more of their energy to the top. Before, it was Acustra's steel-string level, about a quarter of that. A strum of three notes on one MIDI channel now sounds all four strings, the free one fretted with a chord tone, as a ukulele chord does. The presets' Output levels are re-trimmed so every demo stays at -18 LUFS. See [the research plan](Docs/plans/ukulele-realism-plan-2026-10-27.md).
@@ -36,7 +40,11 @@ Most of the engine and Performer are Acustra's, unchanged: dual-polarisation sti
 - **Bodies.** The soprano, concert and tenor bodies use Kala's published dimensions and scale lengths, through Acustra's own coupled-oscillator morph. Measured with `Tools/AculeleBodyModes.cpp`, A0/T1 sit at 266/653 Hz (soprano), 215/485 Hz (concert) and 190/414 Hz (tenor) in spruce.
 - **Bridge level from a measured ukulele.** Elie, Gautier, David and Curtit (Forum Acusticum 2011) measured one ukulele's bridge at about 0.009 s/kg characteristic mobility from 1 to 6 kHz, with its usual rosewood bridge. Concert Mahogany's C string reads that between 1 and 6 kHz, and the other bodies are within 10% of it (`Tools/AculeleBridgeMobility.cpp`, `Aculele.BridgeMobility`). It replaces Acustra's steel-string correction, which left the bridge about a quarter as mobile.
 - **Geometry.** The saddle spacing is 13.3 mm, which sets the bridge lever arms and the strum's travel. Pluck distances and the finger's contact width keep their fraction of the shorter string. The hand's band reaches 0.46 of the string, where a ukulele is strummed over the neck joint.
-- **Strum technique.** `PickingTechnique::Strum` is the index finger swept down and up over the neck joint. It uses the plectrum's sweep timing and alternation with the finger's soft contact.
+- **Strum technique.** `PickingTechnique::Strum` is the index finger swept down and up over the neck joint, with the plectrum's sweep timing. A downstroke strikes with the nail, which the string slides off as it does a plectrum, so it takes the Pick's hard contact; an upstroke strikes with the pad, Finger's soft one (MasterClass, "How to Strum a Ukulele"). A nail stroke puts about 7 dB more of its energy at 3-8 kHz than the pad's.
+- **The hand's swing.** With no direction keyswitch, the hand moves down on each eighth and up between, and keeps that time through the strokes it skips: a stroke an odd number of eighths after the last is the other direction, an even number the same. A gap of an odd number of sixteenths puts the hand in sixteenths for a bar. After 4 beats or 2 s without a stroke, it starts again with a downstroke (`Performer::pendulumUpstroke`).
+- **Chucks.** While E0 is held, every swept stroke is a chuck: the fretting hand lies across the strings instead of fretting them, and each string the stroke crosses takes GuitarSet's muted-string stroke, 4.6 dB down and dying in 43 periods. The stroke's keys own no string. A chord whose keys come up as the chuck's go down is let go first, so back-to-back chords in a sequencer chuck too.
+- **Fretting pitch.** Each contact's pitch differs a little within GuitarSet's bounds. A fretted string is stretched by the finger, and the pitch it gains scales with the string's axial stiffness over its tension, and inversely with the scale length (Varieschi and Gower, Am. J. Phys. 78 (2010) 47). Acustra's steel figure scaled this way gives nylon 2.0-3.4 cents on the concert, 4.2 on the soprano's C string and 1.6-2.2 on fluorocarbon (`AculeleEngine::frettingPitchHalfWidth`).
+- **Fingerstyle thumb.** Under Finger the thumb plucks the G string with its broader pad, as the Thumb technique does, and the fingers the other three.
 - **Tab input.** In string-per-channel mode (Mono Mode On, CC126 = 4, on channel 1), channels 1-4 are the G, C, E and A strings. A group of notes on those channels is one strummed or pinched stroke, so a chord can double a pitch on two strings, as G (0232) and Am (2000) do. The demos are written this way.
 - **Full strums on one channel.** A strum or pick sweep of three notes on one ordinary channel leaves one string free. The fretting hand gives that string a chord tone at the fret it reaches most cheaply with the shape, so the stroke sounds all four strings:
   - C4 E4 G4 plays 0003;
@@ -77,9 +85,9 @@ Each preset's Output level brings its demo to -18 LUFS. The demo phrases in `Doc
 
   A Finger chord of three plays three strings. Tab input names every string; every demo but the Low G picked melody uses it.
 - **The bridge level rests on one measured instrument.** The paper puts its accelerometer "at the base of the lowest string". That is the C string by pitch, and the G string's place by the guitar convention, which would halve the level. The C reading was chosen by ear (`Docs/decisions.md`); no measurement has decided between them.
-- Pluck release, contact noise, strum speeds and finger-chord timing are Acustra's fits to guitar recordings (GuitarSet, the flat-top bank), reused unchanged.
+- Pluck release, contact noise, strum speeds and finger-chord timing are Acustra's fits to guitar recordings (GuitarSet, the flat-top bank), reused unchanged. The nail's contact is GuitarSet's plectrum, and a chuck is GuitarSet's muted guitar string: no ukulele nail or chuck has been measured. The nylon fretting spread scales a steel-string estimate by stiffness; it is not a nylon measurement.
 - There is no koa wood; mahogany stands in for it.
-- The strum technique has no nail-versus-flesh distinction, and there are no rasgueado or triplet-roll strokes.
+- There are no rasgueado or triplet-roll strokes, and no palm chuck: a chuck is the fretting hand's. Under the sustain, a chuck leaves the strings the sustain holds ringing.
 - There is no plug-in, editor, screenshot, main build or release yet.
 
 ## Build

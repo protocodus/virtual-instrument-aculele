@@ -91,6 +91,22 @@ struct PerformanceRealism
     // they leave free, as a ukulele chord sounds all four
     // (AculeleEngine::chordFillNote, fillStroke).
     bool chordFill { true };
+    // A fretted nylon string's pitch spread is the finger's steel spread
+    // scaled by the string's axial stiffness over its tension and by the
+    // scale length (AculeleEngine::frettingPitchHalfWidth).
+    bool nylonFrettingPitch { true };
+    // Under Strum a downstroke meets the strings with the index finger's
+    // nail, the Pick's hard contact, and an upstroke with its pad
+    // (AculeleEngine::nailStroke).
+    bool nailStrokes { true };
+    // Under Finger the thumb plucks the G string with its broader pad and
+    // the fingers the other three (AculeleEngine::initialisePluck).
+    bool fingerstyleThumb { true };
+    // Automatic strokes follow the strumming hand's down-up swing, which
+    // keeps time through the strokes it skips, instead of alternating stroke
+    // by stroke and restarting after a dotted eighth
+    // (Performer::pendulumUpstroke).
+    bool strumPendulum { true };
 };
 
 } // namespace aculele

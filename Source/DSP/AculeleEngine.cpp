@@ -377,9 +377,23 @@ constexpr float noteDetuneRangeCents = 20.0f;
 // measurement bounds each spread: fretted between the finger's own excess,
 // sqrt(2.38^2 - 1.78^2) = 1.57 cents (uniform +/-2.73), and all of 2.38
 // (+/-4.12); open between none and 1.78 (+/-3.08). Inside those bounds the
-// owner chose these half-widths by ear (Docs/decisions.md, 2026-10-20).
+// owner chose these half-widths by ear for Acustra's steel strings
+// (Docs/decisions.md, 2026-10-20).
 constexpr float frettingPitchHalfWidthCents = 3.0f;
 constexpr float openPitchHalfWidthCents = 1.0f;
+// The finger's own part of that steel spread, sqrt(3^2 - 1^2) cents: the
+// open spread is there without a finger, and independent spreads add as
+// squares. Varieschi and Gower ("Intonation and compensation of fretted
+// string instruments", Am. J. Phys. 78 (2010) 47) give the stretch as
+// Delta f / f = (1/2)(EA/T) Delta L / L, the whole string's strain at its
+// tuning stress. A fingertip presses the same depth behind the same fret
+// crown on either instrument, so Delta L is the hand's, and the finger's
+// spread goes as kappa / L, kappa = EA/T (frettingPitchHalfWidth). GuitarSet's steel strings are taken as
+// Acustra's D'Addario EJ16 set, whose effective cores at 200 GPa give kappa
+// 323, 234, 201, 169, 250 and 140, mean 219.6, on a 648 mm scale.
+constexpr float steelFingerPitchHalfWidthCents = 2.8284271f;
+constexpr float steelAxialStiffnessRatio = 219.55f;
+constexpr float steelScaleLength = 0.648f;
 constexpr int localMaximumDelaySamples = ACULELE_EXTENDED_SAMPLE_RATES ? 32768 : 8192;
 int delayCapacityForRate([[maybe_unused]] double rate) noexcept
 {
@@ -6383,8 +6397,11 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
         exact::bits(soundingLength), exact::bits(pitch.speakingFret),
         exact::bits(lossDesignFrequency),
         exact::bits(parameters_.stringAge), exact::bits(palmMute_) };
+    // A Strum's downstrokes take the Pick's release too (nailStroke).
     const bool usePickReference = (clearDelay || refreshPickReference)
-        && sampleRate_ != 48000.0 && parameters_.picking == PickingTechnique::Pick;
+        && sampleRate_ != 48000.0 && (parameters_.picking == PickingTechnique::Pick
+            || (parameters_.picking == PickingTechnique::Strum
+                && performanceRealism_.nailStrokes));
     const bool referenceTuning = usePickReference
         && !(configurationKey == voice.referencePickConfigurationKey);
     if (!clearDelay && configurationKey == voice.configurationKey && !referenceTuning)
@@ -6941,13 +6958,48 @@ float AculeleEngine::nextNoise(Voice& voice) noexcept
 // A contact's own pitch offset (see frettingPitchHalfWidthCents): a fretted
 // note's from the finger's press, an open string's or a natural harmonic's
 // the smaller spread left without one.
-float AculeleEngine::frettingPitchCents(Voice& voice, int midiNote) noexcept
+float AculeleEngine::frettingPitchCents(Voice& voice, int stringIndex,
+                                        int midiNote) const noexcept
 {
     if (!performanceRealism_.frettingPitch)
         return 0.0f;
     const float draw = xorshiftNoise(voice.frettingPitchState);
     return (midiNote > voice.openMidi && voice.harmonic == 1
-        ? frettingPitchHalfWidthCents : openPitchHalfWidthCents) * draw;
+        ? frettingPitchHalfWidth(stringIndex, voice.openMidi)
+        : openPitchHalfWidthCents) * draw;
+}
+
+// A nylon string is softer than steel but also far slacker: kappa is 77-148
+// on the nylon concert (the thick C string the most) and 57-87 in
+// fluorocarbon, against steel's 140-323, and the shorter scale strains the
+// string 1.5-1.9 times as much for the same press. The fretted half-width
+// becomes 2.0-3.4 cents on the nylon concert, 4.2 on the soprano's C string
+// and 1.6-2.2 in fluorocarbon, where steel had 3 on every string
+// (steelFingerPitchHalfWidthCents).
+float AculeleEngine::frettingPitchHalfWidth(int stringIndex, int openMidi) const noexcept
+{
+    if (!performanceRealism_.nylonFrettingPitch)
+        return frettingPitchHalfWidthCents;
+    const float frequency = midiFrequency(openMidi);
+    const float kappa = stringAxialRigidity(parameters_, stringIndex, openMidi)
+        / stringTension(parameters_, stringIndex, frequency);
+    const float finger = steelFingerPitchHalfWidthCents
+        * (kappa / steelAxialStiffnessRatio)
+        * (steelScaleLength / scaleLengthFor(parameters_.shape));
+    return exact::sqrt(openPitchHalfWidthCents * openPitchHalfWidthCents
+                       + finger * finger);
+}
+
+// Ukulele players strum down with the back of the index finger's nail and
+// back up with the finger's fleshy pad (MasterClass, "How to Strum a
+// Ukulele", https://www.masterclass.com/articles/how-to-strum-a-ukulele, and
+// the beginners' guides that teach it). A single note under Strum is a stroke
+// of the same finger, so its downstrokes are the nail's too.
+bool AculeleEngine::nailStroke(const Voice& voice) const noexcept
+{
+    return performanceRealism_.nailStrokes
+        && parameters_.picking == PickingTechnique::Strum
+        && voice.pluckParallelSign > 0.0f;
 }
 
 AculeleEngine::PickingGesture AculeleEngine::nextPickingGesture() noexcept
@@ -7357,7 +7409,12 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
     const float apertureReferenceDelay = 48000.0f / midiFrequency(61);
     // The Pick technique's release velocity (FittedPhysicalData.h). Finger
     // and Thumb, and a pick at a zero share, take the displacement shape below.
-    const bool pick = parameters_.picking == PickingTechnique::Pick;
+    // A strum's downstroke strikes with the index finger's nail, a hard edge
+    // the string slides off as it does a plectrum's, so it takes the Pick's
+    // whole contact (nailStroke); where the stroke lands and how hard stay
+    // the Strum's.
+    const bool pick = parameters_.picking == PickingTechnique::Pick
+        || nailStroke(voice);
     const float releaseShare = pick
         ? physicalCalibration_.pickReleaseVelocityShare
             * std::pow(v, physicalCalibration_.pickReleaseVelocityExponent)
@@ -7539,9 +7596,17 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
         // All widths use the same reference-rate/register conversion below.
         // The style ratios and 2.5-sample pad are authored, not measured tool
         // dimensions. Finger retains its calibrated arithmetic.
-        const float contactSamples = parameters_.picking == PickingTechnique::Pick
+        // Fingerpicking a ukulele, the thumb plays the G string and the
+        // fingers the rest, one string each (p-i-m-a: ukutabs, "Ultimate
+        // Ukulele Fingerpicking Guide",
+        // https://ukutabs.com/ukulele-guides/ukulele-fingerpicking-guide/),
+        // so under Finger the G string takes the thumb's pad.
+        const bool thumbPad = parameters_.picking == PickingTechnique::Thumb
+            || (parameters_.picking == PickingTechnique::Finger
+                && stringIndex == 0 && performanceRealism_.fingerstyleThumb);
+        const float contactSamples = pick
             ? 0.35f * apertureSamples
-            : parameters_.picking == PickingTechnique::Thumb
+            : thumbPad
                 ? exact::sqrt(4.0f * apertureSamples * apertureSamples + 6.25f)
                 : apertureSamples;
         // The aperture is a fraction of the string, fitted on Acustra's
@@ -7863,8 +7928,8 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
     // burst's one-pole-plus-white spectrum gave them. The soft contacts'
     // burst is the same noise through the same corner twice, with no white
     // share: -12 dB per octave above the corner instead of -6 and a flat
-    // floor. The plectrum keeps its law.
-    voice.excitationSoft = parameters_.picking != PickingTechnique::Pick;
+    // floor. The plectrum, and a strum's nail, keep its law.
+    voice.excitationSoft = !pick;
     // Contact roughness cannot shed force faster than the contact releases
     // it. The soft contacts' existing two-stage burst therefore has at least the
     // actual release's sampled mean time. A one-pole at b has mean b/(1-b);
@@ -7889,8 +7954,7 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
         voice.excitationCoefficientRate = exact::bits(burstRateRatio);
     }
     voice.excitationReleaseCoefficient = voice.excitationCoefficient;
-    if (performanceRealism_.contactRelease
-        && parameters_.picking != PickingTechnique::Pick
+    if (performanceRealism_.contactRelease && !pick
         && roughnessSlipPole > 0.0)
         voice.excitationReleaseCoefficient = std::min(
             voice.excitationCoefficient,
@@ -9967,7 +10031,7 @@ bool AculeleEngine::transitionNote(int sourceMidiNote, int targetMidiNote,
     voice.attackPitchDecay = 1.0f;
     voice.noteDetuneCents = noteDetuneRangeCents * parameters_.detune
         * xorshiftNoise(voice.noteDetuneState)
-        + frettingPitchCents(voice, targetMidiNote);
+        + frettingPitchCents(voice, string, targetMidiNote);
     // Stop only future picking input. Already emitted waves keep travelling.
     voice.excitationEnvelope = 0.0f;
     voice.strumming = false;
@@ -10483,7 +10547,7 @@ void AculeleEngine::firePluck(Voice& voice, int stringIndex) noexcept
     const float previousDetune = voice.noteDetuneCents;
     voice.noteDetuneCents = noteDetuneRangeCents * parameters_.detune
         * xorshiftNoise(voice.noteDetuneState)
-        + frettingPitchCents(voice, voice.midiNote);
+        + frettingPitchCents(voice, stringIndex, voice.midiNote);
     if (repluck || scheduled || voice.noteDetuneCents != previousDetune)
     {
         // Repeated Pick releases refresh reference-rate geometry while their

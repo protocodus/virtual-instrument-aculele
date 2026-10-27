@@ -56,3 +56,30 @@ Against the one comparison recording (Duke Sonic Dictionary, CC BY-NC 4.0,
 compared only), 1-1.6 kHz stays +5.6 to +10.1 dB too strong at every level
 tried (0.274, 0.50 and 1.0). So that excess is not the bridge's, and no
 bridge level was chosen to reduce it.
+
+## 2026-10-27 — the strumming hand for 0.3.0 (from sources, not by ear)
+
+Five changes, each from a published description or measurement, and each a
+`PerformanceRealism` switch except the new E0 key. With every switch off the
+seven demos render bit-identically to 0.2.0. Per-fix before/after previews,
+level-matched on whole-file RMS, went to the owner; no listener has yet
+compared them, so none of this is a by-ear verdict.
+
+- **Nail downstrokes** (`nailStrokes`). MasterClass's "How to Strum a
+  Ukulele" teaches the downstroke on the index finger's nail and the
+  upstroke on its pad. A nail is a hard edge the string slides off, so a
+  downstroke takes the Pick's whole contact, which is GuitarSet's plectrum
+  fit. No nail stroke has been measured; this reuses an existing fit and
+  draws no new constant.
+- **The hand's swing** (`strumPendulum`). The same lesson keeps the hand
+  moving down on the beat and up between, through the strokes it skips. The
+  restart after 4 beats or 2 s keeps the earlier rest rule's 2 s bound.
+- **Chucks** (E0, held). A string the fretting hand lies on takes GuitarSet's
+  measured muted stroke (0.589 level, 43-period T60), as the dead strings
+  inside a strum already did; a chuck gives it to every string crossed.
+- **Nylon fretting pitch** (`nylonFrettingPitch`). Varieschi and Gower's
+  stretch law, Δf/f = ½(EA/T)ΔL/L, scales Acustra's steel finger spread by
+  each string's own axial stiffness over tension and by the scale length.
+- **Fingerstyle thumb** (`fingerstyleThumb`). In p-i-m-a fingerpicking the
+  thumb plays the G string, so under Finger that string takes the Thumb's
+  pad footprint.

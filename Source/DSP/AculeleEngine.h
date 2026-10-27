@@ -107,7 +107,9 @@ enum class StringMaterial
 
 // Strum is the ukulele's own stroke: the index finger swept down and up
 // across the strings over the neck joint. The Performer times it as it times
-// a Pick's sweep; the engine meets each string with Finger's soft contact.
+// a Pick's sweep; the engine meets each string on a downstroke with the
+// nail, as hard as a Pick's contact, and on an upstroke with the pad,
+// Finger's soft one.
 enum class PickingTechnique
 {
     Finger,
@@ -1895,7 +1897,10 @@ private:
     [[nodiscard]] static float handDamping(float t60Seconds,
                                            float fundamental) noexcept;
     void restartRandomDraws() noexcept;
-    [[nodiscard]] float frettingPitchCents(Voice& voice, int midiNote) noexcept;
+    [[nodiscard]] float frettingPitchCents(Voice& voice, int stringIndex,
+                                           int midiNote) const noexcept;
+    [[nodiscard]] float frettingPitchHalfWidth(int stringIndex, int openMidi) const noexcept;
+    [[nodiscard]] bool nailStroke(const Voice& voice) const noexcept;
     void freezeMemberPitchBend(Voice& voice) noexcept;
     [[nodiscard]] bool isLowerZoneMaster(int midiChannel) const noexcept;
     [[nodiscard]] bool isLowerZoneMember(int midiChannel) const noexcept;

@@ -67,12 +67,17 @@ public:
     // is applied at once, ahead of the group's Note Ons.
     static constexpr int sampleGroupCapacity = 128;
 
-    // Stroke direction. Automatic: a strum within strumAlternationBeats of
-    // the previous one, a dotted eighth at the host tempo, is the strumming
-    // hand's return and alternates its stroke; after a longer gap it is a
-    // downstroke again, as an isolated chord is. The dotted eighth takes in
-    // eighth-note and sixteenth-note patterns, swung eighths and triplets,
-    // and leaves quarter-note chords all downstrokes. A rest longer than
+    // Stroke direction. Automatic: the strumming hand swings down on each
+    // eighth note at the host tempo and up between them, and keeps swinging
+    // over the strokes a rhythm leaves out (pendulumUpstroke). A strum an odd
+    // number of eighths after the previous one goes the other way and an
+    // even number the same way, so quarter-note chords are all downstrokes
+    // and the island strum, D-DU-UDU, plays as it is written; a gap of an odd
+    // number of sixteenths puts the hand in sixteenths for a bar. After a gap
+    // longer than strumPendulumBeats, a bar, the hand starts again with a
+    // downstroke, as an isolated chord is. Without the strumPendulum switch a
+    // strum within strumAlternationBeats, a dotted eighth, alternates and a
+    // longer gap restarts. A rest longer than
     // strumRestSeconds restarts whatever the tempo; a front end that stops
     // rendering while silent (the Rack Extension idles) must not idle for
     // less than that after the last note, or the rest would go unmeasured.
@@ -92,17 +97,26 @@ public:
     // on every channel until the next direction key, reset or prepare: C0
     // makes every stroke a downstroke, C#0 an upstroke, D0 returns to automatic. D#0
     // toggles global sustain independently of the panel switch and pedals.
-    // They never sound and take no string; their key-ups are consumed.
+    // E0 is held, not latched: while it is down every swept stroke is a
+    // chuck, the fretting hand lying across the strings instead of fretting
+    // them, so each string the stroke crosses takes a dead stroke
+    // (AculeleEngine::muteStroke) and the stroke's keys own none. The
+    // stroke's sample releases its key-ups first, so a chord drawn straight
+    // after another is muted too; a key held on, or the sustain, keeps its
+    // string ringing. They never sound and take no string; their key-ups
+    // are consumed, E0's ending its chucks.
     enum class StrokeMode { Automatic, Down, Up };
     static constexpr double strumAlternationBeats = 0.75;
+    static constexpr double strumPendulumBeats = 4.0;
     static constexpr double strumRestSeconds = 2.0;
     static constexpr int keyswitchDownstroke = 24; // C0
     static constexpr int keyswitchUpstroke = 25;   // C#0
     static constexpr int keyswitchAutomatic = 26;  // D0
     static constexpr int keyswitchSustain = 27;    // D#0
+    static constexpr int keyswitchChuck = 28;      // E0
     [[nodiscard]] static constexpr bool isKeyswitch(int note) noexcept
     {
-        return note >= keyswitchDownstroke && note <= keyswitchSustain;
+        return note >= keyswitchDownstroke && note <= keyswitchChuck;
     }
     // The keyswitches' effect, for a front end's own control; it takes
     // effect at once, like setSustainHold.
@@ -302,6 +316,7 @@ private:
     bool handleEvent(int eventSample, const std::uint8_t* data, int size) noexcept;
     void handleTempoEvent(int eventSample, double bpm) noexcept;
     void flushNoteGroup() noexcept;
+    void releasePendingNoteOffs() noexcept;
     void gatherChord(int first) noexcept;
     void renderTo(int sample) noexcept;
     void dispatchMidiData(const std::uint8_t* data, int size) noexcept;
@@ -326,6 +341,10 @@ private:
     // Drops the oldest queued continuous gesture to make room in a full
     // queue; false when nothing continuous is queued.
     bool evictContinuousHeldEvent() noexcept;
+    [[nodiscard]] bool pendulumUpstroke(std::int64_t strokeSample,
+                                        std::int64_t interval) const noexcept;
+    void rememberStroke(std::int64_t strokeSample, std::int64_t interval,
+                        bool restarted) noexcept;
 
     AculeleEngine engine_;
 
@@ -338,6 +357,7 @@ private:
     bool pickTechnique_ { false };
     bool fingerTechnique_ { true };
     StrokeMode strokeMode_ { StrokeMode::Automatic };
+    bool chuck_ { false };
     double tempoBpm_ { 120.0 };
     bool gatherChords_ { false };
     bool panelSustainHold_ { false };
@@ -345,6 +365,9 @@ private:
     double sampleRate_ { 48000.0 };
     std::int64_t processedSamples_ { 0 };
     std::int64_t lastStrokeSample_ { -1 };
+    // The last stroke that came an odd number of sixteenths after the one
+    // before it (pendulumUpstroke); -1 for none.
+    std::int64_t sixteenthSwingSample_ { -1 };
     std::array<RpnState, 16> rpnStates_ {};
     std::array<float, 16> rawPitchWheels_ {};
     // Both messages are required: CC65 never infers legato from overlap.

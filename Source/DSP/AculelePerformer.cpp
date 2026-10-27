@@ -115,9 +115,11 @@ void Performer::prepare(double sampleRate, int maximumBlockSize)
     sampleRate_ = engine_.sampleRate();
     processedSamples_ = 0;
     lastStrokeSample_ = -1;
+    sixteenthSwingSample_ = -1;
     nextUpstroke_ = false;
     lastStrokeUpstroke_ = false;
     strokeMode_ = StrokeMode::Automatic;
+    chuck_ = false;
     heldCount_ = 0;
     droppedEvents_ = 0;
     gatherWindow_ = gatherWindowSamples(sampleRate_);
@@ -223,9 +225,11 @@ void Performer::reset() noexcept
     engine_.reset();
     engine_.setSustainHold(panelSustainHold_);
     lastStrokeSample_ = -1;
+    sixteenthSwingSample_ = -1;
     nextUpstroke_ = false;
     lastStrokeUpstroke_ = false;
     strokeMode_ = StrokeMode::Automatic;
+    chuck_ = false;
     for (int channel = 1; channel <= 16; ++channel)
         refreshPitchBend(channel);
     heldCount_ = 0;
@@ -390,6 +394,42 @@ void Performer::renderTo(int sample) noexcept
     renderedTo_ = sample;
 }
 
+// A strummer's hand swings down and up without stopping, down on each
+// eighth note and up on each "and" between them, and passes over the strings
+// on the strokes the rhythm leaves out ("keep your hand moving": MasterClass,
+// "How to Strum a Ukulele",
+// https://www.masterclass.com/articles/how-to-strum-a-ukulele). So a stroke
+// an odd number of eighths after the last goes the other way and an even
+// number the same way: the island strum, D-DU-UDU, plays as written. A gap
+// that is an odd number of sixteenths puts the hand in sixteenths, the
+// pendulum of slow and dotted patterns and of swung eighths, and it swings
+// in sixteenths until a bar passes without one. A gap under half a step is
+// the hand's quick return.
+bool Performer::pendulumUpstroke(std::int64_t strokeSample,
+                                 std::int64_t interval) const noexcept
+{
+    const double sixteenth = 15.0 / tempoBpm_ * sampleRate_;
+    const auto sixteenths = std::llround(static_cast<double>(interval) / sixteenth);
+    const bool inSixteenths = sixteenths % 2 != 0
+        || (sixteenthSwingSample_ >= 0
+            && static_cast<double>(strokeSample - sixteenthSwingSample_)
+                <= 16.0 * sixteenth);
+    const auto steps = inSixteenths ? sixteenths
+        : std::llround(static_cast<double>(interval) / (2.0 * sixteenth));
+    return steps % 2 != 0 || steps == 0 ? !lastStrokeUpstroke_ : lastStrokeUpstroke_;
+}
+
+// A stroke an odd number of sixteenths after the last keeps the hand
+// swinging in sixteenths (pendulumUpstroke).
+void Performer::rememberStroke(std::int64_t strokeSample, std::int64_t interval,
+                               bool restarted) noexcept
+{
+    if (!restarted && std::llround(static_cast<double>(interval) * tempoBpm_
+                        / (15.0 * sampleRate_)) % 2 != 0)
+        sixteenthSwingSample_ = strokeSample;
+    lastStrokeSample_ = strokeSample;
+}
+
 // Hosts may store simultaneous chord members in any insertion order. A
 // physical six-string allocator must see one canonical wrist event, or the
 // same MIDI chord can land on different strings in different hosts.
@@ -491,10 +531,13 @@ void Performer::flushNoteGroup() noexcept
         + static_cast<std::int64_t>(std::max(std::max(0, groupedSample_), renderedTo_));
     const auto interval = lastStrokeSample_ < 0 ? std::int64_t { 0 }
                                                 : strokeSample - lastStrokeSample_;
-    const double alternationSeconds = std::min(
-        strumRestSeconds, strumAlternationBeats * 60.0 / tempoBpm_);
+    const bool pendulum = engine_.performanceRealism().strumPendulum;
+    const double alternationSeconds = std::min(strumRestSeconds,
+        (pendulum ? strumPendulumBeats : strumAlternationBeats) * 60.0 / tempoBpm_);
     const bool restarted = lastStrokeSample_ < 0
         || interval > static_cast<std::int64_t>(alternationSeconds * sampleRate_);
+    const bool handUpstroke = !restarted && (pendulum
+        ? pendulumUpstroke(strokeSample, interval) : nextUpstroke_);
     // Under Pick one hand makes every stroke, and no hand makes two within
     // the chord window: notes that close to its last stroke continue it.
     const bool pickHand = pickTechnique_
@@ -505,6 +548,9 @@ void Performer::flushNoteGroup() noexcept
     // pair or chord of three or four strings independently: nothing sweeps
     // across it. It neither takes nor moves the strumming hand's alternation.
     bool pinch = false;
+    // A swept stroke while the chuck key is down: every string it crosses
+    // takes a dead stroke instead of its note (keyswitchChuck).
+    bool chuck = false;
     // The strings inside a swept stroke that the chord leaves out: the pick
     // crosses them under the fretting hand that mutes them (muteStroke).
     std::array<int, AculeleEngine::stringCount> mutedDelay {};
@@ -554,7 +600,7 @@ void Performer::flushNoteGroup() noexcept
             meanVelocity /= static_cast<float>(sounding);
         const auto chordStrings = static_cast<int>(
             std::count(onString.begin(), onString.end(), true));
-        pinch = fingerTechnique_ && strokeMode_ == StrokeMode::Automatic && completePlan
+        pinch = fingerTechnique_ && strokeMode_ == StrokeMode::Automatic && !chuck_ && completePlan
             && ((engine_.performanceRealism().fingerChords
                  && chordStrings >= 3 && chordStrings <= 4)
                 || (fingerPair && chordStrings == 2));
@@ -585,13 +631,10 @@ void Performer::flushNoteGroup() noexcept
         }
         else if (!fingerPair)
         {
-            if (continuedStroke)
-                nextUpstroke_ = lastStrokeUpstroke_;
-            else if (restarted)
-                nextUpstroke_ = false;
+            nextUpstroke_ = continuedStroke ? lastStrokeUpstroke_ : handUpstroke;
             if (strokeMode_ != StrokeMode::Automatic)
                 nextUpstroke_ = strokeMode_ == StrokeMode::Up;
-            lastStrokeSample_ = strokeSample;
+            rememberStroke(strokeSample, interval, restarted);
             // A ukulele strum sounds all four strings, so the stroke reaches
             // the free one too, fretted as the hand holding the shape would
             // (AculeleEngine::chordFillNote).
@@ -711,6 +754,22 @@ void Performer::flushNoteGroup() noexcept
                             fillDelay[static_cast<std::size_t>(string)] = scattered(string);
                 }
             }
+            chuck = chuck_ && completePlan && engine_.performanceRealism().mutedStrings;
+            if (chuck)
+            {
+                for (int index = 0; index < pendingNoteOnCount_; ++index)
+                    if (sounds[static_cast<std::size_t>(index)])
+                        mutedDelay[static_cast<std::size_t>(strings[static_cast<std::size_t>(index)])]
+                            = pendingNoteOns_[static_cast<std::size_t>(index)].pluckDelay;
+                for (int string = 0; string < AculeleEngine::stringCount; ++string)
+                    if (fillNotes[static_cast<std::size_t>(string)] >= 0)
+                    {
+                        mutedDelay[static_cast<std::size_t>(string)]
+                            = fillDelay[static_cast<std::size_t>(string)];
+                        fillNotes[static_cast<std::size_t>(string)] = -1;
+                    }
+                mutedOwners = 0u;
+            }
             lastStrokeUpstroke_ = nextUpstroke_;
             nextUpstroke_ = ! nextUpstroke_;
         }
@@ -723,12 +782,16 @@ void Performer::flushNoteGroup() noexcept
     // after a rest, the hand's return within the alternation window, and the
     // same stroke still travelling within the chord window of the last.
     const bool pickedStroke = !strum && pickHand && pendingNoteOnCount_ > 0;
-    bool pickedUpstroke = continuedStroke ? lastStrokeUpstroke_
-                        : !restarted && nextUpstroke_;
+    bool pickedUpstroke = continuedStroke ? lastStrokeUpstroke_ : handUpstroke;
     if (strokeMode_ != StrokeMode::Automatic)
         pickedUpstroke = strokeMode_ == StrokeMode::Up;
     bool plucked = false;
-    for (int index = 0; index < pendingNoteOnCount_; ++index)
+    // A chuck's keys own no string, so the key-ups of its sample can go
+    // first: a chord whose keys come up as the chuck's go down is let go
+    // before the hand lies on its strings.
+    if (chuck)
+        releasePendingNoteOffs();
+    for (int index = 0; index < pendingNoteOnCount_ && !chuck; ++index)
     {
         const auto& note = pendingNoteOns_[static_cast<std::size_t>(index)];
         const bool unambiguous = std::count_if(pendingNoteOns_.begin(),
@@ -754,10 +817,14 @@ void Performer::flushNoteGroup() noexcept
             lastStrokeUpstroke_ = pickedUpstroke;
             nextUpstroke_ = !pickedUpstroke;
         }
-        lastStrokeSample_ = strokeSample;
+        rememberStroke(strokeSample, interval, restarted);
     }
     pendingNoteOnCount_ = 0;
+    releasePendingNoteOffs();
+}
 
+void Performer::releasePendingNoteOffs() noexcept
+{
     // Resolve a zero-duration Note On/Off at one sample in the same direction
     // regardless of insertion order. The On must establish ownership before
     // the Off can release it.
@@ -804,10 +871,12 @@ bool Performer::handleEvent(int eventSample, const std::uint8_t* data,
     {
         // A keyswitch is a controller: it acts
         // at once, ahead of its sample's Note Ons, on every channel, and
-        // its key-up is nothing.
-        if (positiveNoteOn)
+        // its key-up is nothing but the chuck's end.
+        const int note = static_cast<int>(data[1] & 0x7fu);
+        if (note == keyswitchChuck)
+            chuck_ = positiveNoteOn;
+        else if (positiveNoteOn)
         {
-            const int note = static_cast<int>(data[1] & 0x7fu);
             if (note == keyswitchSustain)
                 setKeyswitchSustain(!keyswitchSustain_);
             else

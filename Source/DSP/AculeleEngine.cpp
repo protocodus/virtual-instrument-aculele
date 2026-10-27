@@ -866,9 +866,20 @@ WoodFactors woodFactorsFor(BodyMaterial material) noexcept
 // ukulele hears its modes through the measured observation alone (the 0.7
 // original share).
 constexpr bool studioSpatialObservation = false;
-// The bridge bank's level before the Shape morph's own 1/A_p: Acustra brings
-// the flamenca's bridge to a steel-string top's (steelTopMobilityRatio).
-constexpr float ukuleleTopMobilityRatio = detail::steelTopMobilityRatio;
+// The bridge bank's level before the Shape morph's own 1/A_p. Acustra brings
+// the flamenca's bridge to a steel-string top's (steelTopMobilityRatio,
+// 0.274), which left a ukulele's bridge about half as mobile as the one
+// ukulele measured: Elie, Gautier, David and Curtit, Forum Acusticum 2011,
+// Fig. 5, read 0.009 s/kg characteristic mobility, 1-6 kHz, with its usual
+// rosewood bridge, at the base of the lowest string. On the paper's guitars
+// that is the bass-side edge, the G string's place on a ukulele, so this
+// pins the reading to Concert Mahogany's G string, its normal port's mean
+// conductance over 1-6 kHz; read at the C string, the lowest in pitch, the
+// ratio would be 0.982. Aculele.BridgeMobility
+// (Tools/AculeleBridgeMobility.cpp) checks it. The equal-thickness plate law
+// keeps the other bodies within about 10% of it, and Wood scales it by the
+// top's density and stiffness (woodFactorsFor).
+constexpr float ukuleleTopMobilityRatio = 0.485f;
 constexpr bool ukuleleAirModeBoost = false;
 // Acustra's capture contour (CaptureVoicingData.h) corrects its close
 // microphones toward steel-string recordings in fixed hertz: -6 dB at 250

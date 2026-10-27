@@ -72,6 +72,9 @@ if(ACULELE_BUILD_TOOLS)
 
     add_executable(AculeleBodyModes Tools/AculeleBodyModes.cpp)
     target_link_libraries(AculeleBodyModes PRIVATE AculeleDSP)
+
+    add_executable(AculeleBridgeMobility Tools/AculeleBridgeMobility.cpp)
+    target_link_libraries(AculeleBridgeMobility PRIVATE AculeleDSP)
 endif()
 
 if(BUILD_TESTING)
@@ -127,6 +130,8 @@ if(BUILD_TESTING)
         add_test(NAME Aculele.AudioDemos
                  COMMAND RenderAculelePresetDemos --jobs 4 --check "${CMAKE_CURRENT_SOURCE_DIR}/Docs/audio/midi")
         set_tests_properties(Aculele.AudioDemos PROPERTIES LABELS audio TIMEOUT 600)
+        # The bridge's level against the one measured ukulele (Elie et al. 2011).
+        add_test(NAME Aculele.BridgeMobility COMMAND AculeleBridgeMobility --check)
         if(CMAKE_BUILD_TYPE STREQUAL "Release" AND NOT ACULELE_ENABLE_SANITIZERS)
             add_test(NAME Aculele.CpuBudget
                      COMMAND RenderAculelePresetDemos --cpu --json "${CMAKE_BINARY_DIR}/cpu.json"

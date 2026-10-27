@@ -7927,6 +7927,7 @@ void AculeleEngine::returnToOpenString(Voice& voice, int stringIndex,
 {
     releaseHeldShapeOwner(stringIndex);
     voice.heldShapeOwners = 0u;
+    voice.chordFill = false;
     if (voice.keyDown || voice.pedalHeld)
         releaseFinger(stringIndex);
     voice.played = false;
@@ -8714,18 +8715,42 @@ void AculeleEngine::advanceReleaseFall(Voice& voice) noexcept
             3.0f, static_cast<float>(activeDelaySamples() - 3));
 }
 
-void AculeleEngine::releaseHeldShapeOwner(int string) noexcept
+// The key on string no longer holds a swept shape: it came up, or its string
+// was taken. A chord fill it was the last key to hold is let go with it, as
+// releaseKey lets that key go.
+void AculeleEngine::releaseHeldShapeOwner(int string, bool sustainGiven,
+                                          bool sustained, float releaseVelocity,
+                                          bool immediateRelease) noexcept
 {
-    const unsigned keep = ~(1u << string);
-    for (auto& voice : voices_)
-        voice.heldShapeOwners &= keep;
+    const unsigned owner = 1u << string;
+    for (int index = 0; index < stringCount; ++index)
+    {
+        auto& voice = voices_[static_cast<std::size_t>(index)];
+        if ((voice.heldShapeOwners & owner) == 0u)
+            continue;
+        voice.heldShapeOwners &= ~owner;
+        if (voice.chordFill && voice.keyDown && voice.heldShapeOwners == 0u)
+        {
+            voice.releaseVelocity = releaseVelocity;
+            letGoOfKey(voice, index, sustainGiven ? sustained : sustainIsDown(voice),
+                       immediateRelease);
+        }
+    }
 }
 
+// A new shape on the channel replaces the hand's former one: its muted
+// strings lose their owners and its chord fill is let go.
 void AculeleEngine::clearHeldShapeMute(int midiChannel) noexcept
 {
-    for (auto& voice : voices_)
-        if (voice.heldShapeOwners != 0u && channelControlsVoice(midiChannel, voice))
-            voice.heldShapeOwners = 0u;
+    for (int index = 0; index < stringCount; ++index)
+    {
+        auto& voice = voices_[static_cast<std::size_t>(index)];
+        if (voice.heldShapeOwners == 0u || !channelControlsVoice(midiChannel, voice))
+            continue;
+        voice.heldShapeOwners = 0u;
+        if (voice.chordFill && voice.keyDown)
+            letGoOfKey(voice, index, sustainIsDown(voice), false);
+    }
 }
 
 // A finger lying on a string is a dashpot on it. GuitarSet's comping shows
@@ -9692,7 +9717,7 @@ void AculeleEngine::noteOn(int midiNote, float velocity, int midiChannel,
             return;
         }
         if (voice.played && voice.midiNote == midiNote
-            && voice.midiChannel == midiChannel && voice.keyDown)
+            && voice.midiChannel == midiChannel && voice.keyDown && !voice.chordFill)
         {
             ++voice.ownerCount;
             voice.startOrder = ++noteOrder_;
@@ -10010,6 +10035,7 @@ void AculeleEngine::startNote(int string, int harmonic, int midiNote,
         voice.noteDetuneCents = 0.0f;
     clearReleaseFall(voice);
     voice.mutedStroke = false;
+    voice.chordFill = false;
     configureVoice(voice, string, midiNote, !continuing);
     voice.onsetSample = sampleClock_;
     rememberFinger(string);
@@ -10181,8 +10207,8 @@ void AculeleEngine::planChord(const int* midiNotes, int count,
         for (int string = 0; string < stringCount; ++string)
         {
             const auto& voice = voices_[static_cast<std::size_t>(string)];
-            if (voice.played && voice.keyDown && voice.midiNote == midiNote
-                && voice.midiChannel == midiChannel)
+            if (voice.played && voice.keyDown && !voice.chordFill
+                && voice.midiNote == midiNote && voice.midiChannel == midiChannel)
             {
                 // noteOn re-plucks a held key where it is.
                 note.current = string;
@@ -10267,7 +10293,7 @@ int AculeleEngine::reshapeFormingChord(int midiNote, int midiChannel,
     {
         const auto& voice = voices_[static_cast<std::size_t>(string)];
         if (!voice.played || (!voice.keyDown && !voice.releaseAfterPluck)
-            || voice.harmonic != 1
+            || voice.harmonic != 1 || voice.chordFill
             || voice.mpeMember
             || voice.midiChannel != midiChannel
             || voice.onsetSample
@@ -10407,8 +10433,8 @@ int AculeleEngine::heldString(int midiNote, int midiChannel) const noexcept
     for (int string = 0; string < stringCount; ++string)
     {
         const auto& voice = voices_[static_cast<std::size_t>(string)];
-        if (voice.played && voice.keyDown && voice.midiNote == midiNote
-            && voice.midiChannel == midiChannel
+        if (voice.played && voice.keyDown && !voice.chordFill
+            && voice.midiNote == midiNote && voice.midiChannel == midiChannel
             && (found < 0 || voice.startOrder
                 > voices_[static_cast<std::size_t>(found)].startOrder))
             found = string;
@@ -10676,6 +10702,7 @@ void AculeleEngine::muteStroke(int string, int delaySamples, float velocity,
     voice.pedalReleasedBeforePluck = false;
     voice.releaseVelocity = -1.0f;
     voice.mutedStroke = true;
+    voice.chordFill = false;
     voice.heldShapeOwners = liveOwners;
     beginMutedStroke(voice);
     // The pick reaches it at its place in the stroke, at the stroke's own
@@ -10690,6 +10717,84 @@ void AculeleEngine::muteStroke(int string, int delaySamples, float velocity,
         return;
     }
     firePluck(voice, string);
+}
+
+int AculeleEngine::chordFillNote(int string, int midiChannel) const noexcept
+{
+    if (!prepared_ || !performanceRealism_.chordFill
+        || string < 0 || string >= stringCount
+        || plannedSample_ != sampleClock_ || plannedChannel_ != midiChannel
+        || plannedCount_ != stringCount - 1)
+        return -1;
+    const auto& voice = voices_[static_cast<std::size_t>(string)];
+    if (voice.keyDown || voice.pedalHeld || voice.pluckDelay != 0 || voice.repluckPending)
+        return -1;
+    StringFrets frets {};
+    frets.fill(-1);
+    unsigned pitchClasses = 0u;
+    for (int index = 0; index < plannedCount_; ++index)
+    {
+        const auto slot = static_cast<std::size_t>(index);
+        const int planned = plannedStrings_[slot];
+        if (plannedNotes_[slot] < 0 || planned == string)
+            return -1;
+        frets[static_cast<std::size_t>(planned)] = plannedNotes_[slot]
+            - voices_[static_cast<std::size_t>(planned)].openMidi;
+        pitchClasses |= 1u << (plannedNotes_[slot] % 12);
+    }
+    const auto weights = handWeights();
+    int best = -1;
+    float bestCost = impossibleShapeCost;
+    for (int fret = 0; fret <= fretCount; ++fret)
+    {
+        if (((pitchClasses >> ((voice.openMidi + fret) % 12)) & 1u) == 0u)
+            continue;
+        frets[static_cast<std::size_t>(string)] = fret;
+        const float cost = shapeCost(frets, 0u, weights);
+        if (cost < bestCost - 1.0e-4f)
+        {
+            bestCost = cost;
+            best = voice.openMidi + fret;
+        }
+    }
+    return best;
+}
+
+void AculeleEngine::fillStroke(int string, int midiNote, int delaySamples,
+                               float velocity, int midiChannel,
+                               unsigned heldShapeOwners) noexcept
+{
+    if (!prepared_ || !performanceRealism_.chordFill
+        || string < 0 || string >= stringCount
+        || midiChannel < 1 || midiChannel > midiChannelCount
+        || !exact::isfinite(velocity) || velocity <= 0.0f)
+        return;
+    auto& voice = voices_[static_cast<std::size_t>(string)];
+    const int fret = midiNote - voice.openMidi;
+    if (fret < 0 || fret > fretCount
+        || voice.keyDown || voice.pedalHeld || voice.pluckDelay != 0 || voice.repluckPending)
+        return;
+    // Only keys that are down now hold the shape; with none, nothing frets
+    // the fill and the stroke passes the string as the chord left it.
+    unsigned liveOwners = 0u;
+    for (int owner = 0; owner < stringCount; ++owner)
+    {
+        const auto& member = voices_[static_cast<std::size_t>(owner)];
+        if ((heldShapeOwners & (1u << owner)) != 0u && member.played
+            && member.keyDown && !member.chordFill && member.ownerCount > 0
+            && member.midiChannel == midiChannel)
+            liveOwners |= 1u << owner;
+    }
+    if (liveOwners == 0u)
+        return;
+    // Timed as noteOn times a strum member: the stroke's own speed draw.
+    const int delay = std::max(0, static_cast<int>(std::round(static_cast<float>(
+        std::clamp(delaySamples, 0, static_cast<int>(10.0 * sampleRate_)))
+        * strumSpeedScale_)));
+    startNote(string, 1, midiNote, velocity, midiChannel, delay, true, nullptr, 1.0f);
+    voice.ownerCount = 0;
+    voice.chordFill = true;
+    voice.heldShapeOwners = liveOwners;
 }
 
 void AculeleEngine::noteOff(int midiNote, int midiChannel) noexcept
@@ -10744,8 +10849,8 @@ void AculeleEngine::releaseKey(int midiNote, int midiChannel,
     for (int string = 0; string < stringCount; ++string)
     {
         auto& voice = voices_[static_cast<std::size_t>(string)];
-        if (voice.played && voice.keyDown && voice.midiNote == midiNote
-            && voice.midiChannel == midiChannel
+        if (voice.played && voice.keyDown && !voice.chordFill
+            && voice.midiNote == midiNote && voice.midiChannel == midiChannel
             && (candidateIndex < 0 || voice.startOrder
                 > voices_[static_cast<std::size_t>(candidateIndex)].startOrder))
             candidateIndex = string;
@@ -10756,11 +10861,20 @@ void AculeleEngine::releaseKey(int midiNote, int midiChannel,
     if (--candidate.ownerCount > 0)
         return;
     candidate.ownerCount = 0;
-    releaseHeldShapeOwner(candidateIndex);
-    freezeMemberPitchBend(candidate);
-    candidate.releaseVelocity = exact::isfinite(releaseVelocity)
+    const float keyUpVelocity = exact::isfinite(releaseVelocity)
         ? std::min(releaseVelocity, 1.0f) : -1.0f;
-    if (candidate.pluckDelay > 0 && candidate.strumming)
+    releaseHeldShapeOwner(candidateIndex, sustainGiven, sustained, keyUpVelocity,
+                          immediateRelease);
+    freezeMemberPitchBend(candidate);
+    candidate.releaseVelocity = keyUpVelocity;
+    letGoOfKey(candidate, candidateIndex,
+               sustainGiven ? sustained : sustainIsDown(candidate), immediateRelease);
+}
+
+void AculeleEngine::letGoOfKey(Voice& voice, int stringIndex, bool pedalHeld,
+                               bool immediateRelease) noexcept
+{
+    if (voice.pluckDelay > 0 && voice.strumming)
     {
         // A strum's key-up that comes before the pick reaches this string
         // does not stop the pick: the stroke was played as one gesture, and
@@ -10768,20 +10882,18 @@ void AculeleEngine::releaseKey(int midiNote, int midiChannel,
         // string stays fretted until the pick arrives and is let go then,
         // under the pedal as it was at this key-up (setSustainPedal keeps
         // that current). An explicit, non-strum delay is still cancelled.
-        candidate.releaseAfterPluck = true;
-        candidate.pedalReleasedBeforePluck = immediateRelease;
-        candidate.pedalHeldAtKeyUp = sustainGiven ? sustained
-                                                  : sustainIsDown(candidate);
-        if (candidate.pedalHeldAtKeyUp)
-            candidate.releaseVelocity = -1.0f;
-        candidate.keyDown = false;
-        candidate.pedalHeld = candidate.pedalHeldAtKeyUp;
+        voice.releaseAfterPluck = true;
+        voice.pedalReleasedBeforePluck = immediateRelease;
+        voice.pedalHeldAtKeyUp = pedalHeld;
+        if (voice.pedalHeldAtKeyUp)
+            voice.releaseVelocity = -1.0f;
+        voice.keyDown = false;
+        voice.pedalHeld = voice.pedalHeldAtKeyUp;
         return;
     }
-    candidate.pluckDelay = 0;
-    candidate.repluckPending = false;
-    completeKeyUp(candidate, candidateIndex,
-                  sustainGiven ? sustained : sustainIsDown(candidate), immediateRelease);
+    voice.pluckDelay = 0;
+    voice.repluckPending = false;
+    completeKeyUp(voice, stringIndex, pedalHeld, immediateRelease);
 }
 
 void AculeleEngine::completeKeyUp(Voice& voice, int stringIndex,
@@ -10895,8 +11007,13 @@ void AculeleEngine::setMpePressure(float value, int midiChannel) noexcept
 void AculeleEngine::setStringPerChannelMode(bool enabled) noexcept
 {
     if (enabled != stringPerChannelMode_)
-        for (auto& voice : voices_)
+        for (int index = 0; index < stringCount; ++index)
+        {
+            auto& voice = voices_[static_cast<std::size_t>(index)];
             voice.heldShapeOwners = 0u;
+            if (voice.chordFill && voice.keyDown)
+                letGoOfKey(voice, index, sustainIsDown(voice), false);
+        }
     stringPerChannelMode_ = enabled;
 }
 

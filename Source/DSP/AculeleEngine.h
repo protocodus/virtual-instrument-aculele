@@ -337,6 +337,22 @@ public:
     // standalone dead stroke transient; the pedal never owns a hand shape.
     void muteStroke(int string, int delaySamples, float velocity,
                     int midiChannel = 1, unsigned heldShapeOwners = 0u) noexcept;
+    // A strum sweeps all four strings of a ukulele, and a chord of three
+    // notes on one channel leaves one of them free: the note a fretting hand
+    // holding the planned shape gives that string, or -1. It is the chord
+    // tone the hand reaches there most cheaply (shapeCost), at the lowest
+    // such fret, so C4 E4 G4 is fretted 0003 and C4 E4 A4 2000. -1 when the
+    // plan is not this sample's three-note plan on this channel, or a key,
+    // the pedal or a pluck of its own still holds the string. Read after
+    // planChord and before the noteOns consume the plan.
+    [[nodiscard]] int chordFillNote(int string, int midiChannel = 1) const noexcept;
+    // Sounds chordFillNote's note on its string as part of the stroke, at
+    // its place in it (delaySamples, as muteStroke's) after the chord's
+    // noteOns. No key owns it: the hand fretting the shape holds it until
+    // the last of heldShapeOwners' keys comes up, and it is let go as that
+    // key is, under the pedal as it was then.
+    void fillStroke(int string, int midiNote, int delaySamples, float velocity,
+                    int midiChannel = 1, unsigned heldShapeOwners = 0u) noexcept;
     // Whether noteOn() would sound this note at all in the current tuning
     // and channel mode, rather than drop it (outside the tuning's fretted
     // range, or off a string-per-channel string's frets).
@@ -1497,6 +1513,10 @@ private:
         // its pluck is damped from the moment it is released. A note on the
         // string or its return to the open string clears it.
         bool mutedStroke { false };
+        // A strum's chord tone on a string the chord left free (fillStroke):
+        // fretted while its shape is held, but no key owns it, so no Note
+        // Off, re-press or display lookup of its pitch finds it.
+        bool chordFill { false };
         // Original physical-key lifetimes of the complete swept shape. Bits
         // are removed at ownership changes, never rejoined by later notes.
         unsigned heldShapeOwners { 0u };
@@ -1815,8 +1835,12 @@ private:
     void advanceReleaseFall(Voice& voice) noexcept;
     void clearReleaseFall(Voice& voice) noexcept;
     void beginMutedStroke(Voice& voice) noexcept;
-    void releaseHeldShapeOwner(int string) noexcept;
+    void releaseHeldShapeOwner(int string, bool sustainGiven = false,
+                               bool sustained = false, float releaseVelocity = -1.0f,
+                               bool immediateRelease = false) noexcept;
     void clearHeldShapeMute(int midiChannel) noexcept;
+    void letGoOfKey(Voice& voice, int stringIndex, bool pedalHeld,
+                    bool immediateRelease) noexcept;
     [[nodiscard]] float strumEdgeGain(int string) const noexcept;
     void beginGestureDamping(Voice& voice) noexcept;
     void updateReleaseJoinWindow(Voice& voice) noexcept;

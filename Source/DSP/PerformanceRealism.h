@@ -87,6 +87,10 @@ struct PerformanceRealism
     // including while strings are held and after release. A bounded authored
     // posture, not string palm muting or a MIDI note-off envelope.
     bool playerBodyLoading { true };
+    // A one-channel strum of three notes frets a chord tone on the string
+    // they leave free, as a ukulele chord sounds all four
+    // (AculeleEngine::chordFillNote, fillStroke).
+    bool chordFill { true };
 };
 
 } // namespace aculele

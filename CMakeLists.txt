@@ -88,6 +88,10 @@ if(BUILD_TESTING)
     target_link_libraries(AculeleTuningTests PRIVATE AculeleDSP)
     add_test(NAME Aculele.Tuning COMMAND AculeleTuningTests)
 
+    add_executable(AculeleChordFillTests Tests/ChordFillTests.cpp)
+    target_link_libraries(AculeleChordFillTests PRIVATE AculeleDSP)
+    add_test(NAME Aculele.ChordFill COMMAND AculeleChordFillTests)
+
     # U4 input fuzzing (Tests/DspFuzz.cpp). The replay build runs on every
     # platform: committed reproducers in Tests/Fixtures/fuzz, then seeded
     # random inputs. The libFuzzer build compiles the DSP with coverage, so it

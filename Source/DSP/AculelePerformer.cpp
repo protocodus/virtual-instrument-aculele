@@ -510,6 +510,12 @@ void Performer::flushNoteGroup() noexcept
     std::array<int, AculeleEngine::stringCount> mutedDelay {};
     mutedDelay.fill(-1);
     unsigned mutedOwners = 0u;
+    // The string a one-channel chord of three leaves free in a swept stroke:
+    // the chord tone the fretting hand gives it, and its place in the stroke.
+    std::array<int, AculeleEngine::stringCount> fillNotes {};
+    fillNotes.fill(-1);
+    std::array<int, AculeleEngine::stringCount> fillDelay {};
+    unsigned chordOwners = 0u;
     float strokeVelocity = 0.0f;
     if (strum)
     {
@@ -586,6 +592,23 @@ void Performer::flushNoteGroup() noexcept
             if (strokeMode_ != StrokeMode::Automatic)
                 nextUpstroke_ = strokeMode_ == StrokeMode::Up;
             lastStrokeSample_ = strokeSample;
+            // A ukulele strum sounds all four strings, so the stroke reaches
+            // the free one too, fretted as the hand holding the shape would
+            // (AculeleEngine::chordFillNote).
+            if (completePlan && oneChannel && !stringChannels
+                && chordStrings == AculeleEngine::stringCount - 1)
+                for (int string = 0; string < AculeleEngine::stringCount; ++string)
+                {
+                    const auto slot = static_cast<std::size_t>(string);
+                    if (onString[slot])
+                        chordOwners |= 1u << string;
+                    else if ((fillNotes[slot] = engine_.chordFillNote(
+                                  string, pendingNoteOns_[0].channel)) >= 0)
+                    {
+                        firstString = std::min(firstString, string);
+                        lastString = std::max(lastString, string);
+                    }
+                }
             // A complete fretted shape gives the physical string indices. A
             // larger group or a controller-owned layout has no complete plan:
             // keep its existing note-by-note behaviour.
@@ -614,12 +637,19 @@ void Performer::flushNoteGroup() noexcept
                     : engine_.strumDelaySamples(rank, meanVelocity, sounding - 1);
                 strokeSpan = std::max(strokeSpan, note.pluckDelay);
             }
+            for (int string = 0; string < AculeleEngine::stringCount; ++string)
+                if (fillNotes[static_cast<std::size_t>(string)] >= 0)
+                {
+                    fillDelay[static_cast<std::size_t>(string)] = curvedStrumDelay(
+                        string, firstString, lastString, nextUpstroke_, plannedSpan);
+                    strokeSpan = std::max(strokeSpan, fillDelay[static_cast<std::size_t>(string)]);
+                }
             if (completePlan && engine_.performanceRealism().mutedStrings)
             {
                 for (int string = firstString; string <= lastString; ++string)
                     if (onString[static_cast<std::size_t>(string)])
                         mutedOwners |= 1u << string;
-                    else
+                    else if (fillNotes[static_cast<std::size_t>(string)] < 0)
                         mutedDelay[static_cast<std::size_t>(string)] = curvedStrumDelay(
                             string, firstString, lastString, nextUpstroke_, plannedSpan);
             }
@@ -653,7 +683,7 @@ void Performer::flushNoteGroup() noexcept
                     for (int string = firstString; string <= lastString; ++string)
                     {
                         const auto slot = static_cast<std::size_t>(string);
-                        if (!onString[slot] && mutedDelay[slot] < 0)
+                        if (!onString[slot] && mutedDelay[slot] < 0 && fillNotes[slot] < 0)
                             continue;
                         place[slot] = static_cast<float>(curvedStrumDelay(
                                           string, firstString, lastString,
@@ -676,6 +706,9 @@ void Performer::flushNoteGroup() noexcept
                     for (int string = firstString + 1; string < lastString; ++string)
                         if (mutedDelay[static_cast<std::size_t>(string)] >= 0)
                             mutedDelay[static_cast<std::size_t>(string)] = scattered(string);
+                    for (int string = 0; string < AculeleEngine::stringCount; ++string)
+                        if (fillNotes[static_cast<std::size_t>(string)] >= 0)
+                            fillDelay[static_cast<std::size_t>(string)] = scattered(string);
                 }
             }
             lastStrokeUpstroke_ = nextUpstroke_;
@@ -709,6 +742,10 @@ void Performer::flushNoteGroup() noexcept
         if (mutedDelay[static_cast<std::size_t>(string)] >= 0)
             engine_.muteStroke(string, mutedDelay[static_cast<std::size_t>(string)],
                                strokeVelocity, pendingNoteOns_[0].channel, mutedOwners);
+        else if (fillNotes[static_cast<std::size_t>(string)] >= 0)
+            engine_.fillStroke(string, fillNotes[static_cast<std::size_t>(string)],
+                               fillDelay[static_cast<std::size_t>(string)],
+                               strokeVelocity, pendingNoteOns_[0].channel, chordOwners);
     // A connected transition is the fretting hand's, not a stroke.
     if (pickedStroke && plucked)
     {

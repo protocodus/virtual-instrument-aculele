@@ -9,6 +9,7 @@
 #include "MeasuredJointBodyData.h"
 #include "SteelBodyBlend.h"
 #include "ConstructionLoudnessData.h"
+#include "LevelMatchData.h"
 #include "CaptureVoicingData.h"
 #include "MicrophoneBalanceData.h"
 #include "StudioCaptureData.h"
@@ -1322,6 +1323,17 @@ std::size_t constructionLoudnessCell(const EngineParameters&) noexcept
 }
 static_assert(detail::constructionMicReference.size() == 4 * 3 * 3);
 
+// Aculele's own level match on top of that physical level: every shape, wood
+// and Picking on each Capture reads the same on Reason's channel meter
+// (LevelMatchData.h, written by Tools/AculeleLevels.cpp).
+std::size_t levelCell(const EngineParameters& parameters) noexcept
+{
+    return (static_cast<std::size_t>(parameters.shape) * 3
+            + static_cast<std::size_t>(parameters.bodyMaterial)) * 4
+        + static_cast<std::size_t>(parameters.picking);
+}
+static_assert(detail::stereoMicLevel.size() == 3 * 3 * 4);
+
 // A float follower otherwise stops one rounding cell short of its target;
 // the cell depends on its approach direction. Every settled control and
 // construction reference must recover the same exact final value.
@@ -1346,7 +1358,8 @@ float originalOutputReferenceFor(const EngineParameters& parameters) noexcept
 float outputReferenceFor(const EngineParameters& parameters) noexcept
 {
     return originalOutputReferenceFor(parameters)
-        * detail::studioStereoLevelMatch[constructionLoudnessCell(parameters)];
+        * detail::studioStereoLevelMatch[constructionLoudnessCell(parameters)]
+        * detail::stereoMicLevel[levelCell(parameters)];
 }
 
 float monoReferenceFor(const EngineParameters& parameters) noexcept
@@ -1354,14 +1367,17 @@ float monoReferenceFor(const EngineParameters& parameters) noexcept
     return originalOutputReferenceFor(parameters)
         * detail::constructionMonoTrim[constructionLoudnessCell(parameters)]
         * detail::studioMonoLevelMatch[constructionLoudnessCell(parameters)]
-        * detail::originalMonoLevelGain;
+        * detail::originalMonoLevelGain
+        * detail::monoMicLevel[levelCell(parameters)];
 }
 
 float piezoReferenceFor(const EngineParameters& parameters) noexcept
 {
-    // Identical product and evaluation order to the pre-blend piezo path.
+    // Identical product and evaluation order to the pre-blend piezo path,
+    // then the level match; both scale the circuit's output, not its drive.
     return originalOutputReferenceFor(parameters)
-        * detail::constructionPiezoTrim[constructionLoudnessCell(parameters)];
+        * detail::constructionPiezoTrim[constructionLoudnessCell(parameters)]
+        * detail::piezoLevel[levelCell(parameters)];
 }
 
 // A plate mode's bridge residues on a top of plateFrequency (1/A_p) times the
@@ -4319,6 +4335,8 @@ void AculeleEngine::prepare(double sampleRate, int)
     if (!exact::isfinite(sampleRate) || sampleRate <= 0.0)
         sampleRate = 48000.0;
     sampleRate_ = std::clamp(sampleRate, 8000.0, maximumSupportedSampleRate);
+    mainOutput_.Prepare(sampleRate_, protocodus::kVuGuard);
+    piezoOutput_.Prepare(sampleRate_, protocodus::kVuGuard);
 #if ACULELE_EXTENDED_SAMPLE_RATES
     const auto active = static_cast<std::size_t>(delayCapacityForRate(sampleRate_));
     pickReleaseDisplacement_.prepareSize(active);
@@ -4544,6 +4562,8 @@ void AculeleEngine::resetSoundState() noexcept
     micDelayRight_.fill(0.0f);
     micDelayMono_.fill(0.0f);
     micDelayIndex_ = 0;
+    mainOutput_.Reset();
+    piezoOutput_.Reset();
     room_.reset();
     for (auto& voice : voices_)
     {
@@ -12837,6 +12857,14 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
     if (!prepared_ || left == nullptr || right == nullptr || numSamples <= 0)
         return;
     float* const piezo = buses.piezo;
+    // A Piezo output that was not rendered starts again from silence.
+    if (piezo == nullptr)
+        piezoOutputRunning_ = false;
+    else if (!piezoOutputRunning_)
+    {
+        piezoOutput_.Reset();
+        piezoOutputRunning_ = true;
+    }
     if (suspended_)
     {
         // The control-rate half of the loop below, without its audio. With
@@ -13362,12 +13390,13 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
         {
             // The separate Piezo output observes before Capture chooses, at
             // the level the mono route below gives it and through its own
-            // copy of the safety limiter; nothing reads it back, so Main is
+            // output stage and safety limiter; nothing reads it back, so Main is
             // untouched by wanting it. Written as the mono route's product:
             // with only the piezo selected that route adds exact zeros to
             // this, so the two agree.
-            const float piezoOut = safetyLimit(
-                radiationReferenceGain * outputGain_ * loadedPiezo);
+            std::array<float, 1> piezoFrame { radiationReferenceGain * outputGain_ * loadedPiezo };
+            piezoOutput_.Process(piezoFrame);
+            const float piezoOut = safetyLimit(piezoFrame[0]);
             piezo[sample] = exact::isfinite(piezoOut) ? piezoOut : 0.0f;
         }
         // The microphones wait out the piezo's pipeline (renderPiezo), so a
@@ -13452,25 +13481,41 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
                 outputRight = captureMix_[0] * outputRight + mono;
             }
         }
-        // Piezo Mix: the piezo, at the level Capture Piezo gives it, under
-        // whichever microphones Capture selects, on both sides. It fades out
-        // as Capture moves onto the piezo itself, which is then all of Main.
+        // Piezo Mix: the piezo, at the level Capture Piezo gives it, blended
+        // with whichever microphones Capture selects, on both sides, by an
+        // equal-power crossfade to an even blend at 1. Laid at its full level
+        // over the microphones, as it was, it added 1.5 to 5.7 dB to the
+        // factory presets' typical playing. It fades out as Capture moves
+        // onto the piezo itself, which is then all of Main.
         if (piezoMix_ != 0.0f)
         {
-            float blended = piezoMix_ * (1.0f - captureMix_[6])
+            if (piezoMix_ != piezoBlendFor_)
+            {
+                piezoBlendFor_ = piezoMix_;
+                const float angle = 0.78539816f * piezoMix_;
+                micBlendGain_ = std::cos(angle);
+                piezoBlendGain_ = std::sin(angle);
+            }
+            const float micShare = 1.0f - captureMix_[6];
+            const float micGain = 1.0f - micShare * (1.0f - micBlendGain_);
+            float blended = piezoBlendGain_ * micShare
                 * radiationReferenceGain * outputGain_ * loadedPiezo;
             // Keep the established normal path exact; fade the pickup's
             // sign through zero when switched while notes are ringing.
             if (piezoBlendPolarity_ != 1.0f)
                 blended *= piezoBlendPolarity_;
-            outputLeft += blended;
-            outputRight += blended;
+            outputLeft = micGain * outputLeft + blended;
+            outputRight = micGain * outputRight + blended;
         }
 
-        // Preserve ordinary notes exactly; only the final 1 dB of headroom is
-        // compressed for pathological automation and dense repicks.
-        outputLeft = safetyLimit(outputLeft);
-        outputRight = safetyLimit(outputRight);
+        // The output stage holds the hardest chords under -2.5 VU and every
+        // sample under -1.5 dBFS and passes typical playing exactly, so the
+        // safety limiter after it, linear through -1 dBFS, never acts on its
+        // output.
+        std::array<float, 2> frame { outputLeft, outputRight };
+        mainOutput_.Process(frame);
+        outputLeft = safetyLimit(frame[0]);
+        outputRight = safetyLimit(frame[1]);
         left[sample] = exact::isfinite(outputLeft) ? outputLeft : 0.0f;
         right[sample] = exact::isfinite(outputRight) ? outputRight : 0.0f;
         processIdleFlush(std::max(idlePeak, roomPeak));

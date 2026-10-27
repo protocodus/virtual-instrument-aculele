@@ -9,6 +9,7 @@
 #pragma once
 
 #include "FittedPhysicalData.h"
+#include "OutputStage.h"
 #include "PerformanceRealism.h"
 
 #include <array>
@@ -145,9 +146,10 @@ struct EngineParameters
     // Scales the stereo microphones' difference: 0 mono, 1 as measured.
     float stereoWidth { 0.62f };
     float outputGain { 0.42f };      // linear
-    // The piezo mixed into Main under a microphone Capture, 0 none to 1 the
-    // piezo at its full level (as Capture Piezo plays it) beside the
-    // microphones. With Capture on Piezo the piezo is already all of Main,
+    // The piezo blended into Main with a microphone Capture, 0 none to 1 an
+    // even blend: an equal-power crossfade between the microphones and the
+    // piezo at the level Capture Piezo plays it, so typical playing keeps
+    // its level. With Capture on Piezo the piezo is already all of Main,
     // so it adds nothing there.
     float piezoMix { 0.0f };
     // Reverse only the piezo blended beneath microphone Capture. The
@@ -193,14 +195,18 @@ public:
     void prepare(double sampleRate, int maximumBlockSize);
     // The rate prepare() settled on, which every time constant follows.
     [[nodiscard]] double sampleRate() const noexcept { return sampleRate_; }
-    // Main and the Piezo output are this many samples later than the
-    // strings, at every rate and for every Capture: the piezo chain's
-    // pipeline (renderPiezo), which the microphones wait out so the two
-    // sensors blend on one time base. A front end reports it to the host.
+    // The piezo chain's pipeline (renderPiezo), which the microphones wait
+    // out so the two sensors blend on one time base, at every rate and for
+    // every Capture.
     static constexpr int outputLatency = 7;
-    [[nodiscard]] static constexpr int outputLatencySamples() noexcept
+    // Main and the Piezo output are this many samples later than the
+    // strings: the pipeline, then the output stage's look-ahead
+    // (protocodus::OutputStage::DelayFor, a multiple of 4 samples, so a host
+    // rate run at 2x or 4x keeps a whole number of host samples of it). A
+    // front end reports it to the host.
+    [[nodiscard]] int outputLatencySamples() const noexcept
     {
-        return outputLatency;
+        return outputLatency + mainOutput_.DelaySamples();
     }
     // The slots after a bank (and the steel blend's parts) that continue its
     // radiation above the fitted band (configureBody). Every construction at
@@ -2167,7 +2173,19 @@ private:
     float bodyAmount_ { 0.82f };
     float width_ { 0.62f };
     float outputGain_ { 0.42f };
+    // Main's and the Piezo output's shared output stages: the VU guard,
+    // which holds the hardest chords out of the red of Reason's meter, then
+    // a limiter holding -1.5 dBFS, under the safety limiter's knee so a
+    // limited signal never reaches it. The Piezo output's runs only while
+    // that bus is rendered.
+    protocodus::OutputStage<2> mainOutput_;
+    protocodus::OutputStage<1> piezoOutput_;
+    bool piezoOutputRunning_ { false };
     float piezoMix_ { 0.0f };
+    // The crossfade's gains for piezoBlendFor_, a function of it alone.
+    float piezoBlendFor_ { 0.0f };
+    float micBlendGain_ { 1.0f };
+    float piezoBlendGain_ { 0.0f };
     float piezoBlendPolarity_ { 1.0f };
     // A small room's sound at the microphones (EngineParameters::room): its
     // early reflections from a tapped line and its late field from an

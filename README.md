@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.4.0 — 2026-10-27 — Calibrated to Reason's meter, behind the shared output stage
+
+Typical playing, single notes across the neck and chords at velocity 70 to 110, now reads -9 VU on Reason's channel meter on every preset, and every body, wood, Picking and Capture reads within 1.5 dB of it, so switching one no longer jumps the level; before, they spread over about 10 dB and Pick was 3 to 4 dB hotter. Piezo Mix now crossfades from the microphones to an even blend with the piezo, instead of laying the piezo over them at full level: turning it up moves the level by -1.6 to +2.7 dB instead of adding 1.5 to 5.7. Main and the Piezo output end in the portfolio's shared output stage, a guard compressor that acts only above -4 VU and a 2 ms look-ahead limiter at -1.5 dBFS: velocity-127 chords on any Picking read -2.5 VU or lower, out of the red, and typical playing passes untouched. Main and the Piezo output are 2 ms later (96 samples at 48 kHz), which a front end reports as latency.
+
 ### 0.3.1 — 2026-10-27 — Headroom for hard playing
 
 Played hard, every preset drove its output into the -1 dBFS safety limiter, which is heard as overdrive: four-note chords at velocity 127 peaked at +2.4 to +4.9 dBFS before it, Tenor Picked Melody's at +3.9. The presets' Output levels now bring those chords, struck in eighths, to -3 dBFS, and the same chords as a sixteenth-note tremolo stay under the limiter. The presets are 5.4 to 7.9 dB quieter than before: a strum at velocity 100 plays at -19 to -23 LUFS, and the demos at -23 to -26 LUFS instead of -18. Nothing else about the sound changes.
@@ -77,7 +81,7 @@ Most of the engine and Performer are Acustra's, unchanged: dual-polarisation sti
 | 6 | Tenor Picked Melody | Tenor, maple, fluorocarbon, Low G, mono mic | Pick |
 | 7 | Concert Piezo Stage | Concert, spruce, nylon, Standard, piezo | Strum |
 
-Each preset's Output level brings its hardest playing, four-note chords struck in eighths at velocity 127, to -3 dBFS, 2 dB under the safety limiter; `Aculele.Headroom` checks it. The demo phrases in `Docs/audio/midi/` come from `Tools/write_preset_midi.py`.
+Levels are set on Reason's channel meter, a VU meter read with 0 VU at -12 dBFS RMS (`Tools/ReasonMeter.h`). `Source/DSP/LevelMatchData.h`, which `AculeleLevels --write` measures, brings typical playing on every shape, wood, Picking and Capture to -9 VU at 0 dB Output, and each preset's Output trim brings its own there. Main and the Piezo output end in the portfolio's shared output stage, `Source/DSP/OutputStage.h`: a guard compressor on the louder channel's power, its knee centred at -2 VU, then a look-ahead limiter that holds every sample under -1.5 dBFS and passes everything below it bit for bit. `Aculele.Levels` checks the readings and that velocity-127 chords stay under -1 VU. The demo phrases in `Docs/audio/midi/` come from `Tools/write_preset_midi.py`.
 
 ## Known gaps
 

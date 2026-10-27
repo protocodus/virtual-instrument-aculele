@@ -100,3 +100,34 @@ which the same chords as a sixteenth-note tremolo also stay under the limiter
 (the closest, Tenor Picked Melody, peaks at -1.3 dBFS). A strum at velocity
 100 now plays at -19 to -23 LUFS; three of Acustra's presets play the same
 phrase at -16 to -18 LUFS. No listener has judged the new levels.
+
+## 2026-10-27 — typical playing at -9 VU behind the shared output stage (owner's choice, measured)
+
+The owner asked for typical playing (across the range, octaves and
+velocities) to read about -7 dB on Reason's VU meter, for velocity-127
+chords on Pick never to reach the red, and for every microphone and the
+piezo to be calibrated alike. On Reason's channel meter as
+`Tools/ReasonMeter.h` defines it, plucked chords read 7 to 9 dB above typical
+playing and peak 11 to 15 dB above their own reading, so at -7 VU the hardest
+chords either reach the red or clip; 0.3.1's peak rule held typical playing
+near -13 VU. Offered -7 VU with more limiting, -9 VU with a clean peak
+limiter, or the peak rule alone, the owner chose -9 VU with a clean peak
+limiter.
+
+What it licensed, each settled by measurement (`AculeleLevels --report`):
+
+- `LevelMatchData.h` brings every shape, wood, Picking and Capture to -9 VU at
+  0 dB Output; before, the cells spread over about 10 dB and Pick was 3 to
+  4 dB hotter. The preset trims are 0.0 to -1.3 dB.
+- Piezo Mix crossfades at equal power. Laid over the microphones at full
+  level it added 1.5 to 5.7 dB; it now moves the level by -1.6 to +2.7 dB, the
+  rest being how far the two sensors are correlated.
+- The output ends in the portfolio's shared output stage
+  (`Source/DSP/OutputStage.h`), after the owner asked for the same limiter in
+  every new instrument. With its limiter alone the loudest chords read -3.5 to
+  -0.1 VU; with the plucked instruments' guard (`kVuGuard`, acting only above
+  -4 VU), every typical reading is unchanged to 0.01 dB and the loudest read
+  -4.2 to -2.5 VU. Aculyre needs the guard to keep the lyre out of the red;
+  Aculele adopts it so the stage is the same.
+
+No listener has judged the new levels.

@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 # Aculele: a physically modelled ukulele built on Acustra's engine. The
 # JUCE-free engine and performer, the demo renderer and two analysis tools;
 # there is no plug-in or editor yet.
-project(Aculele VERSION 0.3.1 LANGUAGES CXX)
+project(Aculele VERSION 0.4.0 LANGUAGES CXX)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
@@ -75,6 +75,10 @@ if(ACULELE_BUILD_TOOLS)
 
     add_executable(AculeleBridgeMobility Tools/AculeleBridgeMobility.cpp)
     target_link_libraries(AculeleBridgeMobility PRIVATE AculeleDSP)
+
+    # Writes LevelMatchData.h and reports each preset on Reason's channel meter.
+    add_executable(AculeleLevels Tools/AculeleLevels.cpp)
+    target_link_libraries(AculeleLevels PRIVATE AculeleDSP Threads::Threads)
 endif()
 
 if(BUILD_TESTING)
@@ -99,12 +103,6 @@ if(BUILD_TESTING)
     add_executable(AculeleChuckTests Tests/ChuckTests.cpp)
     target_link_libraries(AculeleChuckTests PRIVATE AculeleDSP)
     add_test(NAME Aculele.Chuck COMMAND AculeleChuckTests)
-
-    # Each preset's hardest chords peak 2 dB under the safety limiter.
-    add_executable(AculeleHeadroomTests Tests/HeadroomTests.cpp)
-    target_link_libraries(AculeleHeadroomTests PRIVATE AculeleDSP)
-    add_test(NAME Aculele.Headroom COMMAND AculeleHeadroomTests)
-    set_tests_properties(Aculele.Headroom PROPERTIES LABELS audio TIMEOUT 600)
 
     # U4 input fuzzing (Tests/DspFuzz.cpp). The replay build runs on every
     # platform: committed reproducers in Tests/Fixtures/fuzz, then seeded
@@ -148,6 +146,11 @@ if(BUILD_TESTING)
         add_test(NAME Aculele.AudioDemos
                  COMMAND RenderAculelePresetDemos --jobs 4 --check "${CMAKE_CURRENT_SOURCE_DIR}/Docs/audio/midi")
         set_tests_properties(Aculele.AudioDemos PROPERTIES LABELS audio TIMEOUT 600)
+        # Each preset on Reason's channel meter: typical playing at -9 VU,
+        # every Capture and Picking near it, the loudest chords out of the red
+        # (Tools/AculeleLevels.cpp).
+        add_test(NAME Aculele.Levels COMMAND AculeleLevels --check --jobs 4)
+        set_tests_properties(Aculele.Levels PROPERTIES LABELS audio TIMEOUT 900)
         # The bridge's level against the one measured ukulele (Elie et al. 2011).
         add_test(NAME Aculele.BridgeMobility COMMAND AculeleBridgeMobility --check)
         if(CMAKE_BUILD_TYPE STREQUAL "Release" AND NOT ACULELE_ENABLE_SANITIZERS)

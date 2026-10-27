@@ -175,17 +175,11 @@ public:
     // Effective sustain for a front end's indicator, including any CC64
     // pedal, the panel switch and the backup keyswitch.
     [[nodiscard]] bool isSustainActive() const noexcept;
-    // Everything the host must be told: the engine's own fixed output
-    // latency (AculeleEngine::outputLatencySamples) plus, while gathering,
-    // the window.
+    // Everything the host must be told: the engine's output latency
+    // (AculeleEngine::outputLatencySamples) plus, while gathering, the window.
     [[nodiscard]] int latencySamples() const noexcept
     {
-        return latencySamples(gatherChords_, gatherWindow_);
-    }
-    [[nodiscard]] static constexpr int latencySamples(bool gather,
-                                                      int gatherWindow) noexcept
-    {
-        return AculeleEngine::outputLatencySamples() + (gather ? gatherWindow : 0);
+        return engine_.outputLatencySamples() + (gatherChords_ ? gatherWindow_ : 0);
     }
 
     // A host's global reference tuning (Reason's master tune). Retensions

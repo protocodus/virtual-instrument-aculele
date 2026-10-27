@@ -197,7 +197,7 @@ ctest --test-dir build-dsp -L unit --output-on-failure
 
 Every test is `Aculele.<Suite>`: `Tuning`, `DspFuzzReplay` and
 `DemoMidiSources` (`unit`), `AudioDemos` (`audio`, every preset demo rendered
-twice), `Headroom` (`audio`, each preset's level against the safety limiter),
+twice), `Levels` (`audio`, each preset on Reason's meter, `AculeleLevels --check`),
 `CpuBudget` (`perf`, Release builds without sanitizers) and, with
 `-DACULELE_BUILD_FUZZER=ON` and Clang, `DspFuzz` (`fuzz`).
 `-DACULELE_ENABLE_SANITIZERS=ON` builds everything under ASan + UBSan, as the
@@ -221,6 +221,11 @@ substantive DSP change is called done.
   1-4 the G, C, E and A strings, so a chord can double a pitch. The
   keyswitches C0, C#0 and D0 latch down, up and automatic strokes, and
   holding F0 makes each stroke a chuck.
+- `Source/DSP/OutputStage.h` is the portfolio's shared output stage, copied
+  from the Rack repository's `Tools/portfolio/`; change it there, never here.
+  `Source/DSP/LevelMatchData.h` changes only through `AculeleLevels --write`;
+  after an audible level change, rerun it, then re-trim the presets to the
+  trims `AculeleLevels --report` suggests.
 - `Tools/AculeleProbe.cpp` renders one phrase through one preset with a
   construction changed, `Tools/analyse_probe.py` (NumPy, SciPy) measures its
   pitch, inharmonicity, partial levels and decay, and

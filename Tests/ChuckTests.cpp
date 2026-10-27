@@ -1,4 +1,4 @@
-// While E0 is held every swept stroke is a chuck (Performer::keyswitchChuck):
+// While F0 is held every swept stroke is a chuck (Performer::keyswitchChuck):
 // each string the stroke crosses takes a dead stroke under the fretting hand
 // and no key owns a string.
 //
@@ -37,6 +37,8 @@ using Access = aculele::AculeleEngineTestAccess;
 constexpr double rate = 48000.0;
 constexpr int block = 256;
 constexpr int chuckKey = aculele::Performer::keyswitchChuck;
+// E0 is the Rack adapter's connected-gesture cue, so no keyswitch takes it.
+static_assert(!aculele::Performer::isKeyswitch(28), "E0 stays free");
 constexpr int chord[3] { 60, 64, 67 };
 
 int failures = 0;

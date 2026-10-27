@@ -60,7 +60,7 @@ bridge level was chosen to reduce it.
 ## 2026-10-27 — the strumming hand for 0.3.0 (from sources, not by ear)
 
 Five changes, each from a published description or measurement, and each a
-`PerformanceRealism` switch except the new E0 key. With every switch off the
+`PerformanceRealism` switch except the new F0 key. With every switch off the
 seven demos render bit-identically to 0.2.0. Per-fix before/after previews,
 level-matched on whole-file RMS, went to the owner; no listener has yet
 compared them, so none of this is a by-ear verdict.
@@ -74,7 +74,7 @@ compared them, so none of this is a by-ear verdict.
 - **The hand's swing** (`strumPendulum`). The same lesson keeps the hand
   moving down on the beat and up between, through the strokes it skips. The
   restart after 4 beats or 2 s keeps the earlier rest rule's 2 s bound.
-- **Chucks** (E0, held). A string the fretting hand lies on takes GuitarSet's
+- **Chucks** (F0, held). A string the fretting hand lies on takes GuitarSet's
   measured muted stroke (0.589 level, 43-period T60), as the dead strings
   inside a strum already did; a chuck gives it to every string crossed.
 - **Nylon fretting pitch** (`nylonFrettingPitch`). Varieschi and Gower's

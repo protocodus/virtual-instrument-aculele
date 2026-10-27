@@ -219,7 +219,7 @@ substantive DSP change is called done.
 - The demo phrases are ukulele tab: CC126 = 4 on channel 1 makes channels
   1-4 the G, C, E and A strings, so a chord can double a pitch. The
   keyswitches C0, C#0 and D0 latch down, up and automatic strokes, and
-  holding E0 makes each stroke a chuck.
+  holding F0 makes each stroke a chuck.
 - `Tools/AculeleProbe.cpp` renders one phrase through one preset with a
   construction changed, `Tools/analyse_probe.py` (NumPy, SciPy) measures its
   pitch, inharmonicity, partial levels and decay, and

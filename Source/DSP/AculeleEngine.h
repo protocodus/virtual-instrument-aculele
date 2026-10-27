@@ -659,14 +659,20 @@ private:
         // element's loss factor 1/18, Zollner's rig Q of 18 taken as the
         // bound on material loss (M. Zollner, Physics of the Electric
         // Guitar, 2005, ch.6). G: the bridge's conductance under the saddle,
-        // the mean of Re(Y) over 5-7 kHz of the measured Fylde mobility the
-        // steel bridge's level is fitted to (the Fylde Falstaff, Carcagno et
-        // al. 2018), saddle removed. SZ: the six strings' summed wave
-        // impedance at their standard open notes (stringImpedance).
+        // the measured mobility the bridge's level is pinned to
+        // (ukuleleTopMobilityRatio): Elie et al.'s 0.009 s/kg characteristic
+        // mobility, real by definition and flat from 1 to 6 kHz, with the
+        // ukulele's rosewood bridge. Acustra's 1.59e-3, the Fylde guitar's
+        // Re(Y) over 5-7 kHz, left the saddle on a bridge a sixth as mobile
+        // as the strings' own, and the element's resonance went undamped:
+        // on Concert nylon the saddle filter peaked +11 dB at 5.8 kHz, where
+        // this bridge's loss holds it to +2 dB at 4.6 kHz.
+        // SZ: the four strings' summed wave impedance at their standard open
+        // notes (stringImpedance).
         static constexpr double saddleMass = 3.8e-3;
         static constexpr double elementHz = 6000.0;
         static constexpr double elementLoss = 1.0 / 18.0;
-        static constexpr double bridgeConductance = 1.59e-3;
+        static constexpr double bridgeConductance = 0.009;
         // 3. The element: a charge source across its capacitance, 0.2 V/N
         // open-circuit at 1.45 nF (Zollner ch.6, Ovation EA-68).
         static constexpr double voltsPerNewton = 0.2;

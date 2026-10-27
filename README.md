@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.2.0 — 2026-10-27 — A ukulele's bridge, and full strums on one channel
+
+The bridge is now as mobile as the one published ukulele measurement, so the strings give more of their energy to the top. Before, it was about half that, Acustra's steel-string level. A strum of three notes on one MIDI channel now sounds all four strings, the free one fretted with a chord tone, as a ukulele chord does. The presets' Output levels are re-trimmed so every demo stays at -18 LUFS. See [the research plan](Docs/plans/ukulele-realism-plan-2026-10-27.md).
+
 ### 0.1.0 — 2026-10-27 — A ukulele on Acustra's engine
 
 The first engine: four re-entrant strings in Standard, Low G and D tuning, nylon and fluorocarbon sets, soprano, concert and tenor bodies, a finger Strum technique, tab input with one MIDI channel per string, and seven factory presets. Guitar-specific voicing is switched off. See [the feasibility study](Docs/research/ukulele-feasibility-2026-10-27.md).
@@ -30,9 +34,17 @@ Most of the engine and Performer are Acustra's, unchanged: dual-polarisation sti
 - **Four strings, re-entrant.** The tunings are Standard G4 C4 E4 A4, Low G (G3, on its own unwound fluorocarbon string) and D tuning A4 D4 F#4 B4. Strings are in physical order G, C, E, A, and the fretboard has 18 frets.
 - **Strings from measurement, not fitting.** Plain nylon or fluorocarbon monofilaments use real set gauges (D'Addario EJ65C, Worth CM and CM-LG). Tension comes from T = μ(2Lf)². Stiffness, bending loss and air loss come from Woodhouse and Lynch-Aird, Acta Acustica 105 (2019) 516, with their stress-dependent E′ and E″ for each material. See `ukuleleStringLoss` in `Source/DSP/AculeleEngine.cpp`.
 - **Bodies.** The soprano, concert and tenor bodies use Kala's published dimensions and scale lengths, through Acustra's own coupled-oscillator morph. Measured with `Tools/AculeleBodyModes.cpp`, A0/T1 sit at 266/653 Hz (soprano), 215/485 Hz (concert) and 190/414 Hz (tenor) in spruce.
+- **Bridge level from a measured ukulele.** Elie, Gautier, David and Curtit (Forum Acusticum 2011) measured one ukulele's bridge at about 0.009 s/kg characteristic mobility from 1 to 6 kHz, with its usual rosewood bridge. Concert Mahogany's G string reads that between 1 and 6 kHz, and the other bodies are within 10% of it (`Tools/AculeleBridgeMobility.cpp`, `Aculele.BridgeMobility`). It replaces Acustra's steel-string correction, which left the bridge about half as mobile.
 - **Geometry.** The saddle spacing is 13.3 mm, which sets the bridge lever arms and the strum's travel. Pluck distances and the finger's contact width keep their fraction of the shorter string. The hand's band reaches 0.46 of the string, where a ukulele is strummed over the neck joint.
 - **Strum technique.** `PickingTechnique::Strum` is the index finger swept down and up over the neck joint. It uses the plectrum's sweep timing and alternation with the finger's soft contact.
-- **Tab input.** In string-per-channel mode (Mono Mode On, CC126 = 4, on channel 1), channels 1-4 are the G, C, E and A strings. A group of notes on those channels is one strummed or pinched stroke, so a chord can double a pitch on two strings, as G (0232) and Am (2000) do. One MIDI channel cannot express that. The demos are written this way.
+- **Tab input.** In string-per-channel mode (Mono Mode On, CC126 = 4, on channel 1), channels 1-4 are the G, C, E and A strings. A group of notes on those channels is one strummed or pinched stroke, so a chord can double a pitch on two strings, as G (0232) and Am (2000) do. The demos are written this way.
+- **Full strums on one channel.** A strum or pick sweep of three notes on one ordinary channel leaves one string free. The fretting hand gives that string a chord tone at the fret it reaches most cheaply with the shape, so the stroke sounds all four strings:
+  - C4 E4 G4 plays 0003;
+  - C4 E4 A4 plays 2000;
+  - D4 G4 B4 plays 0232;
+  - D4 F#4 A4 plays 2220.
+
+  No key owns the added note. It is held with the chord and let go with the last of its keys, under the pedal as they are. Finger chords, pairs and tab input are unchanged.
 - **Switched off because they were measured or voiced on guitars:**
   - the wound-string noises;
   - the studio low-mode observation, a fit to guitar boxes below 400 Hz;
@@ -58,7 +70,13 @@ Each preset's Output level brings its demo to -18 LUFS. The demo phrases in `Doc
 ## Known gaps
 
 - **No ukulele body has been measured.** The radiation and bridge banks are a nylon flamenca guitar scaled down by the equal-thickness plate law. With the guitar contour off, the soprano's third-octave spectrum lies within about 4 dB of a real ukulele recording (an unidentified instrument) from 250 to 800 Hz, but it is still 7-12 dB too bright at 1-2 kHz. A real ukulele top is thinner and more lightly braced than the law assumes.
-- **Doubled pitches need tab input.** On one MIDI channel, Acustra's hand planner places C (0003) and G7 (0212) as a player does, and D7 at a playable but unusual 5222. But one channel cannot ask for a unison, so G (0232), Am (2000), F (2010) and Em (0432) lose a string. The string left out is crossed as a muted string inside the stroke. Tab input avoids this; every demo but the Low G picked melody uses it.
+- **One channel chooses the voicing.** On one MIDI channel, a three-note strum's added string is the hand's cheapest chord tone, and the shape follows the notes given and where the hand already is. That is not always the voicing a player would choose:
+  - C4 F4 A4 plays F as 2010;
+  - F4 A4 C5 plays 5550 from a fresh hand, or 2013 after a C;
+  - E4 G4 B4 plays 0402, where most players fret Em as 0432.
+
+  A Finger chord of three plays three strings. Tab input names every string; every demo but the Low G picked melody uses it.
+- **The bridge level rests on one measured instrument.** The paper puts its accelerometer "at the base of the lowest string". That is the G string's place by the guitar convention, and the C string by pitch. The model takes the G reading; the C reading would double the level. A listening set of both is open with the owner.
 - Pluck release, contact noise, strum speeds and finger-chord timing are Acustra's fits to guitar recordings (GuitarSet, the flat-top bank), reused unchanged.
 - There is no koa wood; mahogany stands in for it.
 - The strum technique has no nail-versus-flesh distinction, and there are no rasgueado or triplet-roll strokes.

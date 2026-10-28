@@ -541,6 +541,14 @@ int Performer::releasedNote(int note, int channel) noexcept
 // same MIDI chord can land on different strings in different hosts.
 void Performer::flushNoteGroup() noexcept
 {
+    // A sequencer ends a note on the sample the next one starts. The player's
+    // finger lifts as the next note is played, so a key-up of a key held
+    // down goes first and frees its string: a chord after a chord fills its
+    // free string, and a line stays on the strings a hand in position plays
+    // it on. A key let go and struck again on one sample is replucked on the
+    // string it still rings on (the release join).
+    if (pendingNoteOnCount_ > 0)
+        releasePendingNoteOffs(true);
     // A key a chord moved up is still held there: struck again before its
     // key-up, it re-plucks that string (foldChord, liftChord).
     for (int index = 0; index < pendingNoteOnCount_; ++index)
@@ -965,7 +973,7 @@ void Performer::flushNoteGroup() noexcept
     releasePendingNoteOffs();
 }
 
-void Performer::releasePendingNoteOffs() noexcept
+void Performer::releasePendingNoteOffs(bool heldOnly) noexcept
 {
     // Resolve a zero-duration Note On/Off at one sample in the same direction
     // regardless of insertion order. The On must establish ownership before
@@ -977,9 +985,26 @@ void Performer::releasePendingNoteOffs() noexcept
                   return left.note != right.note ? left.note > right.note
                                                  : left.channel < right.channel;
               });
+    int waiting = 0;
     for (int index = 0; index < pendingNoteOffCount_; ++index)
     {
-        const auto& note = pendingNoteOffs_[static_cast<std::size_t>(index)];
+        const auto note = pendingNoteOffs_[static_cast<std::size_t>(index)];
+        if (heldOnly)
+        {
+            const auto channel = static_cast<std::size_t>(note.channel - 1);
+            const auto& lifted = liftedKeys_[channel][static_cast<std::size_t>(note.note)];
+            const int sounding = note.note + (lifted.owners > 0 ? 12 * lifted.octaves : 0);
+            // A key-up whose key is not down yet is a zero-length note's, and
+            // a connected gesture refrets its source's string, so that key
+            // must still be down when the target's Note On comes
+            // (transitionNote).
+            if (engine_.heldString(sounding, note.channel) < 0
+                || (portamentoSwitches_[channel] && portamentoSources_[channel] == note.note))
+            {
+                pendingNoteOffs_[static_cast<std::size_t>(waiting++)] = note;
+                continue;
+            }
+        }
         const int released = releasedNote(note.note, note.channel);
         if (note.pedalMoved)
             engine_.noteOffWithVelocity(released, note.channel,
@@ -989,7 +1014,7 @@ void Performer::releasePendingNoteOffs() noexcept
             engine_.noteOffWithVelocity(released, note.channel,
                                         note.releaseVelocity);
     }
-    pendingNoteOffCount_ = 0;
+    pendingNoteOffCount_ = waiting;
 }
 
 // Renders up to the event, then groups it with the other Note Ons and Offs
@@ -1060,11 +1085,12 @@ bool Performer::handleEvent(int eventSample, const std::uint8_t* data,
         // for the sample to end (flushNoteGroup): whatever order a host
         // stored them in, a reset ends what was sounding and the notes that
         // start on its sample, a loop's first beat after it, still sound.
-        // A key-up waits for its sample's Note Ons, but the pedal meets it
-        // in the order the host sent them: one pressed after it does not
-        // catch it, and one lifted after it lets it go, whatever the pedal
-        // does next on this sample - unless another pedal still holds it (an
-        // MPE member's key-up is held by its own pedal or the manager's).
+        // A key-up waits for its sample to end (flushNoteGroup), but the
+        // pedal meets it in the order the host sent them: one pressed after
+        // it does not catch it, and one lifted after it lets it go, whatever
+        // the pedal does next on this sample - unless another pedal still
+        // holds it (an MPE member's key-up is held by its own pedal or the
+        // manager's).
         dispatchMidiData(data, size);
         if (status == 0xb0u && size >= 3
             && ((data[1] & 0x7fu) == 64u || (data[1] & 0x7fu) == 121u))

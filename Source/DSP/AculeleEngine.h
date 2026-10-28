@@ -374,8 +374,8 @@ public:
     // a same-pitch/channel reattack. Lifting a key is never a new stroke.
     void noteOff(int midiNote, int midiChannel = 1) noexcept;
     // The same key-up, told whether the sustain pedal held it when it was
-    // made, for a caller that orders the key-ups of one sample after their
-    // Note Ons but a pedal change on that sample after them (the Performer).
+    // made, for a caller that plays a sample's key-ups after a pedal change
+    // the host sent after them on that sample (the Performer).
     void noteOff(int midiNote, int midiChannel, bool sustained) noexcept;
     // The same two key-ups with MIDI's release velocity (0-1). A firm
     // damping contact shortens the tail; a gentle one lets it ring longer.

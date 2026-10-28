@@ -326,7 +326,9 @@ private:
     bool liftChord(const std::array<int, AculeleEngine::stringCount>& chord,
                    int count, int channel) noexcept;
     [[nodiscard]] int releasedNote(int note, int channel) noexcept;
-    void releasePendingNoteOffs() noexcept;
+    // With heldOnly, only the key-ups of keys held down now, other than a
+    // connected gesture's source; the rest stay pending.
+    void releasePendingNoteOffs(bool heldOnly = false) noexcept;
     void gatherChord(int first) noexcept;
     void renderTo(int sample) noexcept;
     void dispatchMidiData(const std::uint8_t* data, int size) noexcept;

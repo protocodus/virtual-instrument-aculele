@@ -101,6 +101,25 @@ Next steps:
   change, before any listening.
 - If two documented ratios are each defensible, render them as an A–Z set.
 
+Checked on 28 October: no ratio the published figures allow closes the gap.
+
+- No maker publishes a top thickness. Builders on luthiersforum.com give
+  about 1.8 mm for a hardwood concert top and 0.075-0.085 in (1.9-2.2 mm)
+  for tenors, and say a smaller body takes a thinner top. Classical and
+  flamenco tops are usually put at 2.0-2.5 mm. That is a ratio of about 0.7
+  to 1.0, from builders' practice, not from g21 or from Elie's ukulele.
+- Modal density goes as A/h, so that ratio adds at most 1.4 times the
+  modes. The measured ukulele has four to five times the model's.
+- The plate modes' frequencies go as h/A, so the same ratio would lower the
+  1265-1591 Hz cluster to 0.9-1.6 kHz. That moves the excess rather than
+  removing it, and the bridge level is pinned to Elie's measurement either
+  way.
+- Elie's soundboard weighed 42 g (their Table I), but the paper gives
+  neither its size nor its thickness, so it cannot pin a ratio either.
+
+So thickness does not enter the morph, and the excess stays until a ukulele
+body is measured (item 7).
+
 ### 2. The 3-8 kHz deficit
 
 There are three candidates:

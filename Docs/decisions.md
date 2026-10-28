@@ -53,6 +53,16 @@ something the strings decide, so the tenor's nylon set waits for it and the
 test was not changed. The force reading is chosen by ear; no ukulele
 player's pluck has been measured.
 
+*Corrected later on 2026-10-28:* the cause given above is wrong. Worked out at
+each of 312 notes (the open strings to the twelfth fret, every body and string
+set), the first-order shift of the damped loop's pole that the estimate leaves
+out is under 0.5 cents beside the top's main resonance. There the body pulls
+the string's polarisation normal to the top and hardly the parallel one, and
+the shared delay tunes the lasting parallel one. F#4's first half second is
+its normal member, and EJ65T's thicker E string is pulled further. So no
+correction to the estimate would let EJ65T pass, and the tenor's nylon set
+keeps EJ65C on that ground (README, Known gaps).
+
 ## 2026-10-28 — the 1-4.4 kHz band takes a ukulele's mode density at its own mean level, 0.4.13 (chosen by ear)
 
 **What was decided.** The body bank is the flamenco guitar g21's, scaled to

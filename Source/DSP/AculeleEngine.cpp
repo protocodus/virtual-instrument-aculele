@@ -1156,10 +1156,12 @@ constexpr std::array<StringMaterialSpec, 2> stringMaterialSpecs {{
 // EJ65T (.029, .041, .0327, .0285,
 // https://www.elderly.com/products/d-addario-ej65t-tenor-uke-set) is
 // 1.5-3.6% thicker, and its E string put the tenor's open F#4 in D tuning,
-// just below its T1, 5.5 cents flat in Aculele.Tuning (4.0 with EJ65C): the
-// bridge's tuning phase (bridgePhaseDelay) is an isolated-port estimate that
-// misses most beside a strong lossy mode. With either set the note plays
-// 5-7 cents flat over its first half second.
+// just below its T1, 5.5 cents flat in Aculele.Tuning (4.0 with EJ65C). Near
+// T1 the body pulls the polarisation normal to the top and hardly the
+// parallel one; the shared delay tunes the lasting parallel one
+// (coupledPolarisationDetune), so with either set the note's first half
+// second, its normal member, plays 5-7 cents flat, and the thicker E string
+// is pulled further. bridgePhaseDelay's own error there is under 0.5 cents.
 // Fluorocarbon is Worth Clear: CM, sold for soprano and concert (.0224,
 // .0291, .0260, .0205), and CT for the tenor, whose A is CT-LG's .0224
 // (https://www.thomann.co.uk/worth_strings_ct_tenor_ukulele_set.htm, and

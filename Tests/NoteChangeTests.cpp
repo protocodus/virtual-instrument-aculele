@@ -1,3 +1,5 @@
+// Where a note lands when another came before it.
+//
 // A sequencer ends a note on the sample the next one starts. The Performer
 // lets the held keys of that sample come up before its Note Ons
 // (Performer::flushNoteGroup), so the new notes find the strings a player's
@@ -5,6 +7,10 @@
 // a line stays in position instead of hopping to strings still held. A
 // zero-length note, a key struck again and a connected gesture's source
 // keep their order.
+//
+// A hand with no fretted note in memory starts in first position
+// (AculeleEngine::chooseString), so a line around the open strings stays low
+// on the neck.
 //
 // Everything plays on channel 1 at velocity 90 through the Performer, 48 kHz
 // and 256-sample blocks, with the default controls and the named technique.
@@ -40,10 +46,12 @@ struct Player
     std::unique_ptr<aculele::Performer> performer = std::make_unique<aculele::Performer>();
     std::vector<float> left = std::vector<float>(block), right = std::vector<float>(block);
 
-    explicit Player(aculele::PickingTechnique picking)
+    explicit Player(aculele::PickingTechnique picking,
+                    aculele::Tuning tuning = aculele::Tuning::Standard)
     {
         aculele::EngineParameters parameters;
         parameters.picking = picking;
+        parameters.tuning = tuning;
         performer->setParameters(parameters);
         performer->prepare(rate, block);
         performer->setParameters(parameters);
@@ -152,6 +160,32 @@ int main()
                         player.heldPlace(scale[index]) / 100, player.heldPlace(scale[index]) % 100);
             check(player.heldPlace(scale[index]) == places[index], "a scale note left first position");
             previous = { scale[index] };
+        }
+    }
+
+    {
+        // Lines around the open strings, each note's key up as the next goes
+        // down: G4 A4 G4 E4 G4 then C5 B4 on Standard; C4 to C5 on Low G,
+        // where the G3 string would reach D4 at its seventh fret; and C4 C5
+        // B4 G4 A4 B4 C5 on Standard, whose open A leaves no fret in memory.
+        struct Line { aculele::Tuning tuning; std::vector<int> notes, places; const char* name; };
+        const std::array<Line, 3> lines { {
+            { aculele::Tuning::Standard, { 67, 69, 67, 64, 67, 72, 71 },
+              { 0, 300, 0, 200, 0, 303, 302 }, "an open-string line went up the neck" },
+            { aculele::Tuning::LowG, { 60, 62, 64, 65, 67, 69, 71, 72 },
+              { 100, 102, 200, 201, 203, 300, 302, 303 }, "a Low G scale left first position" },
+            { aculele::Tuning::Standard, { 60, 72, 71, 67, 69, 71, 72 },
+              { 100, 303, 302, 0, 300, 302, 303 }, "B4 after the open A went up the neck" } } };
+        for (const auto& line : lines)
+        {
+            Player player(Technique::Finger, line.tuning);
+            std::vector<int> previous;
+            for (std::size_t index = 0; index < line.notes.size(); ++index)
+            {
+                player.change(previous, { line.notes[index] }, false);
+                check(player.heldPlace(line.notes[index]) == line.places[index], line.name);
+                previous = { line.notes[index] };
+            }
         }
     }
 

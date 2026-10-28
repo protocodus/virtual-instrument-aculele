@@ -1938,7 +1938,6 @@ private:
     using StringFrets = std::array<int, stringCount>;
     using HandWeights = std::array<float, stringCount>;
     [[nodiscard]] HandWeights handWeights() const noexcept;
-    [[nodiscard]] static bool handKnown(const HandWeights& weights) noexcept;
     [[nodiscard]] float shapeCost(const StringFrets& shapeFrets,
                                   unsigned movableStrings,
                                   const HandWeights& weights) const noexcept;

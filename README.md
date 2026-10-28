@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.4.6 — 2026-10-28 — Melodies around the open strings stay in first position
+
+A single note played with no fretted note in the last two seconds now goes where a hand in first position plays it, at its lowest fret on a string no key holds. Before, it went to whichever string had not sounded yet, however high up the neck: after G4 A4 G4 E4 G4 on the open strings, C5 sounded at the C string's twelfth fret instead of the A string's third, and a Low G scale from C4 put D4 at the low G string's seventh fret and G4 at the C string's seventh, where it now plays C2 and E3. MPE notes are placed as before. The demos are unchanged.
+
 ### 0.4.5 — 2026-10-28 — Sequenced notes take the strings a hand would
 
 A note that ends on the sample the next begins, as notes drawn end to end in Reason's sequencer do, now lets go of its string before the next note chooses one. Before, the ending note still held its string, so the next went elsewhere: a one-channel strum after a chord lost its fourth string (C then Am played x000 instead of 2000), and a scale hopped to strings still held (F4 on the C string's fifth fret, D5 on the G string's seventh) where it now plays in first position and on up the A string. A zero-length note, a key struck again and a hammer-on's source keep their order. The demos are unchanged.
@@ -82,6 +86,7 @@ Most of the engine and Performer are Acustra's, unchanged: dual-polarisation sti
 
   No key owns the added note. It is held with the chord and let go with the last of its keys, under the pedal as they are. Finger chords, pairs and tab input are unchanged.
 - **Notes end to end.** A sequencer ends a note on the sample the next one starts. The ending key comes up first, as the player's finger lifts, so the next note or chord is placed as if the key had come up a moment before (`Performer::flushNoteGroup`). The key-ups of a zero-length note, of a key struck again on that sample and of a hammer-on's or pull-off's source still come after the Note Ons.
+- **First position.** A single note with no fretted note in the hand's two-second memory goes to its lowest fret on a string no key holds, as a hand in first position plays it; after that, the frets the hand last held place each note, as in Acustra (`AculeleEngine::chooseString`).
 - **Chords lifted into reach.** A one-channel chord's notes below the tuning's lowest string move up by whole octaves into its range, so A3 C4 E4 plays Am as 2000 (`Performer::foldChord`); a single low note still sounds nothing. Only the C string reaches below E4, so a chord with two notes in C4-D#4 has no shape: the fewest notes move up an octave, the lowest first, to octaves the chord does not already hold, until the hand can fret it. C4 Eb4 G4 plays Eb4 G4 C5, Cm as 0333 with the fill. A key already down stays on its string, and each moved key's key-ups let go of the string it sounds on (`Performer::liftChord`).
 - **Switched off because they were measured or voiced on guitars:**
   - the wound-string noises;

@@ -9476,12 +9476,6 @@ AculeleEngine::HandWeights AculeleEngine::handWeights() const noexcept
     return weights;
 }
 
-bool AculeleEngine::handKnown(const HandWeights& weights) noexcept
-{
-    return std::any_of(weights.begin(), weights.end(),
-                       [] (float weight) { return weight > 0.0f; });
-}
-
 // How far a set of frets is from one hand. shapeFrets names the fret each
 // string would sound (-1: not part of the shape). The frets the hand must
 // hold are the shape's fretted notes and every other string whose key is
@@ -9615,15 +9609,17 @@ int AculeleEngine::chooseString(int midiNote) const noexcept
             return string;
     }
     const auto weights = handWeights();
-    if (!handKnown(weights))
-        return chooseStringWithoutHand(midiNote);
 
-    // With a hand on the neck, in order: never a string whose key is still
-    // down while another can sound the note; then the fret the hand reaches
-    // from where it is (shapeCost zero; otherwise the fewest frets moved,
-    // weighted by how recently the hand was there); then an open string;
-    // then the lower fret; then a silent string over one still ringing, and
-    // the one that has rung longest.
+    // In order: never a string whose key is still down while another can
+    // sound the note; then the fret the hand reaches from where it is
+    // (shapeCost zero; otherwise the fewest frets moved, weighted by how
+    // recently the hand was there); then an open string; then the lower
+    // fret; then a silent string over one still ringing, and the one that
+    // has rung longest. With no hand on the neck (a fresh engine, or two
+    // seconds with nothing fretted) every fret costs nothing, so the hand
+    // starts in first position: a melody around the open strings frets C5
+    // at the A string's third fret, where a free string first put it on the
+    // C string's twelfth.
     constexpr float tie = 1.0e-4f;
     int best = -1;
     bool bestSteal = true;
@@ -9672,10 +9668,9 @@ int AculeleEngine::chooseString(int midiNote) const noexcept
     return best;
 }
 
-// The allocator with no hand on the neck (a fresh engine, or two seconds
-// with nothing fretted): the free string with the lowest fret, else the
-// string released longest ago, else the oldest. A lone note is placed
-// exactly as it always was. A repeated note is replucked where it rings,
+// Acustra's allocator with no hand on the neck, which MPE member notes
+// keep: the free string with the lowest fret, else the string released
+// longest ago, else the oldest. A repeated note is replucked where it rings,
 // as with a hand.
 int AculeleEngine::chooseStringWithoutHand(int midiNote) const noexcept
 {

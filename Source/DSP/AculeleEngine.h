@@ -1990,6 +1990,7 @@ private:
         int moves { 0 };
         float cost { 0.0f };
         int misses { 0 };
+        int highestFret { 0 };
         int opens { 0 };
         int fretSum { 0 };
         int fillOpens { 0 };
@@ -2464,6 +2465,12 @@ private:
     // window the plug-in's Gather Chords uses).
     static constexpr float chordWindowSeconds = 0.030f;
     static constexpr float impossibleShapeCost = 1000.0f;
+    // The owner's direction (Docs/decisions.md, 2026-10-28), not a
+    // measurement: open strings lead a chord's shape only in first
+    // position, with no fret above this one; above it the shape that keeps
+    // the hand lowest wins, as the chord books fret G as 7-7-7-10, not
+    // 0-11-10-10, and D7 as 2223, not 5220.
+    static constexpr int firstPositionFret = 4;
     // Shared across every string of one strum: drawn once by beginStrum(),
     // read by noteOn's strumMember path. A per-string draw here (rather than
     // each voice's own generator) is what keeps the pick's speed for the

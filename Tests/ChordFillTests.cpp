@@ -124,6 +124,14 @@ int main()
     // with the open A doubled.
     expectShape(Technique::Strum, { 65, 69, 72 }, { 2, 0, 1, 3 }, "F4 A4 C5 strum");
     expectShape(Technique::Strum, { 60, 65, 69, 72 }, { 2, 0, 1, 3 }, "C4 F4 A4 C5 strum");
+    // Open strings lead the shape only in first position (the owner's rule,
+    // AculeleEngine::firstPositionFret): E4 G4 B4 keeps its open G and E,
+    // but G and D7 take the hand's lowest shape, as the chord books fret
+    // them, and above first position the hand frets the free string too.
+    expectShape(Technique::Strum, { 64, 67, 71 }, { 0, 4, 0, 2 }, "E4 G4 B4 strum");
+    expectShape(Technique::Strum, { 71, 74, 79 }, { 7, 7, 7, 10 }, "B4 D5 G5 strum");
+    expectShape(Technique::Strum, { 62, 66, 69, 72 }, { 2, 2, 2, 3 }, "D4 F#4 A4 C5 strum");
+    expectShape(Technique::Strum, { 67, 72, 76 }, { 5, 7, 8, 7 }, "G4 C5 E5 strum");
     // Two notes below E4 need the one C string: the lowest moves up an
     // octave (Performer::liftChord), as the chord books fret Cm, F7 and Ab7.
     expectShape(Technique::Strum, { 60, 63, 67 }, { 0, 3, 3, 3 }, "C4 Eb4 G4 strum");

@@ -57,6 +57,35 @@ compared only), 1-1.6 kHz stays +5.6 to +10.1 dB too strong at every level
 tried (0.274, 0.50 and 1.0). So that excess is not the bridge's, and no
 bridge level was chosen to reduce it.
 
+## 2026-10-28 — open strings lead a chord's shape only in first position, 0.4.11 (owner's choice, checked against a chord book)
+
+The owner's direction for the fretting hand, "prefer empty strings, then
+prefer lower frets", voiced one-channel chords up the neck as no chord book
+does: G (B4 D5 G5) as 0-11-10-10, where the books fret 7-7-7-10, and D7
+(D4 F#4 A4 C5) as 5220, where they fret 2223. Three options were offered:
+keep the rule; open strings first only in first position, with no fretted
+note above the 4th fret, and the lowest hand position above it; or another
+rule. The owner chose the second, on the understanding that it would be
+refined until no voicing got worse.
+
+What it licensed: `firstPositionFret` = 4. Above it, of two shapes the one
+with the lower highest fret wins, then the one with fewer open strings, and
+a three-note stroke's free string is fretted, the open string tried last.
+Where the hand already is still comes first, as in the original direction,
+so D7 straight after a G at the 7th fret stays 5220.
+
+The check is a measurement, for evaluation only: every voicing the
+MIT-licensed chords-db (David Rubert, `@tombatossals/chords-db` 0.5.1,
+`ukulele.json`, not distributed) lists with four distinct pitches for 13
+chord types, and every close triad, strummed from a fresh hand on Concert
+Strum. On Standard, voicings landing on a shape the book lists for that
+chord rose from 276 to 391 of 401, and close triads from 120 to 180 of 288
+(Low G 573 to 623 of 623 and 183 to 253 of 378; D tuning as Standard).
+None that landed on a book shape moved off one. The rule alone, without the
+fretted fill and the fewer-open tie-break, reached 385 and 146. E4 G4 B4
+stays 0402, which the books fret 0432; both are in first position, where the
+open strings still lead. No one has listened to the change.
+
 ## 2026-10-28 — the thumb's upstroke is its nail's, 0.4.8 (from a source, not by ear)
 
 Under Thumb, a chord's upstroke takes the Pick's hard contact, as a Strum's

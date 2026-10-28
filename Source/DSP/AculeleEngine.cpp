@@ -10444,8 +10444,16 @@ bool AculeleEngine::betterShape(const ShapeScore& candidate,
         return candidate.cost < incumbent.cost;
     if (candidate.misses != incumbent.misses)
         return candidate.misses < incumbent.misses;
+    // Open strings lead only in first position (firstPositionFret). A shape
+    // reaching above it is judged by how far up the hand goes, and of two
+    // that go as far the hand frets more of the strings, as the chord books
+    // do: Adim's C5 Eb4 A4 is 5-3-5-3, not 5-3-5-0.
+    const bool firstPosition = candidate.highestFret <= firstPositionFret
+        && incumbent.highestFret <= firstPositionFret;
+    if (!firstPosition && candidate.highestFret != incumbent.highestFret)
+        return candidate.highestFret < incumbent.highestFret;
     if (candidate.opens != incumbent.opens)
-        return candidate.opens > incumbent.opens;
+        return firstPosition == (candidate.opens > incumbent.opens);
     if (candidate.fretSum != incumbent.fretSum)
         return candidate.fretSum < incumbent.fretSum;
     // Of two ways to sound the same strings, the chord's own notes take the
@@ -10479,6 +10487,7 @@ void AculeleEngine::searchShape(ShapeSearch& search, int index,
                 ++score.misses;
             score.opens += fret == 0 ? 1 : 0;
             score.fretSum += fret;
+            score.highestFret = std::max(score.highestFret, fret);
             score.ringing += voice.played && string != shapeNote.current ? 1 : 0;
         }
         // The free string's fill is part of what the stroke sounds: F4 A4 C5
@@ -10496,6 +10505,7 @@ void AculeleEngine::searchShape(ShapeSearch& search, int index,
                 score.opens += fret == 0 ? 1 : 0;
                 score.fillOpens += fret == 0 ? 1 : 0;
                 score.fretSum += fret;
+                score.highestFret = std::max(score.highestFret, fret);
             }
         }
         score.cost = shapeCost(search.frets, search.movable, search.weights);
@@ -11118,10 +11128,17 @@ int AculeleEngine::fillFret(StringFrets frets, int string,
                             const HandWeights& weights) const noexcept
 {
     const int open = voices_[static_cast<std::size_t>(string)].openMidi;
+    // Above first position the hand frets the free string too: the chord
+    // books' C at the 7th fret is 5-7-8-7, not 5-7-0-7. There the open
+    // string is tried last, so it fills only where no fret the hand reaches
+    // sounds a chord tone.
+    const bool firstPosition
+        = *std::max_element(frets.begin(), frets.end()) <= firstPositionFret;
     int best = -1;
     float bestCost = impossibleShapeCost;
-    for (int fret = 0; fret <= fretCount; ++fret)
+    for (int step = 0; step <= fretCount; ++step)
     {
+        const int fret = firstPosition ? step : (step + 1) % (fretCount + 1);
         if (((pitchClasses >> ((open + fret) % 12)) & 1u) == 0u)
             continue;
         frets[static_cast<std::size_t>(string)] = fret;

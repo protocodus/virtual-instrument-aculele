@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.4.2 — 2026-10-28 — Chords keep their notes on one channel
+
+A chord on one MIDI channel with two notes between C4 and D#4, which only the C string reaches, no longer drops one of them: its lowest note moves up an octave, as a player voices it, so C4 Eb4 G4 plays Cm as 0333, C4 Eb4 F4 A4 plays F7 as 2313 and C4 Eb4 F#4 G#4 plays Ab7 as 1323. Before, Cm sounded 00xx without its third. The moved key's key-up lets go of the string it sounds on. The demos are unchanged.
+
 ### 0.4.1 — 2026-10-28 — A smoother piezo
 
 The piezo's saddle now sits on the ukulele's own bridge, the measured one the strings already play into, instead of the far stiffer guitar bridge Acustra's piezo was designed on. That bridge soaks up the pickup element's resonance, so the piezo loses most of its nasal edge: against the microphones, a strum or a fingerpicked phrase is 3-8 dB less bright at 4-6.3 kHz, and 3-7 dB less dull above 10 kHz. Preset levels are unchanged.
@@ -65,6 +69,7 @@ Most of the engine and Performer are Acustra's, unchanged: dual-polarisation sti
   - D4 F#4 A4 plays 2220.
 
   No key owns the added note. It is held with the chord and let go with the last of its keys, under the pedal as they are. Finger chords, pairs and tab input are unchanged.
+- **Chords lifted into reach.** Only the C string reaches below E4, so a one-channel chord with two notes in C4-D#4 has no shape. The fewest notes move up an octave, the lowest first, to octaves the chord does not already hold, until the hand can fret it: C4 Eb4 G4 plays Eb4 G4 C5, Cm as 0333 with the fill. A key already down stays on its string, and each moved key's key-ups let go of the string it sounds on (`Performer::liftChord`).
 - **Switched off because they were measured or voiced on guitars:**
   - the wound-string noises;
   - the studio low-mode observation, a fit to guitar boxes below 400 Hz;
@@ -93,7 +98,8 @@ Levels are set on Reason's channel meter, a VU meter read with 0 VU at -12 dBFS 
 - **One channel chooses the voicing.** On one MIDI channel, a three-note strum's added string is the hand's cheapest chord tone, and the shape follows the notes given and where the hand already is. That is not always the voicing a player would choose:
   - C4 F4 A4 plays F as 2010;
   - F4 A4 C5 plays 5550 from a fresh hand, or 2013 after a C;
-  - E4 G4 B4 plays 0402, where most players fret Em as 0432.
+  - E4 G4 B4 plays 0402, where most players fret Em as 0432;
+  - D4 F#4 A4 C5, or C4 D4 F#4 A4 lifted to it, plays D7 as 5220, where chord books show 2223.
 
   A Finger chord of three plays three strings. Tab input names every string; every demo but the Low G picked melody uses it.
 - **The bridge level rests on one measured instrument.** The paper puts its accelerometer "at the base of the lowest string". That is the C string by pitch, and the G string's place by the guitar convention, which would halve the level. The C reading was chosen by ear (`Docs/decisions.md`); no measurement has decided between them.

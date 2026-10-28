@@ -312,6 +312,9 @@ private:
     bool handleEvent(int eventSample, const std::uint8_t* data, int size) noexcept;
     void handleTempoEvent(int eventSample, double bpm) noexcept;
     void flushNoteGroup() noexcept;
+    bool liftChord(const std::array<int, AculeleEngine::stringCount>& chord,
+                   int count, int channel) noexcept;
+    [[nodiscard]] int releasedNote(int note, int channel) noexcept;
     void releasePendingNoteOffs() noexcept;
     void gatherChord(int first) noexcept;
     void renderTo(int sample) noexcept;
@@ -370,6 +373,9 @@ private:
     // CC84 names one source note for one subsequent target on its channel.
     std::array<bool, 16> portamentoSwitches_ {};
     std::array<int, 16> portamentoSources_ {};
+    // Per channel and key, the Note Ons liftChord moved an octave up whose
+    // key-ups have not come yet.
+    std::array<std::array<std::uint8_t, 128>, 16> liftedOwners_ {};
     std::array<float, 16> conventionalPitchBendRanges_ {};
     float lowerMasterPitchBendRange_ { 2.0f };
     float lowerMemberPitchBendRange_ { 48.0f };

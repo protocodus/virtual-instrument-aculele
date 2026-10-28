@@ -105,6 +105,8 @@ void Performer::prepare(double sampleRate, int maximumBlockSize)
     rawPitchWheels_.fill(0.0f);
     portamentoSwitches_.fill(false);
     portamentoSources_.fill(-1);
+    for (auto& channel : liftedOwners_)
+        channel.fill(0);
     rpnStates_.fill(RpnState {});
     vibratoChannel_ = 0;
     keyswitchSustain_ = false;
@@ -219,6 +221,8 @@ void Performer::reset() noexcept
     rawPitchWheels_.fill(0.0f);
     portamentoSwitches_.fill(false);
     portamentoSources_.fill(-1);
+    for (auto& channel : liftedOwners_)
+        channel.fill(0);
     rpnStates_.fill(RpnState {});
     vibratoChannel_ = 0;
     keyswitchSustain_ = false;
@@ -430,18 +434,104 @@ void Performer::rememberStroke(std::int64_t strokeSample, std::int64_t interval,
     lastStrokeSample_ = strokeSample;
 }
 
+// A re-entrant ukulele has one string below E4, its C, so a chord with two
+// notes in C4-D#4 (Cm as C4 Eb4 G4, D7 as C4 D4 F#4 A4) has no shape. A
+// player keeps every chord tone and moves the lowest up an octave: Eb4 G4
+// C5, fretted 0333 with the free string's fill, and D4 F#4 A4 C5. The
+// fewest notes move, the lowest first, to octaves the chord does not
+// already hold, and a key already down stays on its string. When a shape
+// is found it is planned, the group's Note Ons become the lifted notes, and
+// each lifted key's key-ups release the string it sounds on (releasedNote).
+bool Performer::liftChord(const std::array<int, AculeleEngine::stringCount>& chord,
+                          int count, int channel) noexcept
+{
+    const auto movedCount = [](unsigned lift)
+    {
+        int moved = 0;
+        for (; lift != 0u; lift &= lift - 1u)
+            ++moved;
+        return moved;
+    };
+    // chord runs from its highest note down; bit i of a lift is its i-th
+    // lowest, so of lifts that move as many notes the lower come first.
+    for (int moved = 1; moved < count; ++moved)
+        for (unsigned lift = 1u; lift < (1u << count); ++lift)
+        {
+            if (movedCount(lift) != moved)
+                continue;
+            auto lifted = chord;
+            bool playable = true;
+            for (int bit = 0; bit < count; ++bit)
+                if (((lift >> bit) & 1u) != 0u)
+                {
+                    auto& note = lifted[static_cast<std::size_t>(count - 1 - bit)];
+                    playable &= engine_.heldString(note, channel) < 0
+                        && engine_.canSound(note + 12, channel);
+                    note += 12;
+                }
+            for (int first = 0; first < count; ++first)
+                for (int second = first + 1; second < count; ++second)
+                    playable &= lifted[static_cast<std::size_t>(first)]
+                        != lifted[static_cast<std::size_t>(second)];
+            if (!playable)
+                continue;
+            engine_.planChord(lifted.data(), count, channel);
+            if (engine_.plannedString(lifted[0], channel) < 0)
+                continue;
+            for (int index = 0; index < pendingNoteOnCount_; ++index)
+            {
+                auto& note = pendingNoteOns_[static_cast<std::size_t>(index)];
+                for (int bit = 0; bit < count; ++bit)
+                    if (((lift >> bit) & 1u) != 0u && note.channel == channel
+                        && note.note == chord[static_cast<std::size_t>(count - 1 - bit)])
+                    {
+                        ++liftedOwners_[static_cast<std::size_t>(channel - 1)]
+                                       [static_cast<std::size_t>(note.note)];
+                        note.note += 12;
+                        break;
+                    }
+            }
+            return true;
+        }
+    return false;
+}
+
+// The note a key-up releases: a key liftChord moved sounds an octave up.
+int Performer::releasedNote(int note, int channel) noexcept
+{
+    auto& lifted = liftedOwners_[static_cast<std::size_t>(channel - 1)]
+                                [static_cast<std::size_t>(note)];
+    if (lifted == 0)
+        return note;
+    --lifted;
+    return note + 12;
+}
+
 // Hosts may store simultaneous chord members in any insertion order. A
 // physical six-string allocator must see one canonical wrist event, or the
 // same MIDI chord can land on different strings in different hosts.
 void Performer::flushNoteGroup() noexcept
 {
+    // A key a chord moved up an octave is still held there: struck again
+    // before its key-up, it re-plucks that string (liftChord).
+    for (int index = 0; index < pendingNoteOnCount_; ++index)
+    {
+        auto& note = pendingNoteOns_[static_cast<std::size_t>(index)];
+        auto& lifted = liftedOwners_[static_cast<std::size_t>(note.channel - 1)]
+                                    [static_cast<std::size_t>(note.note)];
+        if (lifted > 0)
+        {
+            ++lifted;
+            note.note += 12;
+        }
+    }
+    const auto byNote = [](const PendingNoteOn& left, const PendingNoteOn& right)
+    {
+        return left.note != right.note ? left.note > right.note
+                                       : left.channel < right.channel;
+    };
     std::sort(pendingNoteOns_.begin(),
-              pendingNoteOns_.begin() + pendingNoteOnCount_,
-              [](const PendingNoteOn& left, const PendingNoteOn& right)
-              {
-                  return left.note != right.note ? left.note > right.note
-                                                 : left.channel < right.channel;
-              });
+              pendingNoteOns_.begin() + pendingNoteOnCount_, byNote);
     // Three or more notes on one sample are a chord nobody can play at once:
     // a strum reaches its strings one after another, low to high on a
     // downstroke and back on the return, and so does a pick's stroke across
@@ -489,8 +579,14 @@ void Performer::flushNoteGroup() noexcept
             chord[static_cast<std::size_t>(chordCount++)] = note.note;
         }
         if (chordCount >= 2 && chordCount <= AculeleEngine::stringCount)
-            engine_.planChord(chord.data(), chordCount,
-                              pendingNoteOns_[0].channel);
+        {
+            const int channel = pendingNoteOns_[0].channel;
+            engine_.planChord(chord.data(), chordCount, channel);
+            if (engine_.plannedString(chord[0], channel) < 0
+                && liftChord(chord, chordCount, channel))
+                std::sort(pendingNoteOns_.begin(),
+                          pendingNoteOns_.begin() + pendingNoteOnCount_, byNote);
+        }
     }
     // Only notes the tuning can sound make a stroke: a note no string
     // reaches neither times it (below) nor turns one or two notes into one.
@@ -838,12 +934,13 @@ void Performer::releasePendingNoteOffs() noexcept
     for (int index = 0; index < pendingNoteOffCount_; ++index)
     {
         const auto& note = pendingNoteOffs_[static_cast<std::size_t>(index)];
+        const int released = releasedNote(note.note, note.channel);
         if (note.pedalMoved)
-            engine_.noteOffWithVelocity(note.note, note.channel,
+            engine_.noteOffWithVelocity(released, note.channel,
                                         note.sustained, note.releaseVelocity,
                                         note.pedalReleased);
         else
-            engine_.noteOffWithVelocity(note.note, note.channel,
+            engine_.noteOffWithVelocity(released, note.channel,
                                         note.releaseVelocity);
     }
     pendingNoteOffCount_ = 0;
@@ -1030,12 +1127,13 @@ void Performer::dispatchMidiData(const std::uint8_t* data, int size) noexcept
             playNote(note, static_cast<float>(data[2] & 0x7fu) / 127.0f,
                      midiChannel);
         else
-            engine_.noteOff(note, midiChannel);
+            engine_.noteOff(releasedNote(note, midiChannel), midiChannel);
     }
     else if (kind == 0x80u && size >= 2)
     {
         const bool hasReleaseVelocity = size >= 3 && (data[2] & 0x7fu) != 0u;
-        engine_.noteOffWithVelocity(static_cast<int>(data[1] & 0x7fu),
+        engine_.noteOffWithVelocity(
+            releasedNote(static_cast<int>(data[1] & 0x7fu), midiChannel),
             midiChannel, hasReleaseVelocity
                 ? static_cast<float>(data[2] & 0x7fu) / 127.0f : -1.0f);
     }
@@ -1128,14 +1226,20 @@ void Performer::dispatchMidiData(const std::uint8_t* data, int size) noexcept
             engine_.allNotesOff(midiChannel);
             for (int channel = 1; channel <= 16; ++channel)
                 if (channelIsInControllerScope(midiChannel, channel))
+                {
                     portamentoSources_[static_cast<std::size_t>(channel - 1)] = -1;
+                    liftedOwners_[static_cast<std::size_t>(channel - 1)].fill(0);
+                }
         }
         else if (controller == 120u)
         {
             engine_.allSoundOff(midiChannel);
             for (int channel = 1; channel <= 16; ++channel)
                 if (channelIsInControllerScope(midiChannel, channel))
+                {
                     portamentoSources_[static_cast<std::size_t>(channel - 1)] = -1;
+                    liftedOwners_[static_cast<std::size_t>(channel - 1)].fill(0);
+                }
         }
         else if (controller == 121u)
         {

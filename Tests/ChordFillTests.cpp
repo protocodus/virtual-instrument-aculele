@@ -1,7 +1,9 @@
 // A one-channel strum of three notes sounds all four strings, the free one
 // fretted with a chord tone (AculeleEngine::chordFillNote, fillStroke), and
 // that string is held and let go with the chord's keys, never by a key of
-// its own pitch.
+// its own pitch. A chord no shape holds is lifted an octave note by note
+// until one does (Performer::liftChord), and its keys let go of the strings
+// they sound.
 //
 // Each case plays the chord on channel 1 at velocity 90 through the
 // Performer, 48 kHz and 256-sample blocks, with the default controls and the
@@ -115,6 +117,11 @@ int main()
     expectShape(Technique::Strum, { 62, 66, 69 }, { 2, 2, 2, 0 }, "D4 F#4 A4 strum");
     expectShape(Technique::Strum, { 62, 67, 71 }, { 0, 2, 3, 2 }, "D4 G4 B4 strum");
     expectShape(Technique::Pick, { 60, 64, 67 }, { 0, 0, 0, 3 }, "C4 E4 G4 pick sweep");
+    // Two notes below E4 need the one C string: the lowest moves up an
+    // octave (Performer::liftChord), as the chord books fret Cm, F7 and Ab7.
+    expectShape(Technique::Strum, { 60, 63, 67 }, { 0, 3, 3, 3 }, "C4 Eb4 G4 strum");
+    expectShape(Technique::Strum, { 60, 63, 65, 69 }, { 2, 3, 1, 3 }, "C4 Eb4 F4 A4 strum");
+    expectShape(Technique::Strum, { 60, 63, 66, 68 }, { 1, 3, 2, 3 }, "C4 Eb4 F#4 G#4 strum");
 
     {
         // Fingers pluck the three strings they are given; nothing sweeps the
@@ -199,6 +206,35 @@ int main()
         player.release(67);
         for (int index = 0; index < 4; ++index)
             check(!player.string(index).keyDown, "a string stayed held after every key-up");
+    }
+
+    {
+        // Cm lifted to Eb4 G4 C5: C4's key-ups let go of the C5 it sounds,
+        // a second strike of the held key included, and nothing stays held.
+        Player player(Technique::Strum);
+        player.chord({ 60, 63, 67 });
+        check(player.string(3).midiNote == 72, "C4 was not lifted to the A string's C5");
+        player.send({ { 0x90, 60, 90 } });
+        player.play(0.1);
+        player.release(60);
+        check(player.string(3).keyDown, "one of two C4 key-ups let go of C5");
+        player.release(60);
+        check(!player.string(3).keyDown, "C4's key-ups left its C5 held");
+        player.release(63);
+        player.release(67);
+        for (int index = 0; index < 4; ++index)
+            check(!player.string(index).keyDown, "a lifted chord left a string held");
+    }
+
+    {
+        // All Notes Off forgets the lift: C4 alone afterwards is C4.
+        Player player(Technique::Strum);
+        player.chord({ 60, 63, 67 });
+        player.send({ { 0xB0, 123, 0 } });
+        player.chord({ 60 });
+        check(player.string(1).keyDown && player.string(1).midiNote == 60,
+              "C4 after All Notes Off did not sound C4");
+        check(!player.string(3).keyDown, "C4 after All Notes Off sounded C5");
     }
 
     if (failures != 0)

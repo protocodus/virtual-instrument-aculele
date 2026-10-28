@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.4.16 — 2026-10-28 — A key struck twice on one sample keeps its stroke's force
+
+A pluck on the same sample as the last stroke on its string is that stroke played again: it keeps that stroke's force variation, faded out as the force changes, as one a sample later already did. Before, it drew a new variation in full, so a key struck twice on one sample at a much softer velocity could play up to 1 dB away from where it played one sample later. The demos and the levels are unchanged.
+
 ### 0.4.15 — 2026-10-28 — No two plucks alike, and every string let go at one force
 
 Every pluck now draws its own force, within ±1 dB, and its own release angle, turned by about 2° from pluck to pluck. Before, the force varied only when the same note repeated, so a melody of different notes at one velocity varied by 0.2 dB and every pluck sounded alike. Now the spread is 0.8-0.9 dB, near a real player's 0.65 dB. An accent within two seconds on the same string still plays as written. The finger also lets every string go at one force, so a tighter string is displaced less and no string drives the bridge harder than the others. Against the other strings, the A string plays 1.1-2.6 dB quieter (1.8 dB on the nylon sets) and the low G 2.3-2.6 dB louder. Both were the owner's choices by ear. Four preset trims moved by 0.6-2.1 dB to keep typical playing at -9 VU.

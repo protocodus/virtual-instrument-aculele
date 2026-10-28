@@ -7818,18 +7818,15 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
     // policy, not measured physiology.
     // The independent draw is linear-mean normalised: E[exp(a*U)] = sinh(a)/a;
     // blending it toward one preserves both that mean and its bounds.
+    const float previousForceGain = voice.pluckForceGain;
     voice.pluckForceGain = 1.0f;
     if (!voice.strumming)
     {
         constexpr double halfWidth = 0.1151292546497022842; // ln(10)/20: 1 dB
-        // Consume one draw even when the weight is zero. A changed velocity
-        // or crossing the memory endpoint then cannot switch which random
-        // hand residual a later otherwise identical contact receives.
-        const double drawGain = std::exp(halfWidth
-            * xorshiftNoise(voice.pluckForceState)) * halfWidth
-            / std::sinh(halfWidth);
+        const bool remembered = voice.lastPluckMidiNote >= 0
+            && sampleClock_ >= voice.lastPluckSample;
         double weight = 1.0;
-        if (voice.lastPluckMidiNote >= 0 && sampleClock_ > voice.lastPluckSample)
+        if (remembered)
         {
             const auto fade = [] (double distance) noexcept
             {
@@ -7846,7 +7843,26 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
             const double forceChange = exact::abs(std::log(nominalForce / previousForce));
             weight = 1.0 - fade(elapsed) * (1.0 - fade(forceChange / (2.0 * halfWidth)));
         }
-        voice.pluckForceGain = static_cast<float>(1.0 + weight * (drawGain - 1.0));
+        if (remembered && sampleClock_ == voice.lastPluckSample)
+        {
+            // A second contact on the same sample is the same stroke: it
+            // keeps that stroke's draw, fading it as above, and leaves the
+            // stream where it was. Drawn afresh, it took the residual in
+            // full where one sample later it took almost none.
+            voice.pluckForceGain = static_cast<float>(1.0
+                + weight * (static_cast<double>(previousForceGain) - 1.0));
+        }
+        else
+        {
+            // Consume one draw even when the weight is zero. A changed
+            // velocity or crossing the memory endpoint then cannot switch
+            // which random hand residual a later otherwise identical
+            // contact receives.
+            const double drawGain = std::exp(halfWidth
+                * xorshiftNoise(voice.pluckForceState)) * halfWidth
+                / std::sinh(halfWidth);
+            voice.pluckForceGain = static_cast<float>(1.0 + weight * (drawGain - 1.0));
+        }
     }
     voice.lastPluckMidiNote = voice.midiNote;
     voice.lastPluckMidiChannel = voice.midiChannel;

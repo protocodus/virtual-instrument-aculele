@@ -550,7 +550,17 @@ constexpr BodyGeometry measuredAnchorBody { 0.397f, 0.508f, 0.111f, 0.1016f, 0.7
 // lowers T1 4% and Maple raises both 1%. A builder's two tenors tap at 211 and
 // 214 Hz (ukuleles.com, "Tunings for the 4-String Tenor"); a UBC student
 // baritone (10 1/4 in lower bout) at about 150 Hz air and 300 Hz top, where
-// this law gives about 165/320 Hz. Both are informal measurements.
+// this law gives about 165/320 Hz. Both are informal measurements. A
+// mid-priced concert of unstated make, struck by hammer on its top and back
+// and heard by microphone, rings at 222 Hz (air) and 395 Hz (its first top
+// mode): Sunta, "Akusticne lastnosti ukulel", diploma thesis, University of
+// Ljubljana, 2020, p. 19 and Table 5. The Labrana-Espinoza soprano
+// (doi:10.5281/zenodo.22692775, holes_hybrid.txt, its bridge accelerance with
+// the holes open and covered) has its pair at 199 and 324 Hz about a 272 Hz
+// Helmholtz frequency, near this soprano box's 271 Hz, so its top alone on
+// the box rings at 237 Hz where this law's rings at 641. Its body is
+// printed, and the concert's first top mode rings higher on a larger box, so
+// the two tops are built differently; neither replaces the law.
 constexpr std::array<BodyGeometry, 3> ukuleleBodies {{
     { 0.1778f, 0.2413f, 0.9f * 0.0603f, 0.048f, 0.72f }, // Soprano
     { 0.2096f, 0.2794f, 0.9f * 0.0699f, 0.051f, 0.72f }, // Concert

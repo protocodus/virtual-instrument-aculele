@@ -179,7 +179,7 @@ Levels are set on Reason's channel meter, a VU meter read with 0 VU at -12 dBFS 
 
 ## Known gaps
 
-- **One ukulele body's radiation has been measured, and none of its modes are used.** The radiation and bridge banks are a nylon flamenca guitar scaled down by the equal-thickness plate law. Only their fall above 1 kHz follows a measured ukulele, a soprano; the concert and tenor are assumed to fall as it does. That soprano's printed body has its plate–cavity modes at 202, 324 and 374 Hz. The scaled spruce soprano has its A0 and T1 at 266 and 653 Hz. The measured body is not a commercial soprano, so its modes were not adopted.
+- **One ukulele body's radiation has been measured, and none of its modes are used.** The radiation and bridge banks are a nylon flamenca guitar scaled down by the equal-thickness plate law. Only their fall above 1 kHz follows a measured ukulele, a soprano; the concert and tenor are assumed to fall as it does. That soprano's printed body has its plate–cavity modes at 202, 324 and 374 Hz. The scaled spruce soprano has its A0 and T1 at 266 and 653 Hz. The measured body is not a commercial soprano, so its modes were not adopted. A mid-priced concert measured in a 2020 thesis rings at 222 Hz (air) and 395 Hz (its first top mode), against the scaled concert's 215 and 466-485 Hz: its top mode is 15-19% lower. Its first top mode rings higher than the measured soprano's 324 Hz on a larger box, so the two tops are built differently, and neither replaces the law.
 
   Playing a real ukulele recording's arpeggio (an unidentified instrument) with the Finger, the soprano's third-octave spectrum compares like this:
   - from 250 to 630 Hz it lies within 3 dB of the recording's;

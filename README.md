@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.4.9 — 2026-10-28 — Stiff high notes are lighter on the CPU
+
+About one note in five, most of them on the C string high up the neck and on nylon, needs a slower search to place its upper partials, and that search ran again at every pluck and every 40 ms or so under a vibrato or a bend. Such a note now continues from its last design while its pitch stays within 1%, and searches again only when continuing would leave its worst partial more than a cent further out than the last search did. One such note under full vibrato fell from about 22% to 9% of real time at 48 kHz on the development machine. Its first pluck still runs the whole search, up to 12 ms. Partials move by at most 0.3 cents: Soprano Thumb's E4 on the C string is the one demo note that changes.
+
 ### 0.4.8 — 2026-10-28 — The thumb strums back up on its nail
 
 Under Thumb, a chord's upstroke now meets the strings with the thumbnail, as the back of the thumb leads into them going up, where it used the thumb's pad both ways. An upstroke is 1-7 dB brighter at 3-8 kHz, its level within 0.5 dB. Downstrokes and single notes keep the pad. The demos are unchanged: Soprano Thumb's ballad is all downstrokes.

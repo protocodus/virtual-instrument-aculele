@@ -1788,7 +1788,8 @@ int wrapDelayIndex(int index) noexcept
 // One dispersion design: the loop delay it was fitted with and, per section,
 // the pole pair relative to the fundamental (secondOrderAllpassCoefficients)
 // and its coefficients at the design frequency. A zero decay ratio is an
-// unused section.
+// unused section. worst is the worst partial, in cents, of the full search
+// the design comes from (calibrateDispersion), a continued one's included.
 struct DispersionCalibration
 {
     double delay { 128.0 };
@@ -1796,6 +1797,7 @@ struct DispersionCalibration
     std::array<double, 2> poleRatio { 0.0, 0.0 };
     std::array<double, 2> a1 {};
     std::array<double, 2> a2 {};
+    double worst { 0.0 };
 };
 
 double referenceLossOmega(double omega, double sampleRate) noexcept
@@ -3149,13 +3151,32 @@ void refineDispersionDesign(const DispersionPartials& partials,
 // microseconds a note at 44.1 to 96 kHz, against 80 for the collocation
 // alone before (whose solve now reads the phases it does not move once),
 // and is cached (dispersionSolves_) and redone only when its inputs change.
+//
+// The fallback is the costly part: about one note in five on the factory
+// strings needs it (542 of the 2,790 notes of every body, string set,
+// tuning, string and fret at 48 kHz; most on the C string high up and on
+// nylon), at a median 4.2 ms and up to 12, and it ran again at every pluck,
+// whose own few cents of pitch are new inputs, and every 40 ms or so under
+// a vibrato or a bend. So a string's next design near its last (previous:
+// a pitch within 1% and its stiffness within 2%, solvedDispersion)
+// continues from it instead: one refit from the last design's first
+// section, the spread of starts only if that misses by more than 1 cent
+// beyond what the last full search reached. Over twelve re-plucks of each
+// of those 542 notes at up to 4 cents from it, the continued designs cost
+// an eighth of the full searches' time; their worst partial is a median
+// 0.04 cents and at the 99th percentile 1.95 cents from the full search's
+// and at most 7.2 cents, where full searches 4 cents apart already differ
+// by up to 7.3. A full-wheel vibrato on the C string's 14th fret on nylon
+// went from 255 to 38 ms of design work in 2 s, a bend sweep there from 131
+// to 32 ms, each within 2.1 cents of the full searches.
 DispersionCalibration calibrateDispersion(
     double inharmonicity, double fundamental, double sampleRate,
     double broadCoefficient, double broadMix,
     double highCoefficient, double highMix,
     double bendingA1 = 0.0, double bendingA2 = 0.0,
                       double constantA1 = 0.0, double constantA2 = 0.0,
-                      double constantN1 = 0.0, double constantN2 = 0.0) noexcept
+                      double constantN1 = 0.0, double constantN2 = 0.0,
+                      const DispersionCalibration* previous = nullptr) noexcept
 {
     DispersionCalibration calibration;
     const double omega0 = 2.0 * piDouble * fundamental / sampleRate;
@@ -3220,7 +3241,10 @@ DispersionCalibration calibrateDispersion(
     constexpr double tolerance = 3.0;
     const double collocatedWorst = worstOf(collocated);
     if (!(stiffnessShare > 0.0) && collocatedWorst <= tolerance)
+    {
+        collocated.worst = collocatedWorst;
         return collocated;
+    }
 
     // The second section at a share of its full strength: its pole radius
     // scaled by the share, so a vanishing share is a two-sample delay, the
@@ -3258,9 +3282,22 @@ DispersionCalibration calibrateDispersion(
     // the answer, and the best of everything, the collocation included,
     // kept.
     const double fallbackShare = stiffnessShare > 0.0 ? stiffnessShare : 1.0;
+    bool continued = false;
+    if (previous != nullptr && worst > tolerance)
+    {
+        auto candidate = fitFrom(previous->decayRatio[0],
+                                 previous->poleRatio[0], fallbackShare, 0.01);
+        const double candidateWorst = worstOf(candidate);
+        if (candidateWorst < worst)
+        {
+            worst = candidateWorst;
+            calibration = candidate;
+        }
+        continued = worst <= previous->worst + 1.0;
+    }
     constexpr double decayScales[] { 1.0, 0.6, 1.7, 0.35 };
     constexpr double poles[] { 0.19, 0.1, 0.3, 0.05 };
-    for (int decayIndex = 0; decayIndex < 4 && worst > tolerance; ++decayIndex)
+    for (int decayIndex = 0; !continued && decayIndex < 4 && worst > tolerance; ++decayIndex)
     for (int poleIndex = 0; poleIndex < 4 && worst > tolerance; ++poleIndex)
     {
         auto candidate = fitFrom(
@@ -3274,8 +3311,12 @@ DispersionCalibration calibrateDispersion(
         }
     }
     if (worst > tolerance && collocatedWorst < worst)
+    {
         calibration = collocated;
+        worst = collocatedWorst;
+    }
     finish(calibration);
+    calibration.worst = continued ? previous->worst : worst;
     return calibration;
 }
 } // namespace
@@ -4541,6 +4582,11 @@ void AculeleEngine::reset() noexcept
         voice.pedalHeld = false;
         voice.level = 0.0f;
         voice.returnSamples = 0;
+        // A design continued from the strings' last notes (solvedDispersion)
+        // does not outlive a reset: each is designed again as at construction.
+        voice.dispersionDesign = {};
+        voice.dispersionDesignInharmonicity = -1.0f;
+        voice.referencePickDispersion = {};
         returnToOpenString(voice, string, true);
     }
     // Initialise every reciprocal open-string loop. The second pass settles
@@ -5988,31 +6034,61 @@ AculeleEngine::PortMobility AculeleEngine::bridgePortMobility(
 
 // Completed intrinsic fits are shared by real voices and the resting-string
 // reference builder. Reuse requires the complete, exact input tuple.
-std::pair<std::array<float, 2>, std::array<float, 2>> AculeleEngine::solvedDispersion(
-    const std::array<double, 13>& arguments) noexcept
+AculeleEngine::DispersionSolve AculeleEngine::solvedDispersion(
+    const std::array<double, 13>& arguments,
+    const DispersionSolve* previous) noexcept
 {
-    const auto solved = std::find_if(dispersionSolves_.begin(),
-        dispersionSolves_.end(), [&arguments] (const DispersionSolve& solve)
+    // Near enough to continue: the same rate and loss filters (arguments
+    // 2-6), the pitch within 1% and the stiffness within 2%. That takes in
+    // the few cents a fretting finger moves a note from pluck to pluck
+    // (frettingPitchCents) and the 0.1% and 0.2% steps at which a bend or a
+    // vibrato re-designs; the next fret is 6% away.
+    const bool continues = previous != nullptr && previous->valid
+        && std::equal(arguments.begin() + 2, arguments.begin() + 7,
+                      previous->arguments.begin() + 2)
+        && std::abs(arguments[1] / previous->arguments[1] - 1.0) <= 0.01
+        && std::abs(arguments[0] / previous->arguments[0] - 1.0) <= 0.02;
+    DispersionCalibration start;
+    if (continues)
+    {
+        for (std::size_t section = 0; section < 2; ++section)
         {
-            return solve.valid && solve.arguments == arguments;
-        });
-    if (solved != dispersionSolves_.end())
-        return std::pair { solved->decayRatios, solved->poleRatios };
+            start.decayRatio[section] = previous->decayRatios[section];
+            start.poleRatio[section] = previous->poleRatios[section];
+        }
+        start.worst = previous->worstCents;
+    }
+    else
+    {
+        const auto solved = std::find_if(dispersionSolves_.begin(),
+            dispersionSolves_.end(), [&arguments] (const DispersionSolve& solve)
+            {
+                return solve.valid && solve.arguments == arguments;
+            });
+        if (solved != dispersionSolves_.end())
+            return *solved;
+    }
     const auto calibration = calibrateDispersion(
         arguments[0], arguments[1], arguments[2], arguments[3],
         arguments[4], arguments[5], arguments[6], arguments[7], arguments[8],
-        arguments[9], arguments[10], arguments[11], arguments[12]);
-    auto& slot = dispersionSolves_[static_cast<std::size_t>(nextDispersionSolve_)];
-    slot.arguments = arguments;
+        arguments[9], arguments[10], arguments[11], arguments[12],
+        continues ? &start : nullptr);
+    DispersionSolve solve;
+    solve.arguments = arguments;
     for (std::size_t section = 0; section < 2; ++section)
     {
-        slot.decayRatios[section] = static_cast<float>(calibration.decayRatio[section]);
-        slot.poleRatios[section] = static_cast<float>(calibration.poleRatio[section]);
+        solve.decayRatios[section] = static_cast<float>(calibration.decayRatio[section]);
+        solve.poleRatios[section] = static_cast<float>(calibration.poleRatio[section]);
     }
-    slot.valid = true;
-    nextDispersionSolve_ = (nextDispersionSolve_ + 1)
-        % static_cast<int>(dispersionSolves_.size());
-    return std::pair { slot.decayRatios, slot.poleRatios };
+    solve.worstCents = static_cast<float>(calibration.worst);
+    solve.valid = true;
+    if (!continues)
+    {
+        dispersionSolves_[static_cast<std::size_t>(nextDispersionSolve_)] = solve;
+        nextDispersionSolve_ = (nextDispersionSolve_ + 1)
+            % static_cast<int>(dispersionSolves_.size());
+    }
+    return solve;
 }
 
 const std::array<AculeleEngine::RestingStringModel, AculeleEngine::stringCount>&
@@ -6055,9 +6131,11 @@ AculeleEngine::restingStringModels() noexcept
         model.highCoefficient = highCoefficient;
         model.highMix = loss.highMix;
         model.highFilter.configureRate(highCoefficient, sampleRate_);
-        const auto [decay, pole] = solvedDispersion({ inharmonicity, frequency, sampleRate_,
+        const auto solve = solvedDispersion({ inharmonicity, frequency, sampleRate_,
             0.0, 0.0, highCoefficient, model.highMix, model.bendingA1, model.bendingA2,
             model.constantA1, model.constantA2, static_cast<float>(constant.n1), model.constantN2 });
+        const auto& decay = solve.decayRatios;
+        const auto& pole = solve.poleRatios;
         DispersionSections dispersion;
         const float omega = twoPi * frequency * inverseSampleRate_;
         for (std::size_t section = 0; section < 2; ++section)
@@ -6612,14 +6690,10 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
         };
         // Resetting a wave does not change an otherwise identical design.
         // Keep the existing request tolerances and metadata updates, while
-        // reusing only a solve with exactly the same complete input tuple.
-        if (voice.dispersionDesignArguments != arguments)
-        {
-            const auto [decayRatios, poleRatios] = solvedDispersion(arguments);
-            voice.dispersionDecayRatios = decayRatios;
-            voice.dispersionPoleRatios = poleRatios;
-            voice.dispersionDesignArguments = arguments;
-        }
+        // reusing only a solve with exactly the same complete input tuple;
+        // a design near the string's last continues from it.
+        if (voice.dispersionDesign.arguments != arguments)
+            voice.dispersionDesign = solvedDispersion(arguments, &voice.dispersionDesign);
         voice.dispersionDesignFrequency = lossDesignFrequency;
         voice.dispersionDesignInharmonicity = inharmonicity;
         voice.dispersionDesignAge = age;
@@ -6631,11 +6705,11 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
     for (std::size_t section = 0; section < 2; ++section)
     {
         secondOrderAllpassCoefficients(static_cast<double>(omega),
-            voice.dispersionDecayRatios[section],
-            voice.dispersionPoleRatios[section], dispersion.a1[section],
+            voice.dispersionDesign.decayRatios[section],
+            voice.dispersionDesign.poleRatios[section], dispersion.a1[section],
             dispersion.a2[section]);
     }
-    dispersion.used[1] = voice.dispersionDecayRatios[1] > 0.0f;
+    dispersion.used[1] = voice.dispersionDesign.decayRatios[1] > 0.0f;
     // Woodhouse and Lynch-Aird's law already follows the stopped string's
     // pitch, so steel's fitted fret slope is not carried over.
     float fundamentalT60 = ukuleleLoss.fundamentalT60;
@@ -6679,12 +6753,15 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
         const auto fitConstant = fitAtDesign ? constant
             : constantSection(static_cast<double>(dispersionFitFrequency),
                               referenceRate);
-        const auto [decayRatios, poleRatios] = solvedDispersion({
+        voice.referencePickDispersion = solvedDispersion({
             inharmonicity, dispersionFitFrequency, referenceRate,
             designBroadLossCoefficient, broadLoss, lowpassCoefficient, highLoss,
             static_cast<float>(fitBending.a1), static_cast<float>(fitBending.a2),
             static_cast<float>(fitConstant.a1), static_cast<float>(fitConstant.a2),
-            static_cast<float>(fitConstant.n1), static_cast<float>(fitConstant.n2) });
+            static_cast<float>(fitConstant.n1), static_cast<float>(fitConstant.n2) },
+            &voice.referencePickDispersion);
+        const auto& decayRatios = voice.referencePickDispersion.decayRatios;
+        const auto& poleRatios = voice.referencePickDispersion.poleRatios;
         const float referenceOmega = twoPi * frequency
             * static_cast<float>(1.0 / referenceRate);
         DispersionSections referenceDispersion;

@@ -1262,6 +1262,19 @@ private:
     std::uint64_t pickingGestureSample_ { 0 };
     bool pickingGestureSeen_ { false };
 
+    // One dispersion design (calibrateDispersion) with the exact arguments
+    // it was made for (solvedDispersion): the two sections' pole pairs
+    // relative to the fundamental, a zero decay ratio an unused section.
+    struct DispersionSolve
+    {
+        std::array<double, 13> arguments {};
+        std::array<float, 2> decayRatios { 0.0f, 0.0f };
+        std::array<float, 2> poleRatios { 0.0f, 0.0f };
+        // The worst partial, in cents, of the full search it comes from.
+        float worstCents { 0.0f };
+        bool valid { false };
+    };
+
     struct Voice
     {
         // Continuous longitudinal pad motion, independent of pitch/tension
@@ -1477,12 +1490,12 @@ private:
         float dispersionDesignInharmonicity { -1.0f };
         float dispersionDesignAge { -1.0f };
         float dispersionDesignFrequencyLossScale { -1.0f };
-        // Exact arguments of the last completed dispersion solve. Its fit
-        // frequency is bounded beyond the playable fretboard plus the
+        // The last completed dispersion design and its exact arguments. Its
+        // fit frequency is bounded beyond the playable fretboard plus the
         // documented 12-semitone panel/Reason bend range; above that the
         // inexpensive bending section still follows the physical pitch.
         // Frequency is positive, so an all-zero key cannot be a valid hit.
-        std::array<double, 13> dispersionDesignArguments {};
+        DispersionSolve dispersionDesign {};
         // The string's own bending-loss and constant-loss sections at the
         // physical playing frequency, including beyond the bounded phase-fit
         // band above; both polarisations carry them.
@@ -1504,14 +1517,12 @@ private:
         std::array<std::uint32_t, 7> commonTuningKey {};
         bool commonTuningSympathetic { false };
         float commonTuningValue { 0.0f };
-        // The two dispersion sections' pole pairs relative to the
-        // fundamental; a zero decay ratio is an unused section.
-        std::array<float, 2> dispersionDecayRatios { 0.0f, 0.0f };
-        std::array<float, 2> dispersionPoleRatios { 0.0f, 0.0f };
         // Each loop's delay as configureVoice tuned it at 48 kHz, in 48 kHz
         // samples, for a Pick release at another rate (writePickRelease);
         // zero when not tuned for one.
         std::array<float, 2> referencePickDelay {};
+        // The dispersion design that tuning was made with.
+        DispersionSolve referencePickDispersion {};
         // Reference-rate release geometry belongs to an attack, not every
         // control update. Reuse it until the next Pick meets a new string
         // configuration; refreshing it must not reset a retained wave.
@@ -2048,16 +2059,13 @@ private:
     // made the note-on batch several times a normal one (with a
     // least-squares refit on the stiffer notes). The solve is a pure
     // function of its arguments, so a hit is the same result.
-    struct DispersionSolve
-    {
-        std::array<double, 13> arguments {};
-        std::array<float, 2> decayRatios { 0.0f, 0.0f };
-        std::array<float, 2> poleRatios { 0.0f, 0.0f };
-        bool valid { false };
-    };
     std::array<DispersionSolve, 64> dispersionSolves_ {};
-    [[nodiscard]] std::pair<std::array<float, 2>, std::array<float, 2>>
-        solvedDispersion(const std::array<double, 13>& arguments) noexcept;
+    // previous: a string's last design, which a design near it continues
+    // from (calibrateDispersion). Such a design depends on that history, so
+    // it is neither taken from the solves above nor kept among them.
+    [[nodiscard]] DispersionSolve solvedDispersion(
+        const std::array<double, 13>& arguments,
+        const DispersionSolve* previous = nullptr) noexcept;
     // History-free open-string branches used only by the base tuning model.
     // The actual junction still carries every played string and retained tail.
     struct RestingStringModel

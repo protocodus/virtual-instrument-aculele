@@ -1,11 +1,13 @@
 // Automatic strokes follow the strumming hand's down-up swing
-// (Performer::pendulumUpstroke).
+// (Performer::pendulumUpstroke), and each direction meets the strings with
+// its technique's nail or pad (AculeleEngine::nailStroke).
 //
 // Each rhythm is played as four-string tab strokes (CC126 = 4 on channel 1)
-// under Strum at the default controls, 48 kHz and 256-sample blocks, with no
-// direction keyswitch, and each stroke's direction is read from the strings
-// it sounds. A rhythm is a list of onsets in beats; the hand swings in
-// eighths unless a gap of an odd number of sixteenths puts it in sixteenths.
+// under Strum, or the technique named, at the default controls, 48 kHz and
+// 256-sample blocks, with no direction keyswitch, and each stroke's
+// direction is read from the strings it sounds. A rhythm is a list of onsets
+// in beats; the hand swings in eighths unless a gap of an odd number of
+// sixteenths puts it in sixteenths.
 
 #include "DSP/AculelePerformer.h"
 #include "DSP/AculelePresets.h"
@@ -25,6 +27,10 @@ struct AculeleEngineTestAccess
     {
         return engine.voices_[static_cast<std::size_t>(string)].pluckParallelSign;
     }
+    static bool nail(const AculeleEngine& engine, int string)
+    {
+        return engine.nailStroke(engine.voices_[static_cast<std::size_t>(string)]);
+    }
 };
 } // namespace aculele
 
@@ -36,9 +42,11 @@ constexpr double bpm = 120.0;
 
 int failures = 0;
 
-// "D" or "U" per stroke, read from the G string's direction just after it.
+// "D" or "U" per stroke, read from the G string's direction just after it;
+// contacts gets "N" for a nail's stroke and "P" for a pad's.
 std::string directions(const std::vector<double>& beats, bool pendulum,
-                       aculele::PickingTechnique picking = aculele::PickingTechnique::Strum)
+                       aculele::PickingTechnique picking = aculele::PickingTechnique::Strum,
+                       std::string* contacts = nullptr)
 {
     auto performer = std::make_unique<aculele::Performer>();
     auto realism = performer->engine().performanceRealism();
@@ -84,6 +92,8 @@ std::string directions(const std::vector<double>& beats, bool pendulum,
         ++clock;
         result += aculele::AculeleEngineTestAccess::strokeSign(performer->engine(), 0) < 0.0f
             ? 'U' : 'D';
+        if (contacts != nullptr)
+            *contacts += aculele::AculeleEngineTestAccess::nail(performer->engine(), 0) ? 'N' : 'P';
     }
     return result;
 }
@@ -127,6 +137,21 @@ int main()
     {
         std::fprintf(stderr, "FAIL picked strums: %s\n", picked.c_str());
         ++failures;
+    }
+
+    // The nail meets the strings on a Strum's downstrokes and on a Thumb's
+    // upstrokes, the pad on the others (AculeleEngine::nailStroke).
+    for (const auto picking : { aculele::PickingTechnique::Strum, aculele::PickingTechnique::Thumb })
+    {
+        std::string contacts;
+        const auto strokes = directions({ 0, 0.5, 1, 1.5 }, true, picking, &contacts);
+        const bool thumb = picking == aculele::PickingTechnique::Thumb;
+        if (strokes != "DUDU" || contacts != (thumb ? "PNPN" : "NPNP"))
+        {
+            std::fprintf(stderr, "FAIL %s contacts: %s %s\n", thumb ? "thumb" : "strum",
+                         strokes.c_str(), contacts.c_str());
+            ++failures;
+        }
     }
 
     if (failures == 0)

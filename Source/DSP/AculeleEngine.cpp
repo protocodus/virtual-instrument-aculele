@@ -6451,11 +6451,14 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
         exact::bits(soundingLength), exact::bits(pitch.speakingFret),
         exact::bits(lossDesignFrequency),
         exact::bits(parameters_.stringAge), exact::bits(palmMute_) };
-    // A Strum's downstrokes take the Pick's release too (nailStroke).
+    // A Strum's downstrokes and a Thumb's upstrokes take the Pick's release
+    // too (nailStroke).
     const bool usePickReference = (clearDelay || refreshPickReference)
         && sampleRate_ != 48000.0 && (parameters_.picking == PickingTechnique::Pick
             || (parameters_.picking == PickingTechnique::Strum
-                && performanceRealism_.nailStrokes));
+                && performanceRealism_.nailStrokes)
+            || (parameters_.picking == PickingTechnique::Thumb
+                && performanceRealism_.thumbnailUpstrokes));
     const bool referenceTuning = usePickReference
         && !(configurationKey == voice.referencePickConfigurationKey);
     if (!clearDelay && configurationKey == voice.configurationKey && !referenceTuning)
@@ -7048,12 +7051,20 @@ float AculeleEngine::frettingPitchHalfWidth(int stringIndex, int openMidi) const
 // back up with the finger's fleshy pad (MasterClass, "How to Strum a
 // Ukulele", https://www.masterclass.com/articles/how-to-strum-a-ukulele, and
 // the beginners' guides that teach it). A single note under Strum is a stroke
-// of the same finger, so its downstrokes are the nail's too.
+// of the same finger, so its downstrokes are the nail's too. The thumb is the
+// mirror: a downstroke leads into the strings with its pad and an upstroke
+// with the back of the thumb, its nail, which Bruce Watson's ukulele notes
+// strum up with ("the nail of your thumb on the upstroke", "Strumming",
+// https://www.brucewatsonmusic.com/documents/Strumming.pdf). Thumb single
+// notes are all downstrokes (Performer::flushNoteGroup), so they keep the pad.
 bool AculeleEngine::nailStroke(const Voice& voice) const noexcept
 {
-    return performanceRealism_.nailStrokes
-        && parameters_.picking == PickingTechnique::Strum
-        && voice.pluckParallelSign > 0.0f;
+    return (performanceRealism_.nailStrokes
+            && parameters_.picking == PickingTechnique::Strum
+            && voice.pluckParallelSign > 0.0f)
+        || (performanceRealism_.thumbnailUpstrokes
+            && parameters_.picking == PickingTechnique::Thumb
+            && voice.pluckParallelSign < 0.0f);
 }
 
 AculeleEngine::PickingGesture AculeleEngine::nextPickingGesture() noexcept
@@ -7463,10 +7474,10 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
     const float apertureReferenceDelay = 48000.0f / midiFrequency(61);
     // The Pick technique's release velocity (FittedPhysicalData.h). Finger
     // and Thumb, and a pick at a zero share, take the displacement shape below.
-    // A strum's downstroke strikes with the index finger's nail, a hard edge
-    // the string slides off as it does a plectrum's, so it takes the Pick's
-    // whole contact (nailStroke); where the stroke lands and how hard stay
-    // the Strum's.
+    // A strum's downstroke strikes with the index finger's nail, and a
+    // Thumb's upstroke with the thumbnail: a hard edge the string slides off
+    // as it does a plectrum's, so it takes the Pick's whole contact
+    // (nailStroke); where the stroke lands and how hard stay the technique's.
     const bool pick = parameters_.picking == PickingTechnique::Pick
         || nailStroke(voice);
     const float releaseShare = pick

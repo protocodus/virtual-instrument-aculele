@@ -99,6 +99,10 @@ struct PerformanceRealism
     // nail, the Pick's hard contact, and an upstroke with its pad
     // (AculeleEngine::nailStroke).
     bool nailStrokes { true };
+    // Under Thumb a downstroke meets the strings with the thumb's pad and an
+    // upstroke with its nail, the Pick's hard contact
+    // (AculeleEngine::nailStroke).
+    bool thumbnailUpstrokes { true };
     // Under Finger the thumb plucks the G string with its broader pad and
     // the fingers the other three (AculeleEngine::initialisePluck).
     bool fingerstyleThumb { true };

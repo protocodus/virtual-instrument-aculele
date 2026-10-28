@@ -57,6 +57,19 @@ compared only), 1-1.6 kHz stays +5.6 to +10.1 dB too strong at every level
 tried (0.274, 0.50 and 1.0). So that excess is not the bridge's, and no
 bridge level was chosen to reduce it.
 
+## 2026-10-28 — the thumb's upstroke is its nail's, 0.4.8 (from a source, not by ear)
+
+Under Thumb, a chord's upstroke takes the Pick's hard contact, as a Strum's
+downstroke does (`thumbnailUpstrokes`, `AculeleEngine::nailStroke`). Going
+up, the back of the thumb leads into the strings, and Bruce Watson's ukulele
+notes strum up with "the nail of your thumb on the upstroke" ("Strumming",
+brucewatsonmusic.com). The same notes find that the thumb alone, down and up,
+"tends to make the upstroke louder than the downstroke"; the model does not
+reproduce that, its upstroke being 1-7 dB brighter at 3-8 kHz at a level
+within 0.5 dB. No thumbnail stroke has been measured; this reuses the Pick's
+fit, as the nail downstroke does. A before/after preview went to the owner;
+no listener has compared them.
+
 ## 2026-10-27 — the strumming hand for 0.3.0 (from sources, not by ear)
 
 Five changes, each from a published description or measurement, and each a

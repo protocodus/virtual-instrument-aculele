@@ -3153,22 +3153,23 @@ void refineDispersionDesign(const DispersionPartials& partials,
 // and is cached (dispersionSolves_) and redone only when its inputs change.
 //
 // The fallback is the costly part: about one note in five on the factory
-// strings needs it (542 of the 2,790 notes of every body, string set,
+// strings needs it (269 of the 1,368 notes of every body, string set,
 // tuning, string and fret at 48 kHz; most on the C string high up and on
 // nylon), at a median 4.2 ms and up to 12, and it ran again at every pluck,
-// whose own few cents of pitch are new inputs, and every 40 ms or so under
-// a vibrato or a bend. So a string's next design near its last (previous:
-// a pitch within 1% and its stiffness within 2%, solvedDispersion)
-// continues from it instead: one refit from the last design's first
-// section, the spread of starts only if that misses by more than 1 cent
-// beyond what the last full search reached. Over twelve re-plucks of each
-// of those 542 notes at up to 4 cents from it, the continued designs cost
-// an eighth of the full searches' time; their worst partial is a median
-// 0.04 cents and at the 99th percentile 1.95 cents from the full search's
-// and at most 7.2 cents, where full searches 4 cents apart already differ
-// by up to 7.3. A full-wheel vibrato on the C string's 14th fret on nylon
-// went from 255 to 38 ms of design work in 2 s, a bend sweep there from 131
-// to 32 ms, each within 2.1 cents of the full searches.
+// whose own few cents of pitch are new inputs, and every 40 ms or so under a
+// vibrato or a bend. So a string's next design near its last (previous: a
+// pitch within 1% and its stiffness within 2%, solvedDispersion) continues
+// from it instead: one refit from the last design's first section, the
+// spread of starts only if that misses by more than 1 cent beyond what the
+// last full search reached. Over twelve re-plucks, at up to 4 cents, of each
+// of the 542 designs those notes asked for (a fretting and a pluck each,
+// near enough), the continued designs cost an eighth of the full searches'
+// time; their worst partial is a median 0.04 cents and at the 99th
+// percentile 1.95 cents from the full search's and at most 7.2 cents, where
+// full searches 4 cents apart already differ by up to 7.3. A full-wheel
+// vibrato on the C string's 14th fret on nylon went from 255 to 38 ms of
+// design work in 2 s, a bend sweep there from 131 to 32 ms, each within 2.1
+// cents of the full searches.
 DispersionCalibration calibrateDispersion(
     double inharmonicity, double fundamental, double sampleRate,
     double broadCoefficient, double broadMix,

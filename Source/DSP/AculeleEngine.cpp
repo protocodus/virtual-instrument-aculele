@@ -796,6 +796,28 @@ constexpr float radiationContinuationTopHz = 18000.0f;
 constexpr float radiationContinuationDbPerOctave = -6.0f;
 // Its slots: AculeleEngine::radiationContinuationSlots.
 
+// The one ukulele whose top has been counted: Elie, Gautier, David and
+// Curtit, Forum Acusticum 2011 (the bridge level's source too,
+// ukuleleTopMobilityRatio). ESPRIT identified its bridge's modes; their
+// density follows a simply supported plate's, n(f) = p beta + q sqrt(beta/f),
+// with p = 9.1e-3 m^2 and q = -0.054 m (Fig. 5a) and, with its usual
+// rosewood bridge, beta = 2.03 s/m^2 (Fig. 5c): 0.0160 modes per hertz at
+// 1 kHz, 0.0173 at 4.4 kHz, 57 modes between. The band runs from where its
+// mobility's mean value starts, above the separate low modes (Fig. 5b), to
+// the top of its density figure. Scaled to a ukulele by the equal-thickness
+// law, g21's bank and the joint body place 16-24 resonances there. The
+// paper does not give the ukulele's size (its equivalent plate, 0.135 m
+// square, is the lower bout), so every Shape takes this count.
+constexpr float plateBandLowHz = 1000.0f;
+constexpr float plateBandHighHz = 4400.0f;
+constexpr float plateBandModes = 57.0f;
+// A cluster spans at most a third of an octave, 1018 Hz at the band's top:
+// 17 members at the measured spacing.
+constexpr int plateClusterLimit = 18;
+// Slots for the clusters: each mode's share rounds to at most half a member
+// over its measured count, and at most 26 modes fall in the band.
+constexpr int plateBandSlots = 72;
+
 struct WoodSpec
 {
     WoodPhysicalProperties properties;
@@ -1622,9 +1644,11 @@ static_assert(steelBlendBodyModeCount <= ACULELE_BODY_MODE_COUNT,
               "-DACULELE_BODY_MODE_COUNT=263");
 static_assert(steelBlendBodyModeCount
                   + AculeleEngine::radiationContinuationSlots
+                  + plateBandSlots
                   <= ACULELE_BODY_MODE_COUNT,
-              "the radiation's continuation above the fitted band "
-              "(configureBody) no longer fits the body slots");
+              "the radiation's continuation above the fitted band and the "
+              "measured plate band's clusters (configureBody) no longer fit "
+              "the body slots");
 static_assert(steelBlendBridgeModeCount <= ACULELE_BRIDGE_MODE_COUNT,
               "the steel blend's bridge exceeds the bridge slots: with every "
               "joint mode (a band above 10 kHz) it needs "
@@ -5396,6 +5420,12 @@ void AculeleEngine::buildBodyConfiguration(BodyConfiguration& configuration,
                   !studioSpatialObservation ? -1 : index == 1 ? 2 : (index == 2 ? 3 : -1));
     }
     const int measuredCount = slot;
+    std::uint32_t seed = 0x9e3779b9u;
+    const auto random = [&seed] ()
+    {
+        seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
+        return static_cast<float>(seed) * (1.0f / 4294967296.0f);
+    };
     // The measured banks stop where their fit stopped (10 kHz before the
     // anchor's x0.900 and the Shape's plate factor: 8.1 kHz on the Jumbo,
     // 11.7 on the Parlor), and above their last mode the radiation fell
@@ -5480,12 +5510,6 @@ void AculeleEngine::buildBodyConfiguration(BodyConfiguration& configuration,
         const float q = 1.0f / (step - 1.0f);
         const float highest = std::min(radiationContinuationTopHz, 0.45f * rate);
         const float tilt = radiationContinuationDbPerOctave;
-        std::uint32_t seed = 0x9e3779b9u;
-        const auto random = [&seed] ()
-        {
-            seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
-            return static_cast<float>(seed) * (1.0f / 4294967296.0f);
-        };
         const int continuationEnd = std::min(slot + radiationContinuationSlots,
                                              bodyModeCount);
         for (float frequency = top * step;
@@ -5573,12 +5597,187 @@ void AculeleEngine::buildBodyConfiguration(BodyConfiguration& configuration,
         mode.rightMomentReal = observation[3].real();
         mode.rightMomentImaginary = observation[3].imag();
     }
+    // Between 1 and 4.4 kHz the measured ukulele had about three times the
+    // modes the scaled bank places there (plateBandModes), and the bank's
+    // stand alone, a partial on one 10-20 dB over one between. Each of them
+    // becomes a cluster at the measured spacing, centred on it: it spans
+    // the same ratio either side, up to halfway to the nearer neighbour and
+    // at most a sixth of an octave (so the cluster stays inside the ear's
+    // critical band about the mode and the band keeps the colour the bank
+    // gave it), with one member per measured mode, each at a random place
+    // in its equal part and at the mode's Q. Member j takes the mode's
+    // residues times 1/N + d_j, the d_j random phases less their mean,
+    // scaled to a power of 1 - 1/N: together the members keep the mode's
+    // energy, the balance between its microphones and inputs, and, through
+    // the 1/N they share, the sum of its residues. The cluster's power then
+    // takes its level factor (below), which brings the band's lone peaks
+    // and gaps to its mean. At 48 kHz that moves the response outside the
+    // band, the low notes' included, by at most 1 dB and leaves the band's
+    // mean power 0.5-1.1 dB lower, the peaks having held more of it than
+    // the gaps they fill (chosen by ear, Docs/decisions.md). A mode broader
+    // than a third of an octave already spreads further and stays. The mode
+    // itself falls silent but keeps its pole and state, so a Shape that
+    // moves it out of the band finds it ringing.
+    int bandEnd = count;
+    {
+        const float rate = static_cast<float>(sampleRate);
+        const float sixthOctave = std::exp2(1.0f / 6.0f);
+        const float spreadQ = 1.0f / (sixthOctave - 1.0f / sixthOctave);
+        constexpr float modesPerHz = plateBandModes / (plateBandHighHz - plateBandLowHz);
+        const auto qOf = [rate] (const BodyMode& mode, float hz)
+        {
+            return -pi * hz / (rate * std::log(std::hypot(mode.poleReal, mode.poleImaginary)));
+        };
+        std::array<std::pair<float, int>, bodyModeCount> spread {};
+        int spreadCount = 0;
+        for (int index = 0; index < count; ++index)
+        {
+            const auto& mode = configuration.modes[static_cast<std::size_t>(index)];
+            if (mode.poleImaginary == 0.0f)
+                continue;
+            const float hz = std::atan2(mode.poleImaginary, mode.poleReal) * rate / twoPi;
+            if (hz >= plateBandLowHz && hz < plateBandHighHz && qOf(mode, hz) > spreadQ)
+                spread[static_cast<std::size_t>(spreadCount++)] = { hz, index };
+        }
+        std::sort(spread.begin(), spread.begin() + spreadCount);
+        // Each cluster's level factor: the band's mean power (its own
+        // modes, all four parts) over their mean power within a sixth of an
+        // octave either side of the mode, so the band follows its mean, not
+        // where the bank's few modes fall. The mean value of a plate's
+        // response is flat above its separate low modes (Elie et al. Fig. 5b
+        // measured the ukulele's mobility flat across 1-6 kHz), and a
+        // point-driven plate radiates a power independent of frequency below
+        // coincidence (Cremer, Heckl and Petersson, Structure-Borne Sound).
+        std::array<float, bodyModeCount> cluster {};
+        {
+            constexpr double gridHz = 5.0;
+            constexpr int gridPoints = static_cast<int>(
+                (plateBandHighHz - plateBandLowHz) / gridHz);
+            std::array<double, gridPoints> power {};
+            double mean = 0.0;
+            for (int point = 0; point < gridPoints; ++point)
+            {
+                const double at = plateBandLowHz + gridHz * (point + 0.5);
+                const std::complex<double> inverseZ = std::polar(1.0,
+                    -2.0 * 3.14159265358979323846 * at / sampleRate);
+                std::array<std::complex<double>, 4> response {};
+                for (int item = 0; item < spreadCount; ++item)
+                {
+                    const auto& mode = configuration.modes[static_cast<std::size_t>(
+                        spread[static_cast<std::size_t>(item)].second)];
+                    const std::complex<double> pole(mode.poleReal, mode.poleImaginary);
+                    const std::complex<double> direct = 1.0 / (1.0 - pole * inverseZ);
+                    const std::complex<double> mirror = 1.0 / (1.0 - std::conj(pole) * inverseZ);
+                    const float parts[8] { mode.leftReal, mode.leftImaginary,
+                        mode.rightReal, mode.rightImaginary, mode.leftMomentReal,
+                        mode.leftMomentImaginary, mode.rightMomentReal,
+                        mode.rightMomentImaginary };
+                    for (std::size_t part = 0; part < 4; ++part)
+                    {
+                        const std::complex<double> residue(parts[2 * part], parts[2 * part + 1]);
+                        response[part] += residue * direct + std::conj(residue) * mirror;
+                    }
+                }
+                for (const auto& part : response)
+                    power[static_cast<std::size_t>(point)] += std::norm(part);
+                mean += power[static_cast<std::size_t>(point)] / gridPoints;
+            }
+            for (int item = 0; item < spreadCount; ++item)
+            {
+                const float hz = spread[static_cast<std::size_t>(item)].first;
+                const int first = std::max(0, static_cast<int>(
+                    (hz / sixthOctave - plateBandLowHz) / gridHz));
+                const int last = std::min(gridPoints, static_cast<int>(
+                    (hz * sixthOctave - plateBandLowHz) / gridHz) + 1);
+                double local = 0.0;
+                for (int point = first; point < last; ++point)
+                    local += power[static_cast<std::size_t>(point)];
+                local /= std::max(1, last - first);
+                cluster[static_cast<std::size_t>(item)] = local > 0.0
+                    ? static_cast<float>(mean / local) : 1.0f;
+            }
+        }
+        // Its own sequence, so the clusters do not depend on how many modes
+        // the continuation above drew.
+        seed = 0x85ebca6bu;
+        for (int item = 0; item < spreadCount; ++item)
+        {
+            const float hz = spread[static_cast<std::size_t>(item)].first;
+            auto& source = configuration.modes[static_cast<std::size_t>(
+                spread[static_cast<std::size_t>(item)].second)];
+            float ratio = sixthOctave;
+            if (item > 0)
+                ratio = std::min(ratio, 2.0f * hz
+                    / (spread[static_cast<std::size_t>(item - 1)].first + hz));
+            if (item + 1 < spreadCount)
+                ratio = std::min(ratio, 0.5f
+                    * (hz + spread[static_cast<std::size_t>(item + 1)].first) / hz);
+            const float low = hz / ratio;
+            const float high = hz * ratio;
+            const int members = std::clamp(static_cast<int>(
+                std::lround(modesPerHz * (high - low))), 1, plateClusterLimit);
+            if (bandEnd + members > bodyModeCount)
+                break;
+            const float q = qOf(source, hz);
+            std::array<float, plateClusterLimit> place {};
+            std::array<std::complex<float>, plateClusterLimit> weight {};
+            std::complex<float> mean {};
+            for (int member = 0; member < members; ++member)
+            {
+                place[static_cast<std::size_t>(member)] = random();
+                weight[static_cast<std::size_t>(member)] = std::polar(1.0f, twoPi * random());
+                mean += weight[static_cast<std::size_t>(member)];
+            }
+            mean /= static_cast<float>(members);
+            float power = 0.0f;
+            for (int member = 0; member < members; ++member)
+                power += std::norm(weight[static_cast<std::size_t>(member)] -= mean);
+            float coherent = 1.0f / static_cast<float>(members);
+            float scale = power > 0.0f ? std::sqrt((1.0f - coherent) / power) : 0.0f;
+            coherent *= std::sqrt(cluster[static_cast<std::size_t>(item)]);
+            scale *= std::sqrt(cluster[static_cast<std::size_t>(item)]);
+            const std::complex<float> parts[4] {
+                { source.leftReal, source.leftImaginary },
+                { source.rightReal, source.rightImaginary },
+                { source.leftMomentReal, source.leftMomentImaginary },
+                { source.rightMomentReal, source.rightMomentImaginary } };
+            for (int member = 0; member < members; ++member)
+            {
+                const auto index = static_cast<std::size_t>(member);
+                const float frequency = low + (high - low)
+                    * (static_cast<float>(member) + place[index]) / static_cast<float>(members);
+                const std::complex<float> w = coherent + scale * weight[index];
+                auto& mode = configuration.modes[static_cast<std::size_t>(bandEnd++)];
+                const std::complex<float> pole = std::polar(
+                    std::exp(-pi * frequency / (q * rate)), twoPi * frequency / rate);
+                mode.poleReal = pole.real();
+                mode.poleImaginary = pole.imag();
+                const auto left = w * parts[0];
+                const auto right = w * parts[1];
+                const auto leftMoment = w * parts[2];
+                const auto rightMoment = w * parts[3];
+                mode.leftReal = left.real();
+                mode.leftImaginary = left.imag();
+                mode.rightReal = right.real();
+                mode.rightImaginary = right.imag();
+                mode.leftMomentReal = leftMoment.real();
+                mode.leftMomentImaginary = leftMoment.imag();
+                mode.rightMomentReal = rightMoment.real();
+                mode.rightMomentImaginary = rightMoment.imag();
+            }
+            source.leftReal = source.leftImaginary = 0.0f;
+            source.rightReal = source.rightImaginary = 0.0f;
+            source.leftMomentReal = source.leftMomentImaginary = 0.0f;
+            source.rightMomentReal = source.rightMomentImaginary = 0.0f;
+        }
+        configuration.count = bandEnd;
+    }
     // The microphones' broad brightness tilt (MicrophoneBalanceData.h).
     // Apply once to the completed bank: the continuation above takes its
     // density from the untilted measured modes, so none of its gain is
     // counted twice. A positive gain preserves every mode's complex phase
     // and mic balance.
-    for (int index = 0; index < count; ++index)
+    for (int index = 0; index < bandEnd; ++index)
     {
         auto& mode = configuration.modes[static_cast<std::size_t>(index)];
         if (mode.poleImaginary == 0.0f)

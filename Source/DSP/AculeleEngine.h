@@ -23,16 +23,18 @@
 // Capacity of the measured banks: the largest bank a construction plays.
 // That is the steel blend (SteelBodyBlend.h), g21's 132 radiation modes and
 // the joint-pole body's 9 below its band, plus the 19 slots continuing the
-// radiation above the fitted band (configureBody); the bridge is B's 47 modes
-// and the joint body's 8. AculeleEngine.cpp static-asserts that every bank fits, so
-// a regenerated header that grows fails to build rather than to sound.
+// radiation above the fitted band and the 72 that hold the 1-4.4 kHz band's
+// modes at the measured ukulele's density (configureBody); the bridge is
+// B's 47 modes and the joint body's 8. AculeleEngine.cpp static-asserts that
+// every bank fits, so a regenerated header that grows fails to build rather
+// than to sound.
 // Slots past a construction's bank and its continuation cost no CPU, but
 // every instance carries them as memory.
 #if !defined(ACULELE_BRIDGE_MODE_COUNT)
 #define ACULELE_BRIDGE_MODE_COUNT 56
 #endif
 #if !defined(ACULELE_BODY_MODE_COUNT)
-#define ACULELE_BODY_MODE_COUNT 160
+#define ACULELE_BODY_MODE_COUNT 232
 #endif
 
 // Opt in consistently in the engine, performer and every consumer: this

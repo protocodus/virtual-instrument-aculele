@@ -5,6 +5,65 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-10-28 — the 1-4.4 kHz band takes a ukulele's mode density at its own mean level, 0.4.13 (chosen by ear)
+
+**What was decided.** The body bank is the flamenco guitar g21's, scaled to
+ukulele size. Its strongest plate modes above T1 land at 1.7-2.2 kHz on the
+soprano (1.27-1.6 kHz on the concert, 1.07-1.35 kHz on the tenor), where the
+soprano's high notes' second and third partials meet a few strong, isolated
+resonances. On the same notes its high register had 8-13 dB more energy at
+1.2-2.5 kHz, relative to the fundamental, than the concert's, and a split
+render traced that to the radiation bank, not the strings or the bridge. The
+one counted ukulele top (Elie, Gautier, David and Curtit, Forum Acusticum
+2011) has about 57 modes between 1 and 4.4 kHz and a flat mean mobility. The
+physics gave three ways to bring the bank to that density, each defensible,
+and no measurement of a ukulele body says which level the band should take.
+
+**The letters** (A-D, on every Shape and Wood):
+
+- A: the shipping engine, unchanged.
+- B: each scaled mode in the band becomes a cluster at the measured density
+  within a sixth of an octave of it, keeping its energy, microphone balance
+  and residue sum.
+- C: B, then each cluster's power is scaled so the band's smoothed level
+  follows its own mean across 1-4.4 kHz. A plate's response is flat in the
+  mean above its separate low modes, and a point-driven plate radiates a
+  power independent of frequency below coincidence.
+- D: B, then the band is brought to the level the measured guitar top
+  radiates in the same band, lower than C on every Shape.
+
+The set was a soprano phrase (Soprano D Tuning: let-ring notes on the A and E
+strings at frets 5-12, then three downstrokes up the neck) and the same phrase
+on Concert Strum, rendered through `AculeleProbe` at 48 kHz and matched to A
+by whole-file RMS (trims: soprano -0.02 dB for B and C, +0.04 dB for D;
+concert +0.33 dB for C, +0.54 dB for D).
+
+**The owner listened and chose C.**
+
+**What it licensed.** C ships in 0.4.13 on every Shape and Wood
+(`buildBodyConfiguration`), with `Aculele.PlateBand` checking that at least 35
+modes sound in the band (37-47 do; the bank alone had 18-25) and that its
+level, smoothed over a sixth of an octave either side, rises less than 3 dB
+over its mean (1.0-2.0 dB; the bank alone 4.1-5.2 dB). The band's level
+moved typical playing, so `LevelMatchData.h` was re-pinned and four preset
+trims moved by 0.4-0.5 dB. The development machine's demo renders take about
+6% more CPU. Against the Duke arpeggio recording, the soprano's 1.6 and 2 kHz
+third-octave bands come down 4 and 5 dB.
+
+**What it did not license.** The density and the flat mean come from one
+measured ukulele of unstated size, so this is not a ukulele body
+measurement. The band's level is its own mean, chosen by ear over D's guitar
+level; neither is a measured ukulele's.
+
+**Two corrections to the set's key.** First, the set was rendered on 0.4.11
+(`10d0428`), before 0.4.12's output stage merged, so its A was 0.4.11. The
+shipped code, applied to that base, renders the two C files byte for byte; on
+0.4.12 it differs from them only by 0.4.12's own change. Second, the key said C
+keeps the band's total. Measured after the choice, C leaves the band's mean
+power 0.5-1.1 dB lower at 48 kHz, because the lone peaks held more of it than
+the gaps they now fill. What the owner heard is what ships; only that
+description was wrong.
+
 ## 2026-10-27 — the guitar recording contour is off (measured, not by ear)
 
 Acustra's capture voicing (`CaptureVoicingData.h`) corrects its close

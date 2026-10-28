@@ -1148,16 +1148,33 @@ constexpr std::array<StringMaterialSpec, 2> stringMaterialSpecs {{
     { 1800.0f, 3.2e9f, 41.0f, 0.18e9f }   // Fluorocarbon
 }};
 
-// Gauges, G C E A, in metres. Nylon is D'Addario's EJ65C Pro-Arte custom
-// extruded concert set (.028, .0403, .0322, .028 in); fluorocarbon is Worth
-// Clear CM (.0224, .0291, .0260, .0205 in). Low G takes Worth CM-LG's
-// unwound fluorocarbon 4th (.0358 in) on either set, as players fit it, so
-// no wound string is needed. A tuning or a body size keeps the gauges, so
-// tension follows pitch and scale (D tuning tightens every string by a
-// whole tone, as it does on a real soprano).
-constexpr std::array<std::array<float, 4>, 2> standardStringGauges {{
-    {{ 0.7112e-3f, 1.0236e-3f, 0.8179e-3f, 0.7112e-3f }},
-    {{ 0.5690e-3f, 0.7391e-3f, 0.6604e-3f, 0.5207e-3f }}
+// Gauges, G C E A, in metres, from the set each maker sells for the Shape.
+// Nylon is D'Addario's Pro-Arte custom extruded line: EJ65S for the soprano
+// (.028, .034, .0322, .024 in; its tension chart's items J4501, NYL034,
+// J4502 and NYL024, https://nantelmusic.com/products/daddario-soprano-ukulele-set-ej65s),
+// EJ65C for the concert (.028, .0403, .0322, .028). The tenor keeps EJ65C:
+// EJ65T (.029, .041, .0327, .0285,
+// https://www.elderly.com/products/d-addario-ej65t-tenor-uke-set) is
+// 1.5-3.6% thicker, and its E string put the tenor's open F#4 in D tuning,
+// just below its T1, 5.5 cents flat in Aculele.Tuning (4.0 with EJ65C): the
+// bridge's tuning phase (bridgePhaseDelay) is an isolated-port estimate that
+// misses most beside a strong lossy mode. With either set the note plays
+// 5-7 cents flat over its first half second.
+// Fluorocarbon is Worth Clear: CM, sold for soprano and concert (.0224,
+// .0291, .0260, .0205), and CT for the tenor, whose A is CT-LG's .0224
+// (https://www.thomann.co.uk/worth_strings_ct_tenor_ukulele_set.htm, and
+// .0224 .0260 .0291 for CT-LG's A E C). Low G takes Worth's unwound
+// fluorocarbon 4th (.0358 in, in CM-LG and CT-LG alike) on either set, as
+// players fit it, so no wound string is needed. A tuning keeps the gauges,
+// so tension follows pitch (EJ65S is made for the soprano's D tuning, a
+// whole tone tighter than Standard, as players also string it).
+constexpr std::array<std::array<std::array<float, 4>, 3>, 2> standardStringGauges {{
+    {{ {{ 0.7112e-3f, 0.8636e-3f, 0.8179e-3f, 0.6096e-3f }},
+       {{ 0.7112e-3f, 1.0236e-3f, 0.8179e-3f, 0.7112e-3f }},
+       {{ 0.7112e-3f, 1.0236e-3f, 0.8179e-3f, 0.7112e-3f }} }},
+    {{ {{ 0.5690e-3f, 0.7391e-3f, 0.6604e-3f, 0.5207e-3f }},
+       {{ 0.5690e-3f, 0.7391e-3f, 0.6604e-3f, 0.5207e-3f }},
+       {{ 0.5690e-3f, 0.7391e-3f, 0.6604e-3f, 0.5690e-3f }} }}
 }};
 constexpr float lowGStringGauge = 0.9093e-3f;
 // Strings below this index are wound: none on a ukulele. Acustra's
@@ -1179,7 +1196,8 @@ StringConstruction stringConstruction(const EngineParameters& parameters,
         return { lowGStringGauge,
                  stringMaterialSpecs[static_cast<std::size_t>(StringMaterial::Fluorocarbon)] };
     const auto set = static_cast<std::size_t>(parameters.strings);
-    return { standardStringGauges[set][index], stringMaterialSpecs[set] };
+    return { standardStringGauges[set][static_cast<std::size_t>(parameters.shape)][index],
+             stringMaterialSpecs[set] };
 }
 
 float stringSection(const StringConstruction& string) noexcept
@@ -7867,9 +7885,20 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
     const float amplitude = 0.24f
         * velocityForce * (0.92f + 0.08f * touch)
         * strumLevelGain * voice.repeatedPluckGain;
-    // The released shape follows this displacement.
+    // The released shape follows this displacement. The stroke was set on
+    // the concert set's strings, and the finger lets go of a Shape's own
+    // string at the force it holds on the concert one: at the same pitch and
+    // scale the tension follows the linear mass, so a thinner string is
+    // displaced further by mu_concert / mu_own. Released at the same
+    // displacement instead, the soprano's thinner C and A played 2.5-3 dB
+    // under the concert set's; the force reading was chosen by ear
+    // (Docs/decisions.md, 2026-10-28).
+    EngineParameters concertSet = parameters_;
+    concertSet.shape = BodyShape::Concert;
+    const float concertForceRatio = stringLinearMass(stringConstruction(concertSet, stringIndex))
+        / stringLinearMass(stringConstruction(parameters_, stringIndex));
     const float releasedAmplitude = amplitude * releaseScale
-        * pointCompliance * tensionCompliance;
+        * pointCompliance * tensionCompliance * concertForceRatio;
     // The share of the pluck's energy released normal to the soundboard. A
     // steel-string player's finger stroke and pick both cross the strings
     // moving along the top, pressing in only partly, so most of a steel pluck

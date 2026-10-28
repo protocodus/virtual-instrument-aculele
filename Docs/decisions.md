@@ -5,6 +5,54 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-10-28 — each Shape takes its maker's strings, released at the concert string's force, 0.4.14 (chosen by ear)
+
+**What was decided.** Every Shape was strung with the concert sets
+(D'Addario EJ65C, Worth CM). The makers sell other sets for the other sizes:
+EJ65S for the soprano, with a thinner C and A (.034 and .024 in against .0403
+and .028), EJ65T for the tenor, 1.5-3.6% thicker than EJ65C, and Worth CT for
+the tenor, whose A is 9% thicker than CM's. At the same pitch and scale a
+thinner string sits at lower tension (the soprano's C and A at 20.5 and 29.0
+N instead of 28.9 and 39.4 N). The pluck released every string at the same
+displacement, so the thinner strings would play quieter. Releasing at a fixed
+displacement and releasing at a fixed force are both defensible readings of a
+finger, and no measurement of a ukulele player says which holds.
+
+**The letters:**
+
+- A: the shipping engine (0.4.13), the concert sets on every Shape, released
+  at a fixed displacement.
+- B: each Shape takes its maker's set, released at a fixed displacement.
+- C: B's sets, with the finger letting go at the force it holds on the
+  concert set's string: the released amplitude takes mu_concert / mu_own.
+
+The set was one phrase (the four open strings let ring, a melody between the
+C and A strings and the G and E, then C, Am down and up, and F) on Soprano
+Thumb and on Concert Strum played on the soprano body, rendered through
+`AculeleProbe` at 48 kHz in 256-sample blocks and matched to A by whole-file
+RMS (trims: B +1.65 and +1.63 dB, C -0.14 dB on both). Before trim, B's open C
+and A played 2.4-2.8 dB under A's, and C's within 0.3 dB of A's.
+
+**The owner listened and chose C on both.**
+
+**What it licensed.** C ships in 0.4.14 on the soprano (EJ65S, CM), the
+concert (unchanged) and the fluorocarbon tenor (CT). On Soprano Thumb the open
+C plays 0.3 dB louder against its G and the A unchanged; on Tenor
+Fluorocarbon Fingerstyle the A plays 0.3 dB quieter. `LevelMatchData.h` was
+re-pinned and three preset trims moved by 0.1-0.2 dB. The soprano's thinner C
+string is less stiff, so fewer notes miss an upper partial by more than 10
+cents (about 110 of 1,368 against 118 on 0.4.13, counted the same way).
+
+**What it did not license.** The nylon tenor keeps EJ65C. With EJ65T, its
+open F#4 in D tuning, just below the top's main resonance, read 5.5 cents
+flat in `Aculele.Tuning` (4.0 on EJ65C), past the 5-cent tuner tolerance. With
+either set the note plays 5-7 cents flat over its first half second; the test
+passes on EJ65C only because its window takes in the in-tune tail. That is
+the bridge tuning estimate's known limit beside a strong lossy mode, not
+something the strings decide, so the tenor's nylon set waits for it and the
+test was not changed. The force reading is chosen by ear; no ukulele
+player's pluck has been measured.
+
 ## 2026-10-28 — the 1-4.4 kHz band takes a ukulele's mode density at its own mean level, 0.4.13 (chosen by ear)
 
 **What was decided.** The body bank is the flamenco guitar g21's, scaled to

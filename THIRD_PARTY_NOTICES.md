@@ -356,7 +356,8 @@ recording from these sources is reproduced; each value is cited beside it in
   instruments", *Acta Acustica united with Acustica* 105 (2019) 516-529: the
   stress-dependent storage and loss moduli of nylon and fluorocarbon
   monofilaments, and the air-damping law (`ukuleleStringLoss`).
-- D'Addario EJ65C and Worth CM and CM-LG string sets: their published gauges.
+- D'Addario EJ65S and EJ65C and Worth CM, CM-LG, CT and CT-LG string sets:
+  their published gauges.
 - Kala's published body and scale dimensions for its soprano, concert and
   tenor ukuleles (`ukuleleBodies`, `scaleLengthFor`).
 

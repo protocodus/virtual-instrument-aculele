@@ -343,8 +343,12 @@ public:
     // heldShapeOwners identifies only this complete swept chord's physical
     // strings, after noteOn has established their owners. Zero keeps the
     // standalone dead stroke transient; the pedal never owns a hand shape.
+    // A chuck's hand lies flat across every string it crosses, so there a
+    // string the pedal holds takes the dead stroke too; a key still down
+    // keeps its string.
     void muteStroke(int string, int delaySamples, float velocity,
-                    int midiChannel = 1, unsigned heldShapeOwners = 0u) noexcept;
+                    int midiChannel = 1, unsigned heldShapeOwners = 0u,
+                    bool chuck = false) noexcept;
     // A strum sweeps all four strings of a ukulele, and a chord of three
     // notes on one channel leaves one of them free: the note a fretting hand
     // holding the planned shape gives that string, or -1. It is the chord

@@ -163,6 +163,31 @@ int main()
         check(rig.allMuted(), "a chuck straight after a chord mutes its strings");
     }
 
+    {
+        // Under the sustain a chord rings on after its keys come up. A
+        // chuck's hand lies across those strings too and stops them, as
+        // fast as a chuck on strings no sustain holds dies away.
+        Rig plain;
+        plain.keys(chuckKey, true, false, true);
+        plain.render(static_cast<int>(rate));
+        const double plainTail = plain.level(0, 0.3, 0.5);
+        Rig rig;
+        rig.performer->setSustainHold(true);
+        rig.keys(-1, false, false, true);
+        rig.render(static_cast<int>(0.5 * rate));
+        rig.keys(-1, false, true, false);
+        rig.render(static_cast<int>(0.5 * rate));
+        const auto chuckAt = rig.output.size();
+        rig.keys(chuckKey, true, false, true);
+        rig.render(stroke);
+        check(rig.allMuted(), "a chuck left a string the sustain holds ringing");
+        rig.render(static_cast<int>(rate));
+        const double sustainedTail = rig.level(chuckAt, 0.3, 0.5);
+        std::printf("0.3-0.5 s after a chuck: %.1f dB, under the sustain %.1f dB\n",
+                    plainTail, sustainedTail);
+        check(sustainedTail < plainTail + 3.0, "a chuck under the sustain rang on");
+    }
+
     if (failures == 0)
         std::printf("chucks pass\n");
     return failures == 0 ? 0 : 1;

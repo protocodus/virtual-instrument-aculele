@@ -102,8 +102,8 @@ public:
     // them, so each string the stroke crosses takes a dead stroke
     // (AculeleEngine::muteStroke) and the stroke's keys own none. The
     // stroke's sample releases its key-ups first, so a chord drawn straight
-    // after another is muted too; a key held on, or the sustain, keeps its
-    // string ringing. They never sound and take no string; their key-ups
+    // after another is muted too, and so is a string the sustain lets ring;
+    // a key held on keeps its string ringing. They never sound and take no string; their key-ups
     // are consumed, F0's ending its chucks. E0 is left alone: front ends
     // that follow Acustra's carry a connected-gesture cue there.
     enum class StrokeMode { Automatic, Down, Up };

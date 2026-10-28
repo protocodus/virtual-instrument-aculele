@@ -733,7 +733,9 @@ void Performer::flushNoteGroup() noexcept
             rememberStroke(strokeSample, interval, restarted);
             // A ukulele strum sounds all four strings, so the stroke reaches
             // the free one too, fretted as the hand holding the shape would
-            // (AculeleEngine::chordFillNote).
+            // (AculeleEngine::chordFillNote). A chuck's stroke crosses it
+            // even where the pedal holds it and no fill is fretted, to stop it.
+            const bool chucking = chuck_ && engine_.performanceRealism().mutedStrings;
             if (completePlan && oneChannel && !stringChannels
                 && chordStrings == AculeleEngine::stringCount - 1)
                 for (int string = 0; string < AculeleEngine::stringCount; ++string)
@@ -742,7 +744,8 @@ void Performer::flushNoteGroup() noexcept
                     if (onString[slot])
                         chordOwners |= 1u << string;
                     else if ((fillNotes[slot] = engine_.chordFillNote(
-                                  string, pendingNoteOns_[0].channel)) >= 0)
+                                  string, pendingNoteOns_[0].channel)) >= 0
+                             || chucking)
                     {
                         firstString = std::min(firstString, string);
                         lastString = std::max(lastString, string);
@@ -900,7 +903,8 @@ void Performer::flushNoteGroup() noexcept
     for (int string = 0; string < AculeleEngine::stringCount; ++string)
         if (mutedDelay[static_cast<std::size_t>(string)] >= 0)
             engine_.muteStroke(string, mutedDelay[static_cast<std::size_t>(string)],
-                               strokeVelocity, pendingNoteOns_[0].channel, mutedOwners);
+                               strokeVelocity, pendingNoteOns_[0].channel, mutedOwners,
+                               chuck);
         else if (fillNotes[static_cast<std::size_t>(string)] >= 0)
             engine_.fillStroke(string, fillNotes[static_cast<std::size_t>(string)],
                                fillDelay[static_cast<std::size_t>(string)],

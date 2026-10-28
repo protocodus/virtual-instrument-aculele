@@ -10742,7 +10742,8 @@ float AculeleEngine::strumEdgeGain(int string) const noexcept
 }
 
 void AculeleEngine::muteStroke(int string, int delaySamples, float velocity,
-                               int midiChannel, unsigned heldShapeOwners) noexcept
+                               int midiChannel, unsigned heldShapeOwners,
+                               bool chuck) noexcept
 {
     if (!prepared_ || !performanceRealism_.mutedStrings
         || string < 0 || string >= stringCount
@@ -10760,7 +10761,7 @@ void AculeleEngine::muteStroke(int string, int delaySamples, float velocity,
                 liveOwners |= 1u << owner;
         }
     auto& voice = voices_[static_cast<std::size_t>(string)];
-    if (voice.keyDown || voice.pedalHeld)
+    if (voice.keyDown || (voice.pedalHeld && !chuck))
         return;
     if (voice.pluckDelay != 0 || voice.repluckPending)
     {

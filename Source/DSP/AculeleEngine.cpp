@@ -5773,10 +5773,14 @@ void AculeleEngine::buildBodyConfiguration(BodyConfiguration& configuration,
         configuration.count = bandEnd;
     }
     // The microphones' broad brightness tilt (MicrophoneBalanceData.h).
-    // Apply once to the completed bank: the continuation above takes its
-    // density from the untilted measured modes, so none of its gain is
-    // counted twice. A positive gain preserves every mode's complex phase
-    // and mic balance.
+    // It balanced two guitar models by ear and has no ukulele basis, but it
+    // stays: switched off, the tenor's open F#4 in D tuning, just below its
+    // T1, read 5.6 cents flat on nylon and 7.2 on fluorocarbon in
+    // Aculele.Tuning (4.0 flat and 0.1 sharp with it), past the test's
+    // 5-cent tuner tolerance. Apply once to the completed bank: the
+    // continuation above takes its density from the untilted measured modes,
+    // so none of its gain is counted twice. A positive gain preserves every
+    // mode's complex phase and mic balance.
     for (int index = 0; index < bandEnd; ++index)
     {
         auto& mode = configuration.modes[static_cast<std::size_t>(index)];

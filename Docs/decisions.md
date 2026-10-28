@@ -5,6 +5,92 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-10-28 — every pluck draws its own force and angle, and every string is let go at one force, 0.4.15 (chosen by ear)
+
+**What was decided.** The owner heard the plucks of Low G Tenor (the E
+string around C5, the A string), Tenor Picked Melody and Concert Piezo Stage
+as "the same every time", Tenor Picked Melody's A string as too bright and
+its lower notes as not concrete. Two questions came out of that. The first
+was how much each pluck should differ. A melody of different notes at one
+velocity varied by 0.2 dB, because the ±1 dB force residual was drawn only on
+a repeated note, and the release angle varied by under 1°. The CC0
+Shinyguitar archtop's four round robins per note and layer differ by a
+median 0.65 dB over 30-250 ms. Chadefaux, Le Carrou, Fabre and Daudet (JASA
+131 (2012) 844-855, Table VI) give each harpist's initial polarisation angle
+over five chord and seven arpeggio plucks: about 2° read as ±2 SD of the
+plucks, or 4° read as intervals of their mean. The second was whether the
+finger lets every string go at one displacement or at one force. At one
+displacement, the fluorocarbon tenor's 66 N A string is pulled 1.7 times as
+hard as its 39.5 N C.
+
+**The letters.** Part 1 used Low G Tenor, Tenor Picked Melody and Concert
+Piezo Stage:
+
+- A: the shipping engine (0.4.14).
+- B: every pluck but a strum's draws the existing mean-one ±1 dB residual.
+  Within the hand's two-second memory on the same string, it fades out as
+  the commanded force changes, so an accent stays exact.
+- C: B, with a release angle of 4° SD about the share's own angle.
+- D: B, with 2° SD.
+
+Part 2 used Tenor Picked Melody and Low G Tenor:
+
+- A: the shipping engine.
+- B: every string is released at one force. The released displacement takes
+  T_ref / T_own in place of mu_concert / mu_own, where T_ref is the concert
+  nylon set's geometric-mean tension, 37.7 N.
+
+The phrase was 100 bpm eighth notes at velocity 88: up and down the E string
+through C5, then the A, C and G strings, then C5 four times and a held C5 on
+the A string. It was rendered through `AculeleProbe` at 48 kHz in 256-sample
+blocks. Each letter was matched to its A by whole-file RMS:
+
+| Set | Trims to match A (B, C, D) |
+| --- | --- |
+| Part 1, Low G Tenor | -0.15, -0.30, -0.21 dB |
+| Part 1, Tenor Picked Melody | -0.13, -0.10, -0.12 dB |
+| Part 1, Concert Piezo Stage | -0.12, -0.28, -0.18 dB |
+| Part 2, Tenor Picked Melody | +1.32 dB (B) |
+| Part 2, Low G Tenor | +1.78 dB (B) |
+
+The median spread of the 30-250 ms level over 20 notes:
+
+| Letter | Low G Tenor | Tenor Picked Melody | Concert Piezo Stage |
+| --- | --- | --- | --- |
+| A | 0.21 dB | 0.52 dB | 0.22 dB |
+| B | 0.76 dB | 0.80 dB | 0.77 dB |
+| C | 1.14 dB | 1.14 dB | 0.97 dB |
+| D | 0.89 dB | 0.94 dB | 0.81 dB |
+
+**The owner listened and chose D in Part 1 and B in Part 2.**
+
+**What it licensed.** Both ship in 0.4.15 on every Shape, string set and
+Picking. In the force residual (`pluckForceGain`), every pluck but a strum's
+draws ±1 dB. The release angle turns by 2° SD with either source of the
+draw: the hand's posture with the pluck's own draw, or the draw alone under
+MPE pressure. Against the other strings, releasing at one force moves the
+nylon sets' A string by -1.8 dB, Low G Tenor's G by +2.6 dB and its A by
+-2.6 dB, and Tenor Picked Melody's G by +2.3 dB and its A by -2.0 dB.
+`LevelMatchData.h` was re-pinned. Four preset trims moved to keep typical
+playing at -9 VU:
+
+| Preset | Old trim | New trim |
+| --- | --- | --- |
+| Soprano D Tuning | -0.9 | +1.2 |
+| Tenor Fluorocarbon Fingerstyle | +0.1 | -0.5 |
+| Low G Tenor | -0.9 | -2.0 |
+| Tenor Picked Melody | -0.8 | -2.6 |
+
+**What it did not license.** No ukulele player's force or release angle has
+been measured. The ±1 dB residual stays an authored figure under the real
+spread, and the 2° is the harpists' reading that the owner chose by ear.
+
+**Not decided by either letter.** The open low G swells over 47 ms because it
+sits 45 cents above the tenor's 191 Hz air resonance. The archtop's low E does
+the same beside its own air mode, in 50 ms. The fluorocarbon A string's top
+octave outlasts the E's, as Woodhouse and Lynch-Aird's measured loss gives.
+Neither letter changes either of these.
+
 ## 2026-10-28 — each Shape takes its maker's strings, released at the concert string's force, 0.4.14 (chosen by ear)
 
 **What was decided.** Every Shape was strung with the concert sets

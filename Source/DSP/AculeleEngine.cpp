@@ -426,10 +426,13 @@ constexpr float radiationReferenceGain = 18.0f;
 // presets then played at on the stereo microphones, and every capture follows it.
 constexpr float stringsReference = 1.8637f * 1.97f;
 // The share of a pluck's energy released normal to the soundboard at a Touch,
-// with a pluck's own draw about it; initialisePluck says where it comes from.
-float pluckNormalShare(float touch, float draw = 0.0f) noexcept
+// sin^2 of the release angle from the top, with a pluck's own turn of that
+// angle in radians; initialisePluck says where both come from.
+float pluckNormalShare(float touch, float angle = 0.0f) noexcept
 {
-    return std::clamp(0.30f - 0.08f * touch + draw, 0.17f, 0.35f);
+    const float released = std::sin(
+        std::asin(exact::sqrt(0.30f - 0.08f * touch)) + angle);
+    return released * released;
 }
 static_assert(detail::measuredSteelBodyModes.size() <= ACULELE_BODY_MODE_COUNT);
 static_assert(detail::measuredSteelBridgeModes.size()
@@ -3435,7 +3438,7 @@ void AculeleEngine::restartRandomDraws() noexcept
         auto& voice = voices_[static_cast<std::size_t>(string)];
         voice.randomState = 0x9e3779b9u
             ^ (0x85ebca6bu * static_cast<std::uint32_t>(string + 1));
-        voice.repeatPluckState = 0xa511e9b3u
+        voice.pluckForceState = 0xa511e9b3u
             ^ (0x63d83595u * static_cast<std::uint32_t>(string + 1));
         voice.noteDetuneState = 0x243f6a88u
             ^ (0xb7e15163u * static_cast<std::uint32_t>(string + 1));
@@ -4645,7 +4648,7 @@ void AculeleEngine::reset() noexcept
         voice.lastPluckMidiChannel = 0;
         voice.lastPluckVelocity = 0.0f;
         voice.lastPluckSample = 0;
-        voice.repeatedPluckGain = 1.0f;
+        voice.pluckForceGain = 1.0f;
         voice.repluckForceGain = 1.0f;
         voice.ownerCount = 0;
         voice.played = false;
@@ -7523,7 +7526,7 @@ AculeleEngine::PickingGesture AculeleEngine::nextPickingGesture() noexcept
     // The one-second target interval and the existing displacement/pressure
     // amplitudes are authored motor variation, not measured physiology.
     // Hashing physical-time knots gives O(1) work even after a long silence,
-    // without consuming any contact, repeat-force or strum random draws.
+    // without consuming any contact, pluck-force or strum random draws.
     constexpr double targetIntervalSeconds = 1.0;
     const double time = static_cast<double>(sampleClock_ - pickingGestureOriginSample_)
         / (sampleRate_ * targetIntervalSeconds);
@@ -7798,50 +7801,52 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
                 * (static_cast<float>(stringIndex) - 2.5f)) / 20.0f);
         strumLevelGain *= voice.strokeEdgeGain;
     }
-    // Repeated single-note sequencer strokes deserve modest force variety
-    // too, below the spread of the real Eastman same-pitch/style takes:
-    // their 20-250 ms levels have median within-group SD 1.09 dB (Finger)
-    // and 1.47 dB (Pick). Their intended force/string/fret is unknown, so
-    // +/-1 dB is a conservative authored listening candidate, not a fitted
-    // universal law. The strum already has its own bounded variation.
-    // Nearby force commands belong to the same continuing gesture: exact
-    // equality of MIDI velocities must not switch this residual on or off.
-    // Fade it smoothly with elapsed hand memory and with the commanded
-    // force change, becoming nominal beyond the existing full two-dB
-    // residual span. This is an authored accent-preservation policy, not
-    // measured physiology. First plucks, new notes/channels, simultaneous
-    // duplicates and strums keep their own established force behaviour.
+    // No hand plucks twice with quite the same force. A guitarist's takes of
+    // one note - the CC0 Shinyguitar archtop's four round robins per note and
+    // layer - differ by a median 0.65 dB in level over 30-250 ms, and the
+    // Eastman same-pitch/style takes by 1.09 dB (Finger) and 1.47 dB (Pick).
+    // Their intended force is unknown, so +/-1 dB (0.58 dB SD) is a
+    // conservative authored residual, not a fitted law. Every pluck but a
+    // strum's, which has its own bounded variation, draws it: drawn only on a
+    // repeated note, a melody of different notes at one velocity varied by
+    // 0.2 dB and was heard as the same pluck every time (every pluck chosen
+    // by ear, Docs/decisions.md, 2026-10-28). An accent stays the player's:
+    // within the hand's memory on this string the residual fades out as the
+    // commanded force changes, nominal beyond the residual's own two-dB span,
+    // so equal and nearly equal velocities are one continuing gesture rather
+    // than switching it on or off. This is an authored accent-preservation
+    // policy, not measured physiology.
     // The independent draw is linear-mean normalised: E[exp(a*U)] = sinh(a)/a;
     // blending it toward one preserves both that mean and its bounds.
-    voice.repeatedPluckGain = 1.0f;
-    const bool continuingRepeat = !voice.strumming
-        && voice.midiNote == voice.lastPluckMidiNote
-        && voice.midiChannel == voice.lastPluckMidiChannel
-        && sampleClock_ > voice.lastPluckSample;
-    if (continuingRepeat)
+    voice.pluckForceGain = 1.0f;
+    if (!voice.strumming)
     {
         constexpr double halfWidth = 0.1151292546497022842; // ln(10)/20: 1 dB
         // Consume one draw even when the weight is zero. A changed velocity
         // or crossing the memory endpoint then cannot switch which random
         // hand residual a later otherwise identical contact receives.
         const double drawGain = std::exp(halfWidth
-            * xorshiftNoise(voice.repeatPluckState)) * halfWidth
+            * xorshiftNoise(voice.pluckForceState)) * halfWidth
             / std::sinh(halfWidth);
-        const auto fade = [] (double distance) noexcept
+        double weight = 1.0;
+        if (voice.lastPluckMidiNote >= 0 && sampleClock_ > voice.lastPluckSample)
         {
-            const double t = std::clamp(distance, 0.0, 1.0);
-            return 1.0 - t * t * (3.0 - 2.0 * t);
-        };
-        const double elapsed = static_cast<double>(sampleClock_ - voice.lastPluckSample)
-            / (static_cast<double>(handMemorySeconds) * sampleRate_);
-        const double nominalForce = static_cast<double>(velocityForce)
-            * (0.92 + 0.08 * touch);
-        const float previousVelocity = voice.lastPluckVelocity;
-        const double previousForce = static_cast<double>(previousVelocity)
-            * (0.92 + 0.08 * effectiveTouch(voice.lastPluckVelocity));
-        const double forceChange = exact::abs(std::log(nominalForce / previousForce));
-        const double weight = fade(elapsed) * fade(forceChange / (2.0 * halfWidth));
-        voice.repeatedPluckGain = static_cast<float>(1.0 + weight * (drawGain - 1.0));
+            const auto fade = [] (double distance) noexcept
+            {
+                const double t = std::clamp(distance, 0.0, 1.0);
+                return 1.0 - t * t * (3.0 - 2.0 * t);
+            };
+            const double elapsed = static_cast<double>(sampleClock_ - voice.lastPluckSample)
+                / (static_cast<double>(handMemorySeconds) * sampleRate_);
+            const double nominalForce = static_cast<double>(velocityForce)
+                * (0.92 + 0.08 * touch);
+            const float previousVelocity = voice.lastPluckVelocity;
+            const double previousForce = static_cast<double>(previousVelocity)
+                * (0.92 + 0.08 * effectiveTouch(voice.lastPluckVelocity));
+            const double forceChange = exact::abs(std::log(nominalForce / previousForce));
+            weight = 1.0 - fade(elapsed) * (1.0 - fade(forceChange / (2.0 * halfWidth)));
+        }
+        voice.pluckForceGain = static_cast<float>(1.0 + weight * (drawGain - 1.0));
     }
     voice.lastPluckMidiNote = voice.midiNote;
     voice.lastPluckMidiChannel = voice.midiChannel;
@@ -7886,21 +7891,37 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
         ? nominalTension / voice.tensionNewtons : 1.0f;
     const float amplitude = 0.24f
         * velocityForce * (0.92f + 0.08f * touch)
-        * strumLevelGain * voice.repeatedPluckGain;
-    // The released shape follows this displacement. The stroke was set on
-    // the concert set's strings, and the finger lets go of a Shape's own
-    // string at the force it holds on the concert one: at the same pitch and
-    // scale the tension follows the linear mass, so a thinner string is
-    // displaced further by mu_concert / mu_own. Released at the same
-    // displacement instead, the soprano's thinner C and A played 2.5-3 dB
-    // under the concert set's; the force reading was chosen by ear
-    // (Docs/decisions.md, 2026-10-28).
+        * strumLevelGain * voice.pluckForceGain;
+    // The released shape follows this displacement, and the finger lets every
+    // string go at one force: held aside by F at a from the bridge, a string
+    // of tension T and length L stands F a (L - a) / (T L) out, so on one
+    // Shape at one hand position the displacement goes as 1/T. The stroke
+    // was set on the concert nylon set, so it is the displacement that force
+    // gives a string at that set's geometric-mean tension, about 37.7 N, and
+    // every string is displaced by T_ref / T_own about it. What this sets is
+    // how hard each string is pulled against the others: a Shape's own
+    // constant, its scale's L among them, is taken up by the Shapes' meter
+    // levelling (LevelMatchData.h). Released at one displacement on every
+    // string instead, a tighter string took more force: the soprano's
+    // thinner C and A played 2.5-3 dB under the concert set's, and the
+    // fluorocarbon tenor's 66 N A string, pulled 1.7 times as hard as its
+    // 39.5 N C, drove the bridge 4.5 dB harder and sounded too bright. Both
+    // readings were chosen by ear (Docs/decisions.md, 2026-10-28). T_own is
+    // the open string's tension at its untuned pitch, so a master tune or a
+    // bend does not change the force.
     EngineParameters concertSet = parameters_;
     concertSet.shape = BodyShape::Concert;
-    const float concertForceRatio = stringLinearMass(stringConstruction(concertSet, stringIndex))
-        / stringLinearMass(stringConstruction(parameters_, stringIndex));
+    concertSet.strings = StringMaterial::Nylon;
+    concertSet.tuning = Tuning::Standard;
+    const auto concertNotes = openNotes(Tuning::Standard);
+    float concertTensionProduct = 1.0f;
+    for (int string = 0; string < stringCount; ++string)
+        concertTensionProduct *= stringTension(concertSet, string,
+            midiFrequency(concertNotes[static_cast<std::size_t>(string)]));
+    const float stringForceRatio = exact::sqrt(exact::sqrt(concertTensionProduct))
+        / stringTension(parameters_, stringIndex, midiFrequency(voice.openMidi));
     const float releasedAmplitude = amplitude * releaseScale
-        * pointCompliance * tensionCompliance * concertForceRatio;
+        * pointCompliance * tensionCompliance * stringForceRatio;
     // The share of the pluck's energy released normal to the soundboard. A
     // steel-string player's finger stroke and pick both cross the strings
     // moving along the top, pressing in only partly, so most of a steel pluck
@@ -7912,13 +7933,25 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
     // normal (0.86 -> 0.25: training -1.10%, development validation -2.78%,
     // flat-top -5.13%), and a blind listener preferred it on both steel pairs
     // of the 2026-09-24 set (Docs/decisions.md). It is a selected share, not
-    // a measured angle; a higher Touch turns it further along the top, and
-    // each pluck draws its own.
+    // a measured angle; a higher Touch turns it further along the top.
+    // No two releases leave at quite the same angle. Each harpist's initial
+    // polarisation angle (Chadefaux, Le Carrou, Fabre and Daudet, JASA 131
+    // (2012) 844-855, Table VI, five chord and seven arpeggio plucks per
+    // player) spreads by about 2 degrees read as +-2 SD of the plucks
+    // themselves, about 4 read as intervals of their mean; the 2 was chosen
+    // by ear (Docs/decisions.md, 2026-10-28), and each pluck turns the
+    // share's own angle, asin(sqrt(share)), by that much. The hand's slow
+    // posture pressure leads the draw; 0.65 p + 0.35 u has an SD of 0.386
+    // (p's is 0.507 over long runs of nextPickingGesture, the uniform u's
+    // 0.577), the draw alone 0.577, so either keeps the 2 degrees.
     const float angleDraw = nextNoise(voice);
     const bool pressureOwned = voice.mpeMember && mpePressureFor(voice) >= 0.0f;
-    const float randomAngle = 0.025f * (gesture.active && !pressureOwned
-        ? 0.65f * gesture.pressure + 0.35f * angleDraw : angleDraw);
-    voice.polarisationMix = pluckNormalShare(touch, randomAngle);
+    const bool postureLeads = gesture.active && !pressureOwned;
+    constexpr float angleSpreadRadians = 2.0f * pi / 180.0f;
+    const float angleTurn = postureLeads
+        ? angleSpreadRadians / 0.3863f * (0.65f * gesture.pressure + 0.35f * angleDraw)
+        : angleSpreadRadians / 0.5774f * angleDraw;
+    voice.polarisationMix = pluckNormalShare(touch, angleTurn);
     // The shared register law pivots at one fixed 48 kHz MIDI-61 period,
     // independent of material, string choice and host sample rate.
     const float apertureReferenceDelay = 48000.0f / midiFrequency(61);
@@ -7986,7 +8019,7 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
         // stroke's force draw, so weak and firm same-velocity strokes retain
         // their different actual slips. A non-strummed pluck divides by one.
         const double referencePole = plectrumSlipPole(voice, releasedAmplitude
-                / (strumLevelGain * voice.repeatedPluckGain)
+                / (strumLevelGain * voice.pluckForceGain)
                 / velocityForce,
             heldDistance, soundingLength, scaleLength, fingerReleaseRadius);
         const double pole = plectrumSlipPole(voice, releasedAmplitude,

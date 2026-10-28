@@ -5,6 +5,48 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-10-28 — a nail or pick keeps its own edge at every velocity, 0.4.18 (adopted under the owner's standing rule, not yet heard)
+
+**What was decided.** Measured on single E4 notes (Tenor Fluorocarbon
+Fingerstyle and Tenor Picked Melody, 30-330 ms after the pluck), the
+fingertip's fundamental followed the linear force law the owner chose on
+2026-10-13 (velocity 20: -15.9 dB against velocity 127, the law -16.1).
+The nail's and the pick's fell away below velocity 50: -30.2 and -22.5 dB
+at velocity 20, -47.5 and -38.9 dB at velocity 10. The pick's edge radius
+was scaled by 1/v when the force went from v^2 to v, to keep the earlier
+release shape, so the slip time r/u went as 1/v^2. At velocity 20 an E4
+then let go over 107 samples, 0.7 of its 146-sample period. The edge was
+fitted at full velocity on 2026-09-27/28, when the force went as v^2 and
+the slip time as 1/force. A fixed edge keeps that relation.
+
+**The letters.** A line of 24 eighth notes at 90 bpm, velocity 18 rising to
+127 and falling back to 18, on Tenor Fluorocarbon Fingerstyle, Tenor Picked
+Melody and Low G Tenor, rendered with `AculeleProbe` at 48 kHz in
+256-sample blocks:
+
+- A: the shipping engine (0.4.17).
+- B: the pick's edge radius without the 1/v scale.
+
+The takes were not level-matched, because the soft notes' level is what is
+being judged. The velocity-127 notes are bit-identical in both letters.
+
+**What was chosen.** B, without a listening verdict, under the owner's
+standing rule of 2026-10-28 to lean towards accepting candidates. The page
+stays up for the owner to check:
+<https://claude.ai/artifact/D9AmYce8U7XUF2rwBXyjQp>. With B the same E4
+reads -18.0 dB (nail) and -16.2 dB (pick) at velocity 20, and -26.5 and
+-22.7 dB at velocity 10. Its upper partials still fall further: at velocity
+20 the pick's H7 is 7.6 dB further down than its H1. Velocities above 60
+change by under 1 dB.
+
+**What it licensed.** `AculeleEngine::initialisePluck` passes the pick its
+fitted edge, Touch and gesture compliance only. The pad's 1/v keyboard
+response is unchanged. `LevelMatchData.h` was re-pinned. Soprano D Tuning's
+Output moved from +1.2 to +1.3 dB, Low G Tenor's from -1.7 to -2.0 dB and
+Concert Piezo Stage's from -0.1 to 0.0 dB. Tenor Picked Melody's Output
+stays at -2.6 dB, where it reads -8.7 VU: at the -2.9 that reads -9.0, its
+Thumb would read 1.7 dB under the target, past `Aculele.Levels`' 1.5.
+
 ## 2026-10-28 — Finger plucks with the nails, 0.4.17 (adopted under the owner's standing rule, not yet heard)
 
 **What was decided.** The owner heard a wooden "knock" at the start of every

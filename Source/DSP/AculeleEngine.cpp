@@ -8025,12 +8025,13 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
     constexpr float fingerReleaseRadius = 0.2e-3f;
     // Playing force and release gesture have independent authored responses.
     // Raising soft-note force from v^2 to v also raises its release speed.
-    // Scale the effective edge by the same 1/v ratio to preserve u/r and
-    // the established velocity-dependent release shape for all techniques.
-    // Finger's resulting radius follows v^0.233125 and its contact time
-    // still follows v^-0.766875. These are keyboard-response choices, not
-    // measured fingertip/plectrum dimensions. The full-force reference and
-    // every raw-velocity Touch/noise/style response remain unchanged.
+    // A pad's effective edge is scaled by the same 1/v ratio to preserve u/r
+    // and its established velocity-dependent release shape: its radius
+    // follows v^0.233125 and its contact time still follows v^-0.766875.
+    // These are keyboard-response choices, not measured fingertip
+    // dimensions; a nail or pick keeps its own edge (below). The full-force
+    // reference and every raw-velocity Touch/noise/style response remain
+    // unchanged.
     const float releaseGestureScale = 1.0f / v;
     const float contactForce = v * v;
     constexpr float fingerContactForceExponent = 0.6165625f;
@@ -8039,11 +8040,19 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
     double roughnessSlipPole = 0.0;
     voice.releaseSlipPole = 0.0;
     voice.releaseReferencePole = 0.0;
+    // A nail's or plectrum's edge is the same size however hard it plays,
+    // so a pick's slip goes as 1/v with the force alone. Scaled by
+    // releaseGestureScale as well, as Acustra's is, the slip went as 1/v^2:
+    // velocity 20 let an E4 go over 0.7 of a period, and soft nail and pick
+    // notes fell 5-14 dB below the linear force law at velocities 20-40
+    // (the owner's choice of less contrast, 2026-10-13), where the
+    // fingertip's follow it. The edge was fitted, at full velocity, when the
+    // force went as v^2 and the slip as 1/force, which a fixed edge keeps.
     if (pick)
         slipPole = plectrumSlipPole(voice, releasedAmplitude, heldDistance,
             soundingLength, scaleLength,
             physicalCalibration_.pickEdgeRadiusMetres * releaseTouch
-                * gestureCompliance * releaseGestureScale);
+                * gestureCompliance);
     else
     {
         // The nominal full-velocity contact bounds release speed. Thumb

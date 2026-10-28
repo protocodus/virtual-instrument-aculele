@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.4.18 — 2026-10-28 — Soft nail and pick notes keep their level
+
+A nail or plectrum now keeps its own edge size at every velocity, so a softer stroke lets the string go a little more slowly only because the string moves more slowly. Before, the edge was taken as larger the softer the stroke, so the string slipped off it over most of a period at velocity 20, and soft nail and pick notes fell far under the level the velocity asks for. An E4 at velocity 20 played 30 dB under velocity 127 on the nail and 23 dB on the pick, against the 16 dB that half the force at half the velocity gives. It now plays 16-18 dB under, and soft notes still come out darker. Notes above velocity 60 change by under 1 dB. This affects Pick, Finger's nails, Strum's downstrokes and Thumb's upstrokes. It was adopted under the owner's standing rule to accept candidates, before the owner had heard it. Three preset trims moved by 0.1-0.3 dB to keep typical playing at -9 VU.
+
 ### 0.4.17 — 2026-10-28 — Fingerstyle plucks with the nails
 
 Under Finger, the thumb and fingers now meet the strings with their nails, the hard contact a strum's downstroke and a thumb's upstroke already use, as a classical player's do. Over a note's first 10 ms, a real ukulele recording's 2-8 kHz sits about 10 dB under its fundamental. The fingertip left Aculele's 18-24 dB under on Low G Tenor and 13-21 dB on Tenor Fluorocarbon Fingerstyle, and nothing measured gives a fingertip more. The nail brings 5-13 dB of that back, so each note starts with a clearer, brighter pluck. This was adopted under the owner's standing rule to accept candidates, before the owner had heard it. Two preset trims moved by 0.2-0.3 dB to keep typical playing at -9 VU.

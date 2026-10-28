@@ -3169,7 +3169,9 @@ void refineDispersionDesign(const DispersionPartials& partials,
 // full searches 4 cents apart already differ by up to 7.3. A full-wheel
 // vibrato on the C string's 14th fret on nylon went from 255 to 38 ms of
 // design work in 2 s, a bend sweep there from 131 to 32 ms, each within 2.1
-// cents of the full searches.
+// cents of the full searches. A fresh pluck's first design, at its unbent
+// pitch, is the one design that cannot continue, so it is made ahead of the
+// note a start at a time (progress, AculeleEngine::prepareDispersion).
 DispersionCalibration calibrateDispersion(
     double inharmonicity, double fundamental, double sampleRate,
     double broadCoefficient, double broadMix,
@@ -3177,8 +3179,16 @@ DispersionCalibration calibrateDispersion(
     double bendingA1 = 0.0, double bendingA2 = 0.0,
                       double constantA1 = 0.0, double constantA2 = 0.0,
                       double constantN1 = 0.0, double constantN2 = 0.0,
-                      const DispersionCalibration* previous = nullptr) noexcept
+                      const DispersionCalibration* previous = nullptr,
+                      detail::DispersionProgress* progress = nullptr,
+                      int startBudget = 16) noexcept
 {
+    // progress: a design prepared ahead a start at a time, startBudget
+    // starts a call, from where the last call left it. It is done unless
+    // the budget runs out with starts left, and then the design returned is
+    // not the answer.
+    if (progress != nullptr)
+        progress->done = true;
     DispersionCalibration calibration;
     const double omega0 = 2.0 * piDouble * fundamental / sampleRate;
     // Coefficients at the design frequency, and the delay that tunes the
@@ -3270,7 +3280,13 @@ DispersionCalibration calibrateDispersion(
 
     double worst = collocatedWorst;
     calibration = collocated;
-    if (stiffnessShare > 0.0)
+    if (progress != nullptr && progress->started)
+    {
+        calibration.decayRatio = progress->decayRatio;
+        calibration.poleRatio = progress->poleRatio;
+        worst = progress->worst;
+    }
+    else if (stiffnessShare > 0.0)
     {
         const double release = (1.0 - stiffnessShare) * (1.0 - stiffnessShare);
         calibration = fitFrom(collocated.decayRatio[0],
@@ -3298,18 +3314,28 @@ DispersionCalibration calibrateDispersion(
     }
     constexpr double decayScales[] { 1.0, 0.6, 1.7, 0.35 };
     constexpr double poles[] { 0.19, 0.1, 0.3, 0.05 };
-    for (int decayIndex = 0; !continued && decayIndex < 4 && worst > tolerance; ++decayIndex)
-    for (int poleIndex = 0; poleIndex < 4 && worst > tolerance; ++poleIndex)
+    int start = progress != nullptr ? progress->nextStart : 0;
+    for (int budget = startBudget;
+         !continued && start < 16 && worst > tolerance && budget > 0;
+         ++start, --budget)
     {
         auto candidate = fitFrom(
-            std::clamp(decayScales[decayIndex] * stiffness, 0.5, 35.0),
-            poles[poleIndex] * fitted, fallbackShare, 0.01);
+            std::clamp(decayScales[start / 4] * stiffness, 0.5, 35.0),
+            poles[start % 4] * fitted, fallbackShare, 0.01);
         const double candidateWorst = worstOf(candidate);
         if (candidateWorst < worst)
         {
             worst = candidateWorst;
             calibration = candidate;
         }
+    }
+    if (progress != nullptr)
+    {
+        *progress = { true, continued || start == 16 || worst <= tolerance,
+                      start, worst, calibration.decayRatio,
+                      calibration.poleRatio };
+        if (!progress->done)
+            return calibration;
     }
     if (worst > tolerance && collocatedWorst < worst)
     {
@@ -6061,13 +6087,18 @@ AculeleEngine::DispersionSolve AculeleEngine::solvedDispersion(
     }
     else
     {
+        const auto matches = [&arguments] (const DispersionSolve& solve)
+        {
+            return solve.valid && solve.arguments == arguments;
+        };
         const auto solved = std::find_if(dispersionSolves_.begin(),
-            dispersionSolves_.end(), [&arguments] (const DispersionSolve& solve)
-            {
-                return solve.valid && solve.arguments == arguments;
-            });
+                                         dispersionSolves_.end(), matches);
         if (solved != dispersionSolves_.end())
             return *solved;
+        const auto prepared = std::find_if(preparedDispersion_.begin(),
+                                           preparedDispersion_.end(), matches);
+        if (prepared != preparedDispersion_.end())
+            return *prepared;
     }
     const auto calibration = calibrateDispersion(
         arguments[0], arguments[1], arguments[2], arguments[3],
@@ -6090,6 +6121,115 @@ AculeleEngine::DispersionSolve AculeleEngine::solvedDispersion(
             % static_cast<int>(dispersionSolves_.size());
     }
     return solve;
+}
+
+// A Pick's release, a Strum's nail downstroke and a Thumb's nail upstroke
+// are shaped on the 48 kHz grid, so away from 48 kHz they need a 48 kHz
+// dispersion design too (configureVoice).
+bool AculeleEngine::picksAtReferenceRate() const noexcept
+{
+    return sampleRate_ != 48000.0 && (parameters_.picking == PickingTechnique::Pick
+        || (parameters_.picking == PickingTechnique::Strum
+            && performanceRealism_.nailStrokes)
+        || (parameters_.picking == PickingTechnique::Thumb
+            && performanceRealism_.thumbnailUpstrokes));
+}
+
+// The arguments configureVoice gives solvedDispersion for a fresh pluck,
+// unbent and undetuned, of a string at a fret: slot (string, fret, host or
+// 48 kHz reference rate). False for a reference the host rate and picking do
+// not use. It repeats configureVoice's arithmetic for that case; a slot that
+// drifts from it only stops being found (Aculele.PreparedDispersion).
+bool AculeleEngine::preparedDispersionArguments(
+    int slot, std::array<double, 13>& arguments) const noexcept
+{
+    const bool reference = slot % 2 == 1;
+    const int fret = (slot / 2) % (fretCount + 1);
+    const int stringIndex = slot / (2 * (fretCount + 1));
+    if (reference && !picksAtReferenceRate())
+        return false;
+    const int openMidi = voices_[static_cast<std::size_t>(stringIndex)].openMidi;
+    const float scaleLength = scaleLengthFor(parameters_.shape);
+    const float soundingLength = scaleLength * std::exp2(-static_cast<float>(fret) / 12.0f);
+    const float unbentFrequency = midiFrequency(openMidi + fret) * masterTuneRatio_;
+    const float lossDesignFrequency = clamp(unbentFrequency,
+        static_cast<float>(sampleRate_) / (activeDelaySamples() - 3.0f),
+        0.24f * static_cast<float>(sampleRate_));
+    const float tension = std::max(stringTension(parameters_, stringIndex,
+        tunedMidiFrequency(openMidi)), 1.0f);
+    const auto loss = ukuleleStringLoss(parameters_, stringIndex, tension,
+                                        soundingLength, lossDesignFrequency);
+    const float inharmonicity = loss.inharmonicity;
+    const float cutoff = 12500.0f * std::exp(-0.9f * parameters_.stringAge)
+        * physicalCalibration_.highLossCutoffScale;
+    const float lowpassCoefficient = std::exp(
+        -twoPi * clamp(cutoff, 1200.0f, 0.44f * 48000.0f) * (1.0f / 48000.0f));
+    const float highestFitFrequency = std::min(
+        tunedMidiFrequency(openMidi + fretCount + 12),
+        static_cast<float>(0.42 * sampleRate_
+            / stretchedPartial(3.0, inharmonicity)));
+    const float dispersionFitFrequency = std::min(lossDesignFrequency,
+                                                   highestFitFrequency);
+    const double rate = reference ? 48000.0 : sampleRate_;
+    const auto bending = bendingLossSection(static_cast<double>(loss.bendingFactor),
+        static_cast<double>(inharmonicity),
+        static_cast<double>(dispersionFitFrequency), rate);
+    const auto constant = constantLossSection(static_cast<double>(loss.constantLoss),
+        static_cast<double>(inharmonicity),
+        static_cast<double>(dispersionFitFrequency), rate);
+    arguments = {
+        inharmonicity, dispersionFitFrequency, rate, 0.0f, 0.0f,
+        lowpassCoefficient, loss.highMix,
+        static_cast<float>(bending.a1), static_cast<float>(bending.a2),
+        static_cast<float>(constant.a1), static_cast<float>(constant.a2),
+        static_cast<float>(constant.n1), static_cast<float>(constant.n2)
+    };
+    return true;
+}
+
+// One step of the designs made ahead of their notes, every 5.3 ms of audio
+// (process): a stale slot's search begun, or one start of the search under
+// way. On the development machine a step takes a median 0.3 ms and at most
+// about 2 ms, and once every slot is ready, about 10 us to check one. All of
+// a configuration's slots are ready about 2 s after it changes (5 s at
+// 44.1 kHz with the Pick). A note that comes first runs its search itself.
+void AculeleEngine::prepareDispersion() noexcept
+{
+    auto& progress = preparingDispersionProgress_;
+    if (!preparingDispersion_)
+    {
+        const auto& prepared = preparedDispersion_[static_cast<std::size_t>(
+            preparedDispersionSlot_)];
+        std::array<double, 13> arguments {};
+        if (!preparedDispersionArguments(preparedDispersionSlot_, arguments)
+            || (prepared.valid && prepared.arguments == arguments))
+        {
+            preparedDispersionSlot_ = (preparedDispersionSlot_ + 1)
+                % preparedDispersionCount;
+            return;
+        }
+        preparingDispersionArguments_ = arguments;
+        progress = {};
+        preparingDispersion_ = true;
+    }
+    const auto& a = preparingDispersionArguments_;
+    const auto calibration = calibrateDispersion(a[0], a[1], a[2], a[3], a[4],
+        a[5], a[6], a[7], a[8], a[9], a[10], a[11], a[12], nullptr, &progress,
+        progress.started ? 1 : 0);
+    if (!progress.done)
+        return;
+    auto& solve = preparedDispersion_[static_cast<std::size_t>(
+        preparedDispersionSlot_)];
+    solve.arguments = a;
+    for (std::size_t section = 0; section < 2; ++section)
+    {
+        solve.decayRatios[section] = static_cast<float>(calibration.decayRatio[section]);
+        solve.poleRatios[section] = static_cast<float>(calibration.poleRatio[section]);
+    }
+    solve.worstCents = static_cast<float>(calibration.worst);
+    solve.valid = true;
+    preparingDispersion_ = false;
+    preparedDispersionSlot_ = (preparedDispersionSlot_ + 1) % preparedDispersionCount;
 }
 
 const std::array<AculeleEngine::RestingStringModel, AculeleEngine::stringCount>&
@@ -6533,11 +6673,7 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
     // A Strum's downstrokes and a Thumb's upstrokes take the Pick's release
     // too (nailStroke).
     const bool usePickReference = (clearDelay || refreshPickReference)
-        && sampleRate_ != 48000.0 && (parameters_.picking == PickingTechnique::Pick
-            || (parameters_.picking == PickingTechnique::Strum
-                && performanceRealism_.nailStrokes)
-            || (parameters_.picking == PickingTechnique::Thumb
-                && performanceRealism_.thumbnailUpstrokes));
+        && picksAtReferenceRate();
     const bool referenceTuning = usePickReference
         && !(configurationKey == voice.referencePickConfigurationKey);
     if (!clearDelay && configurationKey == voice.configurationKey && !referenceTuning)
@@ -12978,6 +13114,12 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
 {
     if (!prepared_ || left == nullptr || right == nullptr || numSamples <= 0)
         return;
+    preparedDispersionCountdown_ -= numSamples;
+    if (preparedDispersionCountdown_ <= 0)
+    {
+        preparedDispersionCountdown_ += static_cast<int>(sampleRate_ * (256.0 / 48000.0));
+        prepareDispersion();
+    }
     float* const piezo = buses.piezo;
     // A Piezo output that was not rendered starts again from silence.
     if (piezo == nullptr)

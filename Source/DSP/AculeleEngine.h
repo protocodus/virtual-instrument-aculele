@@ -119,6 +119,22 @@ enum class PickingTechnique
     Strum
 };
 
+namespace detail
+{
+// A dispersion design's spread of starts, run a start at a time when the
+// design is prepared ahead of its note (AculeleEngine::prepareDispersion):
+// the next start and the best design so far.
+struct DispersionProgress
+{
+    bool started { false };
+    bool done { false };
+    int nextStart { 0 };
+    double worst { 0.0 };
+    std::array<double, 2> decayRatio {};
+    std::array<double, 2> poleRatio {};
+};
+} // namespace detail
+
 // Representative clear, quarter-cut top material at 12% moisture content.
 // These are material inputs, not additional instrument parameters.
 struct WoodPhysicalProperties
@@ -2066,6 +2082,22 @@ private:
     [[nodiscard]] DispersionSolve solvedDispersion(
         const std::array<double, 13>& arguments,
         const DispersionSolve* previous = nullptr) noexcept;
+    // The design each string's fresh pluck at each fret asks for first, and
+    // its 48 kHz pick reference where the host rate needs one, made ahead of
+    // the note a start at a time (prepareDispersion): a stiff note's whole
+    // search took 3.5-9 ms of the note-on batch. A prepared design is the
+    // same full search the note would run, so it does not change the sound.
+    static constexpr int preparedDispersionCount = stringCount * (fretCount + 1) * 2;
+    std::array<DispersionSolve, preparedDispersionCount> preparedDispersion_ {};
+    int preparedDispersionSlot_ { 0 };
+    bool preparingDispersion_ { false };
+    std::array<double, 13> preparingDispersionArguments_ {};
+    detail::DispersionProgress preparingDispersionProgress_ {};
+    int preparedDispersionCountdown_ { 0 };
+    [[nodiscard]] bool preparedDispersionArguments(
+        int slot, std::array<double, 13>& arguments) const noexcept;
+    void prepareDispersion() noexcept;
+    [[nodiscard]] bool picksAtReferenceRate() const noexcept;
     // History-free open-string branches used only by the base tuning model.
     // The actual junction still carries every played string and retained tail.
     struct RestingStringModel

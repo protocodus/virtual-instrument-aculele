@@ -10221,6 +10221,10 @@ bool AculeleEngine::betterShape(const ShapeScore& candidate,
         return candidate.opens > incumbent.opens;
     if (candidate.fretSum != incumbent.fretSum)
         return candidate.fretSum < incumbent.fretSum;
+    // Of two ways to sound the same strings, the chord's own notes take the
+    // open ones: D4 G4 B4's G4 is the open G, and its key-up stops it.
+    if (candidate.fillOpens != incumbent.fillOpens)
+        return candidate.fillOpens < incumbent.fillOpens;
     return candidate.ringing < incumbent.ringing;
 }
 
@@ -10249,6 +10253,23 @@ void AculeleEngine::searchShape(ShapeSearch& search, int index,
             score.opens += fret == 0 ? 1 : 0;
             score.fretSum += fret;
             score.ringing += voice.played && string != shapeNote.current ? 1 : 0;
+        }
+        // The free string's fill is part of what the stroke sounds: F4 A4 C5
+        // is 2013 with its open C, not 5550 with its open A (chordFillNote).
+        for (int string = 0; search.fill && string < stringCount; ++string)
+        {
+            const auto& voice = voices_[static_cast<std::size_t>(string)];
+            if (((used >> string) & 1u) != 0u || voice.keyDown || voice.pedalHeld
+                || voice.pluckDelay != 0 || voice.repluckPending)
+                continue;
+            const int fret = fillFret(search.frets, string, search.pitchClasses,
+                                      search.weights);
+            if (fret >= 0)
+            {
+                score.opens += fret == 0 ? 1 : 0;
+                score.fillOpens += fret == 0 ? 1 : 0;
+                score.fretSum += fret;
+            }
         }
         score.cost = shapeCost(search.frets, search.movable, search.weights);
         score.impossible = score.cost >= impossibleShapeCost ? 1 : 0;
@@ -10283,9 +10304,12 @@ void AculeleEngine::searchShape(ShapeSearch& search, int index,
 // no string whose key is still down while a free one serves; a shape the
 // hand holds within one span, reached from where it is with the fewest
 // frets moved; a note re-struck on the string still ringing it; the most
-// open strings; the lowest frets; silent strings before ringing ones.
+// open strings; the lowest frets; silent strings before ringing ones. When
+// a stroke sweeps a chord of three across all four strings (sweptFill), the
+// open strings and frets are those of all four, so it takes the shape its
+// four sounded notes take as a chord of four.
 void AculeleEngine::planChord(const int* midiNotes, int count,
-                              int midiChannel) noexcept
+                              int midiChannel, bool sweptFill) noexcept
 {
     plannedCount_ = 0;
     if (!prepared_ || midiNotes == nullptr || count < 2 || count > stringCount
@@ -10336,6 +10360,11 @@ void AculeleEngine::planChord(const int* midiNotes, int count,
     }
     if (search.count < 2)
         return;
+    search.fill = sweptFill && performanceRealism_.chordFill
+        && search.count == stringCount - 1;
+    for (int index = 0; index < search.count; ++index)
+        search.pitchClasses
+            |= 1u << (search.notes[static_cast<std::size_t>(index)].midiNote % 12);
     searchShape(search, 0, 0u);
     if (!search.found)
         return;
@@ -10853,19 +10882,27 @@ int AculeleEngine::chordFillNote(int string, int midiChannel) const noexcept
             - voices_[static_cast<std::size_t>(planned)].openMidi;
         pitchClasses |= 1u << (plannedNotes_[slot] % 12);
     }
-    const auto weights = handWeights();
+    const int fret = fillFret(frets, string, pitchClasses, handWeights());
+    return fret < 0 ? -1 : voice.openMidi + fret;
+}
+
+int AculeleEngine::fillFret(StringFrets frets, int string,
+                            unsigned pitchClasses,
+                            const HandWeights& weights) const noexcept
+{
+    const int open = voices_[static_cast<std::size_t>(string)].openMidi;
     int best = -1;
     float bestCost = impossibleShapeCost;
     for (int fret = 0; fret <= fretCount; ++fret)
     {
-        if (((pitchClasses >> ((voice.openMidi + fret) % 12)) & 1u) == 0u)
+        if (((pitchClasses >> ((open + fret) % 12)) & 1u) == 0u)
             continue;
         frets[static_cast<std::size_t>(string)] = fret;
         const float cost = shapeCost(frets, 0u, weights);
         if (cost < bestCost - 1.0e-4f)
         {
             bestCost = cost;
-            best = voice.openMidi + fret;
+            best = fret;
         }
     }
     return best;

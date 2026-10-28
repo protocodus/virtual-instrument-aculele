@@ -475,7 +475,7 @@ bool Performer::liftChord(const std::array<int, AculeleEngine::stringCount>& cho
                         != lifted[static_cast<std::size_t>(second)];
             if (!playable)
                 continue;
-            engine_.planChord(lifted.data(), count, channel);
+            engine_.planChord(lifted.data(), count, channel, sweptChord());
             if (engine_.plannedString(lifted[0], channel) < 0)
                 continue;
             for (int index = 0; index < pendingNoteOnCount_; ++index)
@@ -492,6 +492,13 @@ bool Performer::liftChord(const std::array<int, AculeleEngine::stringCount>& cho
             return true;
         }
     return false;
+}
+
+// The negation of flushNoteGroup's pinch for a chord of three or four.
+bool Performer::sweptChord() const noexcept
+{
+    return !(fingerTechnique_ && strokeMode_ == StrokeMode::Automatic && !chuck_
+             && engine_.performanceRealism().fingerChords);
 }
 
 // A chord written below the tuning's lowest string, as a keyboard part
@@ -619,7 +626,7 @@ void Performer::flushNoteGroup() noexcept
         if (chordCount >= 2 && chordCount <= AculeleEngine::stringCount)
         {
             const int channel = pendingNoteOns_[0].channel;
-            engine_.planChord(chord.data(), chordCount, channel);
+            engine_.planChord(chord.data(), chordCount, channel, sweptChord());
             if (engine_.plannedString(chord[0], channel) < 0
                 && liftChord(chord, chordCount, channel))
                 std::sort(pendingNoteOns_.begin(),

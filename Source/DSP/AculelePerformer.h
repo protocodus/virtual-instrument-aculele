@@ -325,6 +325,9 @@ private:
     bool foldChord(int channel) noexcept;
     bool liftChord(const std::array<int, AculeleEngine::stringCount>& chord,
                    int count, int channel) noexcept;
+    // Whether a chord's stroke sweeps across the strings, and so reaches the
+    // one a chord of three leaves free; a Finger pinch plucks only its notes.
+    [[nodiscard]] bool sweptChord() const noexcept;
     [[nodiscard]] int releasedNote(int note, int channel) noexcept;
     // With heldOnly, only the key-ups of keys held down now, other than a
     // connected gesture's source; the rest stay pending.

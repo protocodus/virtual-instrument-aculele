@@ -302,7 +302,11 @@ public:
     // only; notes it does not name, and every note when it is not called,
     // are placed one at a time as before. Inert for string-per-channel
     // controllers and MPE member channels, whose strings are their own.
-    void planChord(const int* midiNotes, int count, int midiChannel = 1) noexcept;
+    // sweptFill: a stroke will sweep a three-note chord's free string too
+    // (chordFillNote), so each shape is scored with the note it would give
+    // that string, as the strings the whole stroke sounds.
+    void planChord(const int* midiNotes, int count, int midiChannel = 1,
+                   bool sweptFill = false) noexcept;
     // The current chord plan's assignment (0 is the low E), or -1 for a
     // note the plan does not place. Read before noteOn consumes the plan,
     // so a player can time its stroke across the actual strings, including
@@ -1961,6 +1965,7 @@ private:
         int misses { 0 };
         int opens { 0 };
         int fretSum { 0 };
+        int fillOpens { 0 };
         int ringing { 0 };
     };
     struct ShapeSearch
@@ -1974,7 +1979,15 @@ private:
         std::array<int, stringCount> bestStrings {};
         ShapeScore best {};
         bool found { false };
+        // Score each shape with its free string's fill (planChord).
+        bool fill { false };
+        unsigned pitchClasses { 0u };
     };
+    // The fret chordFillNote gives this string with the rest of the shape
+    // at frets, or -1.
+    [[nodiscard]] int fillFret(StringFrets frets, int string,
+                               unsigned pitchClasses,
+                               const HandWeights& weights) const noexcept;
     [[nodiscard]] static bool betterShape(const ShapeScore& candidate,
                                           const ShapeScore& incumbent) noexcept;
     void searchShape(ShapeSearch& search, int index, unsigned used) const noexcept;

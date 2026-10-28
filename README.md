@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.4.7 — 2026-10-28 — Three-note strums take the shape their four strings make
+
+A strum or pick sweep of three notes on one channel also sounds the free string, with a chord tone. The shape is now chosen with that note, by the four strings the stroke sounds, so it is the shape those four pitches take as a chord of four. Before, it was chosen for the three notes alone, and the added string followed: F4 A4 C5 played 5550, doubling A4, where it now plays 2013 with the open C, as C4 F4 A4 C5 does; on Low G, E4 G4 C5 played 12-12-0-10 and now plays 0433 with the open low G. Some higher chords now take an open string further up the neck, as their chords of four already did: B4 D5 G5 plays 0-11-10-10 where it played 7-7-7-10. Finger chords are unchanged. The demos are unchanged.
+
 ### 0.4.6 — 2026-10-28 — Melodies around the open strings stay in first position
 
 A single note played with no fretted note in the last two seconds now goes where a hand in first position plays it, at its lowest fret on a string no key holds. Before, it went to whichever string had not sounded yet, however high up the neck: after G4 A4 G4 E4 G4 on the open strings, C5 sounded at the C string's twelfth fret instead of the A string's third, and a Low G scale from C4 put D4 at the low G string's seventh fret and G4 at the C string's seventh, where it now plays C2 and E3. MPE notes are placed as before. The demos are unchanged.
@@ -84,7 +88,7 @@ Most of the engine and Performer are Acustra's, unchanged: dual-polarisation sti
   - D4 G4 B4 plays 0232;
   - D4 F#4 A4 plays 2220.
 
-  No key owns the added note. It is held with the chord and let go with the last of its keys, under the pedal as they are. Finger chords, pairs and tab input are unchanged.
+  The shape is chosen with the added note, by the open strings and frets of all four, so it is the shape those four pitches take as a chord of four: F4 A4 C5 plays 2013, as C4 F4 A4 C5 does (`AculeleEngine::planChord`). No key owns the added note. It is held with the chord and let go with the last of its keys, under the pedal as they are. Finger chords, pairs and tab input are unchanged.
 - **Notes end to end.** A sequencer ends a note on the sample the next one starts. The ending key comes up first, as the player's finger lifts, so the next note or chord is placed as if the key had come up a moment before (`Performer::flushNoteGroup`). The key-ups of a zero-length note, of a key struck again on that sample and of a hammer-on's or pull-off's source still come after the Note Ons.
 - **First position.** A single note with no fretted note in the hand's two-second memory goes to its lowest fret on a string no key holds, as a hand in first position plays it; after that, the frets the hand last held place each note, as in Acustra (`AculeleEngine::chooseString`).
 - **Chords lifted into reach.** A one-channel chord's notes below the tuning's lowest string move up by whole octaves into its range, so A3 C4 E4 plays Am as 2000 (`Performer::foldChord`); a single low note still sounds nothing. Only the C string reaches below E4, so a chord with two notes in C4-D#4 has no shape: the fewest notes move up an octave, the lowest first, to octaves the chord does not already hold, until the hand can fret it. C4 Eb4 G4 plays Eb4 G4 C5, Cm as 0333 with the fill. A key already down stays on its string, and each moved key's key-ups let go of the string it sounds on (`Performer::liftChord`).
@@ -114,8 +118,7 @@ Levels are set on Reason's channel meter, a VU meter read with 0 VU at -12 dBFS 
 
 - **No ukulele body has been measured.** The radiation and bridge banks are a nylon flamenca guitar scaled down by the equal-thickness plate law. With the guitar contour off, the soprano's third-octave spectrum lies within about 4 dB of a real ukulele recording (an unidentified instrument) from 250 to 800 Hz, but it is still 7-12 dB too bright at 1-2 kHz. A real ukulele top is thinner and more lightly braced than the law assumes.
 - **One channel chooses the voicing.** On one MIDI channel, a three-note strum's added string is the hand's cheapest chord tone, and the shape follows the notes given and where the hand already is. That is not always the voicing a player would choose:
-  - C4 F4 A4 plays F as 2010;
-  - F4 A4 C5 plays 5550 from a fresh hand, or 2013 after a C;
+  - B4 D5 G5, like G4 B4 D5 G5, plays G as 0-11-10-10, taking the open G however high that puts the hand, where the C shape barred at the seventh fret is 7-7-7-10;
   - E4 G4 B4 plays 0402, where most players fret Em as 0432;
   - D4 F#4 A4 C5, or C4 D4 F#4 A4 lifted to it, plays D7 as 5220, where chord books show 2223.
 

@@ -1,5 +1,6 @@
 // A one-channel strum of three notes sounds all four strings, the free one
-// fretted with a chord tone (AculeleEngine::chordFillNote, fillStroke), and
+// fretted with a chord tone (AculeleEngine::chordFillNote, fillStroke) and
+// the shape chosen for those four strings (AculeleEngine::planChord), and
 // that string is held and let go with the chord's keys, never by a key of
 // its own pitch. A chord's notes below the range are moved up into it
 // (Performer::foldChord), a chord no shape holds is lifted an octave note by
@@ -118,6 +119,11 @@ int main()
     expectShape(Technique::Strum, { 62, 66, 69 }, { 2, 2, 2, 0 }, "D4 F#4 A4 strum");
     expectShape(Technique::Strum, { 62, 67, 71 }, { 0, 2, 3, 2 }, "D4 G4 B4 strum");
     expectShape(Technique::Pick, { 60, 64, 67 }, { 0, 0, 0, 3 }, "C4 E4 G4 pick sweep");
+    // A shape is chosen with its fill, by the four strings the stroke
+    // sounds: F4 A4 C5 is 2013 with the open C, as C4 F4 A4 C5 is, not 5550
+    // with the open A doubled.
+    expectShape(Technique::Strum, { 65, 69, 72 }, { 2, 0, 1, 3 }, "F4 A4 C5 strum");
+    expectShape(Technique::Strum, { 60, 65, 69, 72 }, { 2, 0, 1, 3 }, "C4 F4 A4 C5 strum");
     // Two notes below E4 need the one C string: the lowest moves up an
     // octave (Performer::liftChord), as the chord books fret Cm, F7 and Ab7.
     expectShape(Technique::Strum, { 60, 63, 67 }, { 0, 3, 3, 3 }, "C4 Eb4 G4 strum");

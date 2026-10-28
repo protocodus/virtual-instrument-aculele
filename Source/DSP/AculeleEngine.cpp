@@ -6349,16 +6349,18 @@ AculeleEngine::DispersionSolve AculeleEngine::solvedDispersion(
     return solve;
 }
 
-// A Pick's release, a Strum's nail downstroke and a Thumb's nail upstroke
-// are shaped on the 48 kHz grid, so away from 48 kHz they need a 48 kHz
-// dispersion design too (configureVoice).
+// A Pick's release and every nail's (a Strum's downstroke, a Thumb's
+// upstroke, a Finger's fingers) are shaped on the 48 kHz grid, so away from
+// 48 kHz they need a 48 kHz dispersion design too (configureVoice).
 bool AculeleEngine::picksAtReferenceRate() const noexcept
 {
     return sampleRate_ != 48000.0 && (parameters_.picking == PickingTechnique::Pick
         || (parameters_.picking == PickingTechnique::Strum
             && performanceRealism_.nailStrokes)
         || (parameters_.picking == PickingTechnique::Thumb
-            && performanceRealism_.thumbnailUpstrokes));
+            && performanceRealism_.thumbnailUpstrokes)
+        || (parameters_.picking == PickingTechnique::Finger
+            && performanceRealism_.fingerNails));
 }
 
 // The arguments configureVoice gives solvedDispersion for a fresh pluck,
@@ -6898,8 +6900,7 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
         exact::bits(soundingLength), exact::bits(pitch.speakingFret),
         exact::bits(lossDesignFrequency),
         exact::bits(parameters_.stringAge), exact::bits(palmMute_) };
-    // A Strum's downstrokes and a Thumb's upstrokes take the Pick's release
-    // too (nailStroke).
+    // Every nail stroke takes the Pick's release too (nailStroke).
     const bool usePickReference = (clearDelay || refreshPickReference)
         && picksAtReferenceRate();
     const bool referenceTuning = usePickReference
@@ -7499,6 +7500,18 @@ float AculeleEngine::frettingPitchHalfWidth(int stringIndex, int openMidi) const
 // strum up with ("the nail of your thumb on the upstroke", "Strumming",
 // https://www.brucewatsonmusic.com/documents/Strumming.pdf). Thumb single
 // notes are all downstrokes (Performer::flushNoteGroup), so they keep the pad.
+// Fingerpicking, the thumb and fingers meet the strings with their nails, as
+// a classical guitarist's do; a longer nail gives the brighter attack
+// (Ukulele Tricks, "Fingerstyle Lesson 4",
+// https://ukuleletricks.com/media/ft/lesson-4.pdf, and Got A Ukulele,
+// "Fingernails for ukulele",
+// https://www.gotaukulele.com/2010/11/fingernails-for-ukulele.html). Players
+// also pluck with the flesh alone. The nail was taken because over the first
+// 10 ms the fingertip left 2-8 kHz 13-24 dB under the fundamental's level
+// in a real ukulele recording, and nothing measured gives a fingertip more;
+// the nail brings 5-13 dB of that back (Docs/decisions.md, 2026-10-28). A
+// thumb left on its pad, its low G against nailed fingers, read 2.1 dB
+// quieter on the piezo than on the microphones, past Aculele.Levels' 1.5.
 bool AculeleEngine::nailStroke(const Voice& voice) const noexcept
 {
     return (performanceRealism_.nailStrokes
@@ -7506,7 +7519,9 @@ bool AculeleEngine::nailStroke(const Voice& voice) const noexcept
             && voice.pluckParallelSign > 0.0f)
         || (performanceRealism_.thumbnailUpstrokes
             && parameters_.picking == PickingTechnique::Thumb
-            && voice.pluckParallelSign < 0.0f);
+            && voice.pluckParallelSign < 0.0f)
+        || (performanceRealism_.fingerNails
+            && parameters_.picking == PickingTechnique::Finger);
 }
 
 AculeleEngine::PickingGesture AculeleEngine::nextPickingGesture() noexcept
@@ -7973,10 +7988,11 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
     const float apertureReferenceDelay = 48000.0f / midiFrequency(61);
     // The Pick technique's release velocity (FittedPhysicalData.h). Finger
     // and Thumb, and a pick at a zero share, take the displacement shape below.
-    // A strum's downstroke strikes with the index finger's nail, and a
-    // Thumb's upstroke with the thumbnail: a hard edge the string slides off
-    // as it does a plectrum's, so it takes the Pick's whole contact
-    // (nailStroke); where the stroke lands and how hard stay the technique's.
+    // A strum's downstroke strikes with the index finger's nail, a Thumb's
+    // upstroke with the thumbnail and a Finger's fingers with their nails: a
+    // hard edge the string slides off as it does a plectrum's, so it takes
+    // the Pick's whole contact (nailStroke); where the stroke lands and how
+    // hard stay the technique's.
     const bool pick = parameters_.picking == PickingTechnique::Pick
         || nailStroke(voice);
     const float releaseShare = pick

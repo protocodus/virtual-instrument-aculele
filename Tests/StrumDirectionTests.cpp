@@ -1,6 +1,7 @@
 // Automatic strokes follow the strumming hand's down-up swing
 // (Performer::pendulumUpstroke), and each direction meets the strings with
-// its technique's nail or pad (AculeleEngine::nailStroke).
+// its technique's nail or pad (AculeleEngine::nailStroke). Fingerpicking,
+// the thumb and fingers take their nails.
 //
 // Each rhythm is played as four-string tab strokes (CC126 = 4 on channel 1)
 // under Strum, or the technique named, at the default controls, 48 kHz and
@@ -150,6 +151,23 @@ int main()
         {
             std::fprintf(stderr, "FAIL %s contacts: %s %s\n", thumb ? "thumb" : "strum",
                          strokes.c_str(), contacts.c_str());
+            ++failures;
+        }
+    }
+
+    // Under Finger every string is plucked with a nail.
+    {
+        auto performer = std::make_unique<aculele::Performer>();
+        auto parameters = aculele::engineParameters(aculele::factoryPresets[2]);
+        performer->setParameters(parameters);
+        performer->prepare(rate, block);
+        performer->setParameters(parameters);
+        std::string contacts;
+        for (int string = 0; string < 4; ++string)
+            contacts += aculele::AculeleEngineTestAccess::nail(performer->engine(), string) ? 'N' : 'P';
+        if (contacts != "NNNN")
+        {
+            std::fprintf(stderr, "FAIL finger contacts: %s\n", contacts.c_str());
             ++failures;
         }
     }

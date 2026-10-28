@@ -103,9 +103,13 @@ struct PerformanceRealism
     // upstroke with its nail, the Pick's hard contact
     // (AculeleEngine::nailStroke).
     bool thumbnailUpstrokes { true };
-    // Under Finger the thumb plucks the G string with its broader pad and
-    // the fingers the other three (AculeleEngine::initialisePluck).
+    // Under Finger the thumb plucks the G string and the fingers the other
+    // three; on their flesh (fingerNails off) the thumb's pad is the broader
+    // (AculeleEngine::initialisePluck).
     bool fingerstyleThumb { true };
+    // Under Finger the thumb and fingers pluck with their nails, the Pick's
+    // hard contact (AculeleEngine::nailStroke).
+    bool fingerNails { true };
     // Automatic strokes follow the strumming hand's down-up swing, which
     // keeps time through the strokes it skips, instead of alternating stroke
     // by stroke and restarting after a dotted eighth

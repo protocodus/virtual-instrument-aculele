@@ -5,6 +5,49 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-10-28 — Finger plucks with the nails, 0.4.17 (adopted under the owner's standing rule, not yet heard)
+
+**What was decided.** The owner heard a wooden "knock" at the start of every
+note. Of the Knock Finder's cuts the owner kept A, the shipping attack. The
+next grounded question was the onset's top end. Over the first 10 ms of the
+Duke Sonic Dictionary's "Ukulele Arpeggio" (CC BY-NC 4.0, an unidentified
+ukulele, technique unknown; compared against, never fitted), G4's 2-4 kHz
+reads -10.2 dB and its 4-8 kHz -10.3 dB against the fundamental, mostly
+inharmonic. Aculele's fingertip, the release fitted to the Eastman finger
+takes, read -28.0 and -33.8 dB on Low G Tenor and -22.9 and -30.8 dB on Tenor
+Fluorocarbon Fingerstyle. Nothing measured gives a fingertip's slip more
+noise. The nail is a grounded alternative: it is the Pick's whole contact
+(GuitarSet's plectrum), which a strum's downstroke and a thumb's upstroke
+already take, and fingerstyle players pluck with the nail as well as with
+the flesh (Ukulele Tricks, "Fingerstyle Lesson 4"; Got A Ukulele,
+"Fingernails for ukulele"). On the nail the same notes read -22.8 and -23.8
+dB (Low G Tenor) and -17.9 and -17.9 dB (Tenor Fluorocarbon Fingerstyle):
+5-13 dB nearer the recording, still under it.
+
+**The letters.** The two Finger presets' demos, rendered with
+`RenderAculelePresetDemos` at 48 kHz in 256-sample blocks:
+
+- A: the shipping engine (0.4.15), fingertip release.
+- B: every Finger stroke, thumb and fingers, takes the nail's contact.
+
+Each B was matched to its A by whole-file RMS: -0.22 dB (Low G Tenor) and
+-0.18 dB (Tenor Fluorocarbon Fingerstyle).
+
+**What was chosen.** B, without a listening verdict. The owner's standing
+rule of 2026-10-28 is to lean towards accepting candidates, and the
+measurement above favours B. The page with A and B stays up for the owner
+to check: <https://claude.ai/artifact/2tZ4LziG4ZK15b4WnCYbzV>.
+
+A variant with the thumb on its pad and the fingers on their nails was tried
+and not kept. Low G Tenor's low G, under the thumb's pad, then read 2.1 dB
+quieter on the piezo than on the microphones, past `Aculele.Levels`' 1.5 dB
+bound. With every stroke on the nail it reads 1.4 dB under.
+
+**What it licensed.** `PerformanceRealism::fingerNails`, on by default,
+makes `AculeleEngine::nailStroke` true for every Finger stroke.
+`LevelMatchData.h` was re-pinned, and Tenor Fluorocarbon Fingerstyle's
+Output moved from -0.5 to -0.7 dB and Low G Tenor's from -2.0 to -1.7 dB.
+
 ## 2026-10-28 — every pluck draws its own force and angle, and every string is let go at one force, 0.4.15 (chosen by ear)
 
 **What was decided.** The owner heard the plucks of Low G Tenor (the E

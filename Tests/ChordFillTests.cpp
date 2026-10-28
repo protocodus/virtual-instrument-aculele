@@ -1,9 +1,10 @@
 // A one-channel strum of three notes sounds all four strings, the free one
 // fretted with a chord tone (AculeleEngine::chordFillNote, fillStroke), and
 // that string is held and let go with the chord's keys, never by a key of
-// its own pitch. A chord no shape holds is lifted an octave note by note
-// until one does (Performer::liftChord), and its keys let go of the strings
-// they sound.
+// its own pitch. A chord's notes below the range are moved up into it
+// (Performer::foldChord), a chord no shape holds is lifted an octave note by
+// note until one does (Performer::liftChord), and the moved keys let go of
+// the strings they sound.
 //
 // Each case plays the chord on channel 1 at velocity 90 through the
 // Performer, 48 kHz and 256-sample blocks, with the default controls and the
@@ -122,6 +123,11 @@ int main()
     expectShape(Technique::Strum, { 60, 63, 67 }, { 0, 3, 3, 3 }, "C4 Eb4 G4 strum");
     expectShape(Technique::Strum, { 60, 63, 65, 69 }, { 2, 3, 1, 3 }, "C4 Eb4 F4 A4 strum");
     expectShape(Technique::Strum, { 60, 63, 66, 68 }, { 1, 3, 2, 3 }, "C4 Eb4 F#4 G#4 strum");
+    // Notes below the C string move up by octaves into reach
+    // (Performer::foldChord): A3 C4 E4 is Am, C3 E3 G3 and C2 G3 E4 are C.
+    expectShape(Technique::Strum, { 57, 60, 64 }, { 2, 0, 0, 0 }, "A3 C4 E4 strum");
+    expectShape(Technique::Strum, { 48, 52, 55 }, { 0, 0, 0, 3 }, "C3 E3 G3 strum");
+    expectShape(Technique::Strum, { 36, 55, 64 }, { 0, 0, 0, 3 }, "C2 G3 E4 strum");
 
     {
         // Fingers pluck the three strings they are given; nothing sweeps the
@@ -224,6 +230,27 @@ int main()
         player.release(67);
         for (int index = 0; index < 4; ++index)
             check(!player.string(index).keyDown, "a lifted chord left a string held");
+    }
+
+    {
+        // A3 C4 E4 sounds A4 for A3 on the open A string, the fill A4 on
+        // the G: A3's key-up lets go of the open A. A low note alone is
+        // outside the range and sounds nothing.
+        Player player(Technique::Strum);
+        player.chord({ 57, 60, 64 });
+        check(player.string(3).midiNote == 69 && player.string(3).keyDown,
+              "A3 was not folded to the open A string");
+        player.release(57);
+        check(!player.string(3).keyDown, "A3's key-up left its A4 held");
+        check(player.string(0).keyDown, "A3's key-up let go of the fill");
+        player.release(60);
+        player.release(64);
+        for (int index = 0; index < 4; ++index)
+            check(!player.string(index).keyDown, "a folded chord left a string held");
+        Player alone(Technique::Strum);
+        alone.chord({ 57 });
+        for (int index = 0; index < 4; ++index)
+            check(!alone.string(index).played, "A3 alone sounded");
     }
 
     {

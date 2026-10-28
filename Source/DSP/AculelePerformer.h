@@ -269,6 +269,16 @@ private:
         int channel { 1 };
         float velocity { 0.0f };
         int pluckDelay { 0 };
+        // The key pressed; note is what it sounds, octaves above it where
+        // foldChord or liftChord moved it.
+        int key { 0 };
+    };
+
+    struct LiftedKey
+    {
+        // The key's Note Ons sounding off it whose key-ups have not come.
+        std::uint8_t owners { 0 };
+        std::uint8_t octaves { 0 };
     };
 
     struct PendingNoteOff
@@ -312,6 +322,7 @@ private:
     bool handleEvent(int eventSample, const std::uint8_t* data, int size) noexcept;
     void handleTempoEvent(int eventSample, double bpm) noexcept;
     void flushNoteGroup() noexcept;
+    bool foldChord(int channel) noexcept;
     bool liftChord(const std::array<int, AculeleEngine::stringCount>& chord,
                    int count, int channel) noexcept;
     [[nodiscard]] int releasedNote(int note, int channel) noexcept;
@@ -373,9 +384,9 @@ private:
     // CC84 names one source note for one subsequent target on its channel.
     std::array<bool, 16> portamentoSwitches_ {};
     std::array<int, 16> portamentoSources_ {};
-    // Per channel and key, the Note Ons liftChord moved an octave up whose
-    // key-ups have not come yet.
-    std::array<std::array<std::uint8_t, 128>, 16> liftedOwners_ {};
+    // Per channel and key, the Note Ons a chord moved up (foldChord,
+    // liftChord), so its key-ups let go of the strings they sound on.
+    std::array<std::array<LiftedKey, 128>, 16> liftedKeys_ {};
     std::array<float, 16> conventionalPitchBendRanges_ {};
     float lowerMasterPitchBendRange_ { 2.0f };
     float lowerMemberPitchBendRange_ { 48.0f };

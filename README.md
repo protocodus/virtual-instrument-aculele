@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.4.4 — 2026-10-28 — Chords below the ukulele's range are voiced in it
+
+A chord on one MIDI channel with notes below the tuning's lowest string now plays them octaves up, where a ukulele player reads a chord chart, instead of dropping them. A keyboard part often sits there: Reason calls MIDI note 60, the C string's open C4, C3. So A3 C4 E4 now strums Am as 2000 where it sounded only C4 and E4, and C3 E3 G3 strums C as 0003 where it was silent. A single note below the range still sounds nothing. The demos are unchanged.
+
 ### 0.4.3 — 2026-10-28 — Chucks stop what the sustain lets ring
 
 A chuck now stops every string its stroke crosses, as the fretting hand lying across them does, including those the sustain pedal, a front end's Sustain switch or the D#0 keyswitch lets ring. Before, those strings rang on through the chuck: a C chord under the sustain, chucked, still sounded at -44 dBFS RMS 0.3 s later, where it now falls silent as an unsustained chuck does. A key still held keeps its string. The demos are unchanged.
@@ -73,7 +77,7 @@ Most of the engine and Performer are Acustra's, unchanged: dual-polarisation sti
   - D4 F#4 A4 plays 2220.
 
   No key owns the added note. It is held with the chord and let go with the last of its keys, under the pedal as they are. Finger chords, pairs and tab input are unchanged.
-- **Chords lifted into reach.** Only the C string reaches below E4, so a one-channel chord with two notes in C4-D#4 has no shape. The fewest notes move up an octave, the lowest first, to octaves the chord does not already hold, until the hand can fret it: C4 Eb4 G4 plays Eb4 G4 C5, Cm as 0333 with the fill. A key already down stays on its string, and each moved key's key-ups let go of the string it sounds on (`Performer::liftChord`).
+- **Chords lifted into reach.** A one-channel chord's notes below the tuning's lowest string move up by whole octaves into its range, so A3 C4 E4 plays Am as 2000 (`Performer::foldChord`); a single low note still sounds nothing. Only the C string reaches below E4, so a chord with two notes in C4-D#4 has no shape: the fewest notes move up an octave, the lowest first, to octaves the chord does not already hold, until the hand can fret it. C4 Eb4 G4 plays Eb4 G4 C5, Cm as 0333 with the fill. A key already down stays on its string, and each moved key's key-ups let go of the string it sounds on (`Performer::liftChord`).
 - **Switched off because they were measured or voiced on guitars:**
   - the wound-string noises;
   - the studio low-mode observation, a fit to guitar boxes below 400 Hz;

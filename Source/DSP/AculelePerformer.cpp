@@ -105,8 +105,8 @@ void Performer::prepare(double sampleRate, int maximumBlockSize)
     rawPitchWheels_.fill(0.0f);
     portamentoSwitches_.fill(false);
     portamentoSources_.fill(-1);
-    for (auto& channel : liftedOwners_)
-        channel.fill(0);
+    for (auto& channel : liftedKeys_)
+        channel.fill({});
     rpnStates_.fill(RpnState {});
     vibratoChannel_ = 0;
     keyswitchSustain_ = false;
@@ -221,8 +221,8 @@ void Performer::reset() noexcept
     rawPitchWheels_.fill(0.0f);
     portamentoSwitches_.fill(false);
     portamentoSources_.fill(-1);
-    for (auto& channel : liftedOwners_)
-        channel.fill(0);
+    for (auto& channel : liftedKeys_)
+        channel.fill({});
     rpnStates_.fill(RpnState {});
     vibratoChannel_ = 0;
     keyswitchSustain_ = false;
@@ -485,8 +485,6 @@ bool Performer::liftChord(const std::array<int, AculeleEngine::stringCount>& cho
                     if (((lift >> bit) & 1u) != 0u && note.channel == channel
                         && note.note == chord[static_cast<std::size_t>(count - 1 - bit)])
                     {
-                        ++liftedOwners_[static_cast<std::size_t>(channel - 1)]
-                                       [static_cast<std::size_t>(note.note)];
                         note.note += 12;
                         break;
                     }
@@ -496,15 +494,46 @@ bool Performer::liftChord(const std::array<int, AculeleEngine::stringCount>& cho
     return false;
 }
 
-// The note a key-up releases: a key liftChord moved sounds an octave up.
+// A chord written below the tuning's lowest string, as a keyboard part
+// often is (Reason's C3 is the C string's open C4), is played where a
+// ukulele player reads it: each note under the range moves up by whole
+// octaves into reach, A3 C4 E4 to Am as C4 E4 A4. A single low note stays
+// out of the instrument's range and sounds nothing.
+bool Performer::foldChord(int channel) noexcept
+{
+    if (isLowerZoneMember(channel)
+        || (engine_.isStringPerChannelMode() && channel <= AculeleEngine::stringCount))
+        return false;
+    // pendingNoteOns_ is sorted, so a second key is a different note.
+    if (pendingNoteOns_[0].note == pendingNoteOns_[static_cast<std::size_t>(
+            pendingNoteOnCount_ - 1)].note)
+        return false;
+    bool folded = false;
+    for (int index = 0; index < pendingNoteOnCount_; ++index)
+    {
+        auto& note = pendingNoteOns_[static_cast<std::size_t>(index)];
+        if (engine_.canSound(note.note, channel))
+            continue;
+        for (int raised = note.note + 12; raised <= 127; raised += 12)
+            if (engine_.canSound(raised, channel))
+            {
+                note.note = raised;
+                folded = true;
+                break;
+            }
+    }
+    return folded;
+}
+
+// The note a key-up releases: the one its Note On was moved up to.
 int Performer::releasedNote(int note, int channel) noexcept
 {
-    auto& lifted = liftedOwners_[static_cast<std::size_t>(channel - 1)]
-                                [static_cast<std::size_t>(note)];
-    if (lifted == 0)
+    auto& lifted = liftedKeys_[static_cast<std::size_t>(channel - 1)]
+                              [static_cast<std::size_t>(note)];
+    if (lifted.owners == 0)
         return note;
-    --lifted;
-    return note + 12;
+    --lifted.owners;
+    return note + 12 * lifted.octaves;
 }
 
 // Hosts may store simultaneous chord members in any insertion order. A
@@ -512,18 +541,16 @@ int Performer::releasedNote(int note, int channel) noexcept
 // same MIDI chord can land on different strings in different hosts.
 void Performer::flushNoteGroup() noexcept
 {
-    // A key a chord moved up an octave is still held there: struck again
-    // before its key-up, it re-plucks that string (liftChord).
+    // A key a chord moved up is still held there: struck again before its
+    // key-up, it re-plucks that string (foldChord, liftChord).
     for (int index = 0; index < pendingNoteOnCount_; ++index)
     {
         auto& note = pendingNoteOns_[static_cast<std::size_t>(index)];
-        auto& lifted = liftedOwners_[static_cast<std::size_t>(note.channel - 1)]
-                                    [static_cast<std::size_t>(note.note)];
-        if (lifted > 0)
-        {
-            ++lifted;
-            note.note += 12;
-        }
+        note.key = note.note;
+        const auto& lifted = liftedKeys_[static_cast<std::size_t>(note.channel - 1)]
+                                        [static_cast<std::size_t>(note.note)];
+        if (lifted.owners > 0)
+            note.note += 12 * lifted.octaves;
     }
     const auto byNote = [](const PendingNoteOn& left, const PendingNoteOn& right)
     {
@@ -559,6 +586,9 @@ void Performer::flushNoteGroup() noexcept
     // takes the pick one spacing to cross.
     if (pendingNoteOnCount_ >= 2 && oneChannel)
     {
+        if (foldChord(pendingNoteOns_[0].channel))
+            std::sort(pendingNoteOns_.begin(),
+                      pendingNoteOns_.begin() + pendingNoteOnCount_, byNote);
         std::array<int, AculeleEngine::stringCount> chord {};
         int chordCount = 0;
         for (int index = 0; index < pendingNoteOnCount_; ++index)
@@ -587,6 +617,18 @@ void Performer::flushNoteGroup() noexcept
                 std::sort(pendingNoteOns_.begin(),
                           pendingNoteOns_.begin() + pendingNoteOnCount_, byNote);
         }
+    }
+    // A key moved up owns the string it sounds on until its key-up
+    // (releasedNote).
+    for (int index = 0; index < pendingNoteOnCount_; ++index)
+    {
+        const auto& note = pendingNoteOns_[static_cast<std::size_t>(index)];
+        if (note.note == note.key)
+            continue;
+        auto& lifted = liftedKeys_[static_cast<std::size_t>(note.channel - 1)]
+                                  [static_cast<std::size_t>(note.key)];
+        ++lifted.owners;
+        lifted.octaves = static_cast<std::uint8_t>((note.note - note.key) / 12);
     }
     // Only notes the tuning can sound make a stroke: a note no string
     // reaches neither times it (below) nor turns one or two notes into one.
@@ -1232,7 +1274,7 @@ void Performer::dispatchMidiData(const std::uint8_t* data, int size) noexcept
                 if (channelIsInControllerScope(midiChannel, channel))
                 {
                     portamentoSources_[static_cast<std::size_t>(channel - 1)] = -1;
-                    liftedOwners_[static_cast<std::size_t>(channel - 1)].fill(0);
+                    liftedKeys_[static_cast<std::size_t>(channel - 1)].fill({});
                 }
         }
         else if (controller == 120u)
@@ -1242,7 +1284,7 @@ void Performer::dispatchMidiData(const std::uint8_t* data, int size) noexcept
                 if (channelIsInControllerScope(midiChannel, channel))
                 {
                     portamentoSources_[static_cast<std::size_t>(channel - 1)] = -1;
-                    liftedOwners_[static_cast<std::size_t>(channel - 1)].fill(0);
+                    liftedKeys_[static_cast<std::size_t>(channel - 1)].fill({});
                 }
         }
         else if (controller == 121u)

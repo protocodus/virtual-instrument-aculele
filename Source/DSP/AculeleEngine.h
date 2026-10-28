@@ -1673,9 +1673,10 @@ private:
         // on the physical modes. Each fading bank keeps its own history.
         struct CaptureFilter
         {
-            // The fitted contour's six sections, then the dip at the
-            // construction's air mode and the dip at its mid-band peak
-            // (MicrophoneBalanceData.h).
+            // The fitted contour's six sections (without the guitar contour,
+            // the first three are the ukulele's radiation tilt), then the dip
+            // at the construction's air mode and the dip at its mid-band
+            // peak (MicrophoneBalanceData.h).
             static constexpr int sections = 8;
             // Each section's normalized RBJ coefficients: b0, b1, b2, a1, a2.
             // Double storage keeps the low-frequency sections accurate up to
@@ -1689,7 +1690,10 @@ private:
             float airModeHz { 0.0f };
             float midPeakHz { 0.0f };
 
-            void configure(double sampleRate, float airModeHz, float midPeakHz) noexcept;
+            // tiltShelfDb: each radiation tilt shelf's gain, the Shape's
+            // (radiationTiltShelfDb in AculeleEngine.cpp).
+            void configure(double sampleRate, float airModeHz, float midPeakHz,
+                           float tiltShelfDb) noexcept;
             void reset() noexcept
             {
                 for (auto& state : stateLeft)

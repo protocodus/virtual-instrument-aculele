@@ -934,6 +934,27 @@ constexpr bool ukuleleAirModeBoost = false;
 // and 500 Hz, +6 dB at 1.4 kHz. On a ukulele that cuts the fundamentals and
 // lifts the region its morphed plate modes already fill.
 constexpr bool guitarCaptureContour = ACULELE_GUITAR_CAPTURE_CONTOUR;
+// In its place, a ukulele's own fall above 1 kHz. The one ukulele whose
+// sound pressure per newton at the bridge has been published is a soprano
+// (its scan mesh's body is 162 by 235 mm) with an Engelmann spruce top on a
+// printed PLA+ body. From 1 to 6.3 kHz it falls 3.2 dB per octave: the
+// least-squares slope of its third-octave levels, power-averaged over nine
+// angles in each of two planes (Labrana, Gajardo, Correa and Espinoza, data
+// for "Vibroacoustic reproducibility of 3D-printed PLA+ and wood soundboards
+// for ukuleles", Zenodo, doi:10.5281/zenodo.22692775, 2026, CC BY 4.0,
+// mean_rad_hybrid_XZ.txt and _YZ.txt). Its three printed tops fall 3.5-3.8.
+// The scaled guitar bank's spruce bodies fell 1.2 (soprano), 2.1 (concert)
+// and 2.4 (tenor), and against a recorded ukulele's arpeggio they played
+// too bright the same way (README, Known gaps). Three high shelves an octave
+// apart, each cut by its Shape's gain, bring every spruce body to the
+// measured slope on the summed microphone pressure. They are flat again by
+// 8 kHz, above which the measured levels rise and are not used. Mahogany
+// and Maple take their Shape's cut, so the woods keep their differences.
+// The concert and the tenor are assumed to fall as the soprano does; neither
+// is measured. Aculele.Radiation (Tools/AculeleRadiation.cpp) holds each
+// spruce body to the measured slope.
+constexpr std::array<float, 3> radiationTiltShelfHz { 1414.2f, 2828.4f, 5656.9f };
+constexpr std::array<float, 3> radiationTiltShelfDb { -2.30f, -1.25f, -0.91f };
 
 std::array<std::complex<float>, 2> studioLowModeObservation(
     BodyShape shape, int sourceMode, float frequency, float q) noexcept
@@ -5242,7 +5263,8 @@ void AculeleEngine::configureBody() noexcept
     // mode its 450-800 Hz search finds; a ukulele's T1 lives in that band,
     // so the ukulele keeps its own response there (no dip). Its air mode
     // lies above the air dip's 130 Hz limit, so that dip is off too.
-    bodyBank_.captureFilter.configure(sampleRate_, configuration.airModeHz, 0.0f);
+    bodyBank_.captureFilter.configure(sampleRate_, configuration.airModeHz, 0.0f,
+        radiationTiltShelfDb[static_cast<std::size_t>(parameters_.shape)]);
     configuredBodyShape_ = parameters_.shape;
     configuredBodyMaterial_ = parameters_.bodyMaterial;
     bodyConfigured_ = true;
@@ -12674,7 +12696,8 @@ void AculeleEngine::finishVoice(Voice& voice, int stringIndex,
 }
 
 void AculeleEngine::BodyBank::CaptureFilter::configure(double sampleRate,
-                                                       float airMode, float midPeak) noexcept
+                                                       float airMode, float midPeak,
+                                                       float tiltShelfDb) noexcept
 {
     if (!enabled)
         reset();
@@ -12704,15 +12727,18 @@ void AculeleEngine::BodyBank::CaptureFilter::configure(double sampleRate,
     // Shape and Wood retain its history; their fades copy it with the bank.
     // The last two sections follow the construction: the dip at its air
     // mode and the dip at its mid-band peak (MicrophoneBalanceData.h), each
-    // flat when its frequency is not known.
+    // flat when its frequency is not known. Without the guitar contour, the
+    // first sections are the ukulele's radiation tilt (radiationTiltShelfHz).
     constexpr double doublePi = 3.141592653589793238462643383279502884;
     for (int index = 0; index < sections; ++index)
     {
         const auto slot = static_cast<std::size_t>(index);
         const int following = index - (sections - 2); // negative: authored; 0, 1: construction
         const float centreHz = following == 0 ? airModeHz : following == 1 ? midPeakHz : 1.0f;
+        const bool tilt = !guitarCaptureContour
+            && slot < radiationTiltShelfHz.size();
         if ((following >= 0 && centreHz == 0.0f)
-            || (following < 0 && !guitarCaptureContour))
+            || (following < 0 && !guitarCaptureContour && !tilt))
         {
             coefficients[slot] = { 1.0, 0.0, 0.0, 0.0, 0.0 };
             continue;
@@ -12725,6 +12751,10 @@ void AculeleEngine::BodyBank::CaptureFilter::configure(double sampleRate,
             ? detail::CaptureVoicingSection { detail::CaptureVoicingKind::Peak,
                                               midPeakHz, detail::originalMidPeakDipDb,
                                               detail::originalMidPeakDipQ }
+            : tilt
+            ? detail::CaptureVoicingSection { detail::CaptureVoicingKind::HighShelf,
+                                              radiationTiltShelfHz[slot], tiltShelfDb,
+                                              0.70710678f }
             : detail::balancedOriginalCaptureSection(
                   detail::captureVoicingSections[slot]);
         const auto kind = section.kind;

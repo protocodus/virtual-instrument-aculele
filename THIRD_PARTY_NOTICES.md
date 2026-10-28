@@ -361,6 +361,27 @@ recording from these sources is reproduced; each value is cited beside it in
 - Kala's published body and scale dimensions for its soprano, concert and
   tenor ukuleles (`ukuleleBodies`, `scaleLengthFor`).
 
+## Labraña–Espinoza ukulele radiativity: one derived value
+
+Creators: Sebastián Labraña, Ayelen Gajardo, Víctor Correa and Carolina
+Espinoza, Universidad de Chile
+
+Title: *Data and code for: Vibroacoustic reproducibility of 3D-printed PLA+
+and wood soundboards for ukuleles* (2026)
+
+Source: <https://doi.org/10.5281/zenodo.22692775>
+
+Licence: [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/)
+for the data (MIT for its code, none of which is used)
+
+Aculele derives one value from the deposit's `data/mean_rad_hybrid_XZ.txt`
+and `data/mean_rad_hybrid_YZ.txt`, the soprano with the spruce top:
+its radiation's third-octave slope from 1 to 6.3 kHz, -3.204 dB per octave.
+`Source/DSP/AculeleEngine.cpp` (`radiationTiltShelfDb`) and
+`Tools/AculeleRadiation.cpp` hold the body to it. The way the value is
+derived is given at the head of that tool. No file, figure or table from the
+deposit is reproduced.
+
 ## Reference ukulele recording: not distributed
 
 "Ukulele Arpeggio" by David Baker, Duke Sonic Dictionary, licensed CC BY-NC
@@ -368,6 +389,11 @@ recording from these sources is reproduced; each value is cited beside it in
 Aculele's renders of the same notes when the fork was evaluated. Neither the
 recording nor anything fitted from it is included in this repository, and it
 is not used in promotion.
+
+FreePats' "Ukulele" set of 2026-08-11, by Mateusz Dąbrowski, CC0 1.0
+(<https://freepats.zenvoid.org/GuitarFamily/ukulele.html>), was compared
+against Aculele's renders by `Tools/compare_recorded_notes.py`. It is not
+included in this repository, and nothing is fitted from it.
 
 ## Trademarks
 

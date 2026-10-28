@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 # Aculele: a physically modelled ukulele built on Acustra's engine. The
 # JUCE-free engine and performer, the demo renderer and two analysis tools;
 # there is no plug-in or editor yet.
-project(Aculele VERSION 0.4.18 LANGUAGES CXX)
+project(Aculele VERSION 0.4.19 LANGUAGES CXX)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
@@ -75,6 +75,9 @@ if(ACULELE_BUILD_TOOLS)
 
     add_executable(AculeleBridgeMobility Tools/AculeleBridgeMobility.cpp)
     target_link_libraries(AculeleBridgeMobility PRIVATE AculeleDSP)
+
+    add_executable(AculeleRadiation Tools/AculeleRadiation.cpp)
+    target_link_libraries(AculeleRadiation PRIVATE AculeleDSP)
 
     # Writes LevelMatchData.h and reports each preset on Reason's channel meter.
     add_executable(AculeleLevels Tools/AculeleLevels.cpp)
@@ -165,6 +168,9 @@ if(BUILD_TESTING)
         set_tests_properties(Aculele.Levels PROPERTIES LABELS audio TIMEOUT 900)
         # The bridge's level against the one measured ukulele (Elie et al. 2011).
         add_test(NAME Aculele.BridgeMobility COMMAND AculeleBridgeMobility --check)
+        # The radiation's fall above 1 kHz against the one measured ukulele
+        # (Labrana et al. 2026).
+        add_test(NAME Aculele.Radiation COMMAND AculeleRadiation --check)
         if(CMAKE_BUILD_TYPE STREQUAL "Release" AND NOT ACULELE_ENABLE_SANITIZERS)
             add_test(NAME Aculele.CpuBudget
                      COMMAND RenderAculelePresetDemos --cpu --json "${CMAKE_BINARY_DIR}/cpu.json"

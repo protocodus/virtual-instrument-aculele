@@ -5,6 +5,50 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-10-28 — the bodies fall above 1 kHz as a measured soprano does, 0.4.19 (adopted under the owner's standing rule, not yet heard)
+
+**What was decided.** This was settled by a measurement, not by ear. The
+Labraña–Espinoza deposit (Zenodo, doi:10.5281/zenodo.22692775, 2026, CC BY
+4.0) gives a soprano ukulele's sound pressure per newton at the bridge
+(Engelmann spruce top, printed PLA+ body, 162 by 235 mm). Its
+18-position power mean falls 3.204 dB per octave from 1 to 6.3 kHz, as the
+least-squares slope of its third octaves. Its three printed tops fall
+3.5-3.8. The same measure on Aculele's spruce bodies, from bridge force to
+microphone, gave -1.15 on the soprano, -2.06 on the concert and -2.38 on the
+tenor. A real recording had already shown the model too bright in this band:
+the Duke arpeggio, 3-6 kHz, by 2.6-5.1 dB. Whether the concert and tenor fall
+as the soprano does is not measured. They take the soprano's slope, which
+keeps the three bodies consistent with the one measurement. The other reading would cut every body by the
+soprano's own correction, which would leave the concert and tenor at -4.1 and
+-4.4 dB per octave, steeper than any measured top.
+
+**The letters.** Each preset's own demo phrase on Soprano D Tuning, Concert
+Strum and Tenor Fluorocarbon Fingerstyle, rendered with `AculeleProbe` at 48
+kHz in 256-sample blocks:
+
+- A: the shipping engine (0.4.18).
+- B: three RBJ high shelves (Q 0.707) at 1.41, 2.83 and 5.66 kHz on the
+  summed microphone pressure. Each one cuts by 2.30 dB on the soprano, 1.25
+  dB on the concert and 0.91 dB on the tenor, which brings each spruce body
+  to -3.21 dB per octave.
+
+The takes are level-matched on whole-file RMS. B moved by +0.06, -0.02 and
++0.04 dB.
+
+**What was chosen.** B, without a listening verdict, under the owner's
+standing rule of 2026-10-28 to lean towards accepting candidates. The page
+stays up for the owner to check:
+<https://claude.ai/artifact/XBbTjFkbJZbTcZCoaiUrww>. Against the Duke
+arpeggio, the soprano now lies at -3.1 to +1.4 dB of the recording from 3 to
+6.3 kHz, and at +2.3 to +12.1 dB from 1 to 2.5 kHz. Against the measured
+soprano, relative to the 1 kHz band, it lies within 2 dB from 1.6 to 4 kHz.
+
+**What it licensed.** `radiationTiltShelfHz` and `radiationTiltShelfDb` in
+`AculeleEngine.cpp`, in the capture filter's slots that the guitar contour
+leaves unused. `Aculele.Radiation` holds each spruce body to -3.204 within
+0.15 dB per octave. `LevelMatchData.h` was re-pinned. No preset trim moved:
+every preset reads -9 VU within 0.3 dB.
+
 ## 2026-10-28 — a nail or pick keeps its own edge at every velocity, 0.4.18 (adopted under the owner's standing rule, not yet heard)
 
 **What was decided.** Measured on single E4 notes (Tenor Fluorocarbon

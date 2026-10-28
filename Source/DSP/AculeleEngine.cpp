@@ -6191,8 +6191,10 @@ bool AculeleEngine::preparedDispersionArguments(
 // (process): a stale slot's search begun, or one start of the search under
 // way. On the development machine a step takes a median 0.3 ms and at most
 // about 2 ms, and once every slot is ready, about 10 us to check one. All of
-// a configuration's slots are ready about 2 s after it changes (5 s at
-// 44.1 kHz with the Pick). A note that comes first runs its search itself.
+// a factory preset's slots are ready 0.8-3.5 s after it loads at 48 kHz (up
+// to 7 s at 44.1 kHz with nail strokes, which add the 48 kHz reference),
+// at about 10% of real time on top of the engine's own. A note that comes
+// first runs its search itself.
 void AculeleEngine::prepareDispersion() noexcept
 {
     auto& progress = preparingDispersionProgress_;

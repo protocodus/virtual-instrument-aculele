@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.4.12 — 2026-10-28 — The hardest playing gets louder again
+
+The output stage's guard compressor, now the one every plucked Protocodus instrument shares, reads power over the 300 ms Reason's meter averages over, and eases in over a knee 16 dB wide, from -11 to +5 VU at 10:1. Before, it followed each pluck's attack over 80 ms, so chords at velocity 110, 120 and 127 came out alike: Concert Strum's loudest read -3.7, -3.5 and -3.6 VU. Now each step in velocity plays louder (-3.6, -2.9 and -2.5 VU), and the loudest chord on any preset and Picking reads -1.5 VU or lower, out of the red. Typical playing reads -9 VU, as before.
+
 ### 0.4.11 — 2026-10-28 — Chords up the neck take the chord books' shapes
 
 A one-channel chord now leads with open strings only in first position, with no fretted note above the 4th fret (the owner's choice). Above it, the shape that keeps the hand lowest wins, and the hand frets the strings rather than leaving them open: a piano roll's G (B4 D5 G5) strums 7-7-7-10, not 0-11-10-10; D7 (D4 F#4 A4 C5) strums 2223, not 5220; C (G4 C5 E5) strums 5-7-8-7, not 0-0-8-7. Of 401 four-note voicings a ukulele chord book lists, 391 now strum as the book frets them (276 before), and 180 of 288 close triads take one of its shapes (120 before); none that did lost it. The hand's reach still comes first, so D7 straight after a G at the 7th fret stays 5220. Tab input and the demos are unchanged.
@@ -130,7 +134,7 @@ Most of the engine and Performer are Acustra's, unchanged: dual-polarisation sti
 | 6 | Tenor Picked Melody | Tenor, maple, fluorocarbon, Low G, mono mic | Pick |
 | 7 | Concert Piezo Stage | Concert, spruce, nylon, Standard, piezo | Strum |
 
-Levels are set on Reason's channel meter, a VU meter read with 0 VU at -12 dBFS RMS (`Tools/ReasonMeter.h`). `Source/DSP/LevelMatchData.h`, which `AculeleLevels --write` measures, brings typical playing on every shape, wood, Picking and Capture to -9 VU at 0 dB Output, and each preset's Output trim brings its own there. Main and the Piezo output end in the portfolio's shared output stage, `Source/DSP/OutputStage.h`: a guard compressor on the louder channel's power, its knee centred at -2 VU, then a look-ahead limiter that holds every sample under -1.5 dBFS and passes everything below it bit for bit. `Aculele.Levels` checks the readings and that velocity-127 chords stay under -1 VU. The demo phrases in `Docs/audio/midi/` come from `Tools/write_preset_midi.py`.
+Levels are set on Reason's channel meter, a VU meter read with 0 VU at -12 dBFS RMS (`Tools/ReasonMeter.h`). `Source/DSP/LevelMatchData.h`, which `AculeleLevels --write` measures, brings typical playing on every shape, wood, Picking and Capture to -9 VU at 0 dB Output, and each preset's Output trim brings its own there. Main and the Piezo output end in the portfolio's shared output stage, `Source/DSP/OutputStage.h`: a guard compressor on the louder channel's power over 300 ms, its knee 16 dB wide from -11 to +5 VU at 10:1, then a look-ahead limiter that holds every sample under -1.5 dBFS and passes everything below it bit for bit. `Aculele.Levels` checks the readings and that velocity-127 chords stay under -1 VU. The demo phrases in `Docs/audio/midi/` come from `Tools/write_preset_midi.py`.
 
 ## Known gaps
 

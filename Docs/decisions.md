@@ -5,6 +5,52 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-10-29 — the tenor's air resonance rings where real tenors' do, 0.4.20 (adopted under the owner's standing rule, not yet heard)
+
+**What was decided.** This was settled by measurements, not by ear. Kala
+publishes no soundhole, and the tenor's 54 mm was an estimate. A builder's
+published dimensions give a tenor 2 5/8 in (66.7 mm; Kawika, ukuleles.com,
+"Sounds"), and players report 2 1/2 to 2 5/8 in. Both are defensible. Three
+tenors' air resonances decide between them: the same builder's two, tapped
+at the bridge, at 211 and 214 Hz, and the knock FreePats recorded on a
+Flight Fireball tenor (CC0) at 212 Hz. The coupled morph puts A0 at 207 Hz
+with 2 1/2 in and at 212 Hz with 2 5/8 in, against 190 Hz with 54 mm. All
+three measurements are informal, and none is of a Kala.
+
+**The letters.** A rising and falling line of single notes from G3 to C4,
+and the demo phrases of Low G Tenor and Tenor Fluorocarbon Fingerstyle,
+rendered with `AculeleProbe` at 48 kHz in 256-sample blocks:
+
+- A: the shipping engine (0.4.19), with its level table and trims.
+- B: the tenor's soundhole at 66.7 mm, with its re-pinned level table and
+  trims.
+
+The takes are level-matched on whole-file RMS. B moved by -2.54, +1.41 and
++0.03 dB.
+
+**What was chosen.** B, without a listening verdict, under the owner's
+standing rule of 2026-10-28 to lean towards accepting candidates. The page
+stays up for the owner to check:
+<https://claude.ai/artifact/Liwe4ESdC94j6tsM1X3YdK>. On Low G Tenor, held
+notes' level over 1.5 s against the median of G3 to C4 was +5.8 dB at G3,
++2.5 at G#3 and +0.4 at A3. It is now -3.3, +3.3 and +4.1 dB. G3's
+fundamental T60 rose from 6.9 to 9.7 s.
+
+**What it licensed.** The tenor's entry in `ukuleleBodies`.
+`LevelMatchData.h` was re-pinned. Tenor Fluorocarbon Fingerstyle's Output
+moved from -0.7 to -0.6 dB, Low G Tenor's from -2.0 to -1.1 dB and Tenor
+Picked Melody's from -2.6 to -2.1 dB, so every preset reads -9 VU within
+0.14 dB.
+
+`Aculele.Tuning` now reads 1-2 s after the pluck, not 0.3-1.3 s. The tenor's
+open F#4 in D tuning on fluorocarbon has two members. One starts 7.6 cents
+flat (7.2 now) and is gone by 1 s. The other lasts and sits at +0.8 cents,
+before and after. The old window read whichever member was stronger inside
+it. At 54 mm that was the in-tune member, +0.09 cents. From 63.5 mm up it is
+the flat member, -6.6 cents at 66.7 mm, past the 5-cent tolerance, although
+the note settles where it did. The test's comment gives the diagnosis.
+Whether the check should go back to the onset is the owner's call.
+
 ## 2026-10-28 — the bodies fall above 1 kHz as a measured soprano does, 0.4.19 (adopted under the owner's standing rule, not yet heard)
 
 **What was decided.** This was settled by a measurement, not by ear. The

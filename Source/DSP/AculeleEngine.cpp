@@ -8126,6 +8126,18 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
     // dimensions; a nail or pick keeps its own edge (below). The full-force
     // reference and every raw-velocity Touch/noise/style response remain
     // unchanged.
+    // The thumb's pad takes the same law. Its edge was 1/v alone, so it
+    // shrank as the thumb pressed harder and its release time went as 1/v^2:
+    // on Concert Strum a velocity-16 E4 let go over 232 samples, 1.6
+    // periods, and the slip (applyPlectrumSlip), shifted so the line starts
+    // at rest in a loop 13% longer than the line, put back harmonics the
+    // slow release had taken. From velocity 127 to 16, H2 rose 9 dB and H5
+    // 10 dB against H1, and E4's 2.5-6 kHz share fell 10 dB to velocity 64
+    // and rose 2 dB again below it. A soft pad presses less flesh onto the
+    // string, not more, as a fingertip's contact grows with force (Hertz:
+    // radius as F^(1/3)). Now it lets go over 18 samples there, and that
+    // share falls at every step from velocity 127 to 32
+    // (Aculele.ThumbDynamics). Full velocity is unchanged.
     const float releaseGestureScale = 1.0f / v;
     const float contactForce = v * v;
     constexpr float fingerContactForceExponent = 0.6165625f;
@@ -8160,8 +8172,7 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
         const double pole = plectrumSlipPole(voice, releasedAmplitude,
             heldDistance, soundingLength, scaleLength,
             fingerReleaseRadius * releaseTouch * gestureCompliance * releaseGestureScale
-                * (fullSoftSlip
-                    ? std::pow(contactForce, fingerContactForceExponent) : 1.0f));
+                * std::pow(contactForce, fingerContactForceExponent));
         if (referencePole > 0.0 && pole > 0.0)
         {
             const double referenceTau = -1.0 / std::log(referencePole);

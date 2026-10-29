@@ -5,6 +5,50 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-10-29 — a softer thumb lets go as a pad does, 0.4.27 (adopted under the owner's standing rule, not yet heard)
+
+**What was decided.** The dynamics check of 2026-10-29
+(`Docs/validation/dynamics-2026-10-29.md`) found Thumb uneven: soft notes
+came back brighter. The thumb's pad took an edge radius scaled by 1/v alone,
+so its release time r/u went as 1/v^2. On Concert Strum an E4 at velocity 16
+let go over 232 samples, 1.6 of its periods. The slip that follows is
+shifted so the line starts at rest, in a loop about 13% longer than the
+line, and that shift put back the harmonics the slow release had taken. From
+velocity 127 to 16 the E4's H2 rose 9 dB and its H5 10 dB against H1, and
+the 2.5-6 kHz share of G4, C5 and E5 rose 5.8, 4.6 and 7.5 dB. The Finger
+and Strum pads already take the force law `fingerContactForceExponent`, a
+contact that grows with force as Hertz contact does (radius as F^(1/3)).
+The thumb is the same flesh, so it takes the same law.
+
+**The letters.** A thumb arpeggio, C4 E4 G4 C5, played five times at
+velocity 112, 80, 56, 36 and 22, on Soprano Thumb, rendered with
+`AculeleProbe` at 48 kHz in 256-sample blocks:
+
+- A: the shipping engine (0.4.26).
+- B: the thumb's pad under the Finger and Strum pads' force law.
+
+Matched on whole-file RMS: A was moved by -0.06 dB and B by +0.06 dB. The
+2.5-6 kHz share of each pass's first two seconds reads -22.4, -25.1, -23.1,
+-21.3 and -21.2 dB in A, and -22.1, -24.3, -25.5, -24.9 and -24.8 dB in B.
+
+**What was chosen.** B, without a listening verdict, under the owner's
+standing rule of 2026-10-28 to lean towards accepting candidates. The page
+stays up for the owner to check:
+<https://claude.ai/artifact/4eBCYAhDu4t9QeFJkAszHh>. With B the E4 lets go
+over 18 samples at velocity 16; its H2 and H5 rise 5 dB, and the G4 and C5
+end 1.7 and 2.3 dB brighter at velocity 16 than at 127. The E5 still ends
+5.8 dB brighter, and most notes brighten by up to 2.3 dB from velocity 32
+to 16: the shift is still there (README, Known gaps). Every velocity's level
+stays within 0.2 dB, and velocity 127 renders the same samples.
+
+**What it licensed.** `AculeleEngine::initialisePluck` gives the thumb's pad
+the pads' force law, and `Aculele.ThumbDynamics` checks that its release
+time ratio from velocity 127 to 16 stays between 3 and 8 and that the E4's
+2.5-6 kHz share falls at every step from 127 to 32. `LevelMatchData.h` was
+re-pinned, the Thumb cells by 0.1-0.3 dB; no preset trim moved. A release
+without the slip's lag, its corner only, was tried and made Thumb and Pick
+less even, so it was not offered.
+
 ## 2026-10-29 — a strum's added string counts in the hand's stretch, 0.4.22 (the owner's 0.4.11 direction, checked against a chord book)
 
 **What was decided.** In 0.4.11 the owner chose a fretting rule on the

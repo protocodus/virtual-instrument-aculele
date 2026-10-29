@@ -4406,13 +4406,15 @@ void AculeleEngine::BridgeLoad::advanceModes(float bodyForce,
     double nextPastRock = 0.0;
     const int count = activeModeCount;
     // Each lane's arithmetic is the scalar section's, and the residue sums
-    // below stay serial, so packing changes no bit.
+    // below stay serial, so packing changes no bit. The copies are
+    // __builtin_memcpy, not std::memcpy: the Rack toolchain's -fno-builtin
+    // turns std::memcpy into a library call, seven a rocking mode a sample.
 #if ACULELE_PACKED_BRIDGE_MODES
     typedef double Vector __attribute__((vector_size(16)));
     const auto load = [] (const BridgeMode::Lanes& lanes)
     {
         Vector vector;
-        std::memcpy(&vector, lanes.data(), sizeof vector);
+        __builtin_memcpy(&vector, lanes.data(), sizeof vector);
         return vector;
     };
     const Vector input = { bodyForce, bodyMoment };
@@ -4430,9 +4432,9 @@ void AculeleEngine::BridgeLoad::advanceModes(float bodyForce,
                 + load(mode.numerator2) * load(mode.input1)
                 - load(mode.denominator1) * o1
                 - load(mode.denominator2) * load(mode.output2);
-            std::memcpy(mode.input1.data(), &input, sizeof input);
-            std::memcpy(mode.output2.data(), &o1, sizeof o1);
-            std::memcpy(mode.output1.data(), &output, sizeof output);
+            __builtin_memcpy(mode.input1.data(), &input, sizeof input);
+            __builtin_memcpy(mode.output2.data(), &o1, sizeof o1);
+            __builtin_memcpy(mode.output1.data(), &output, sizeof output);
             heaveState = output[0];
             rockState = output[1];
         }

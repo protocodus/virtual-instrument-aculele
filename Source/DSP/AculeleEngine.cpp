@@ -1195,12 +1195,12 @@ constexpr std::array<StringMaterialSpec, 2> stringMaterialSpecs {{
 // Nylon is D'Addario's Pro-Arte custom extruded line: EJ65S for the soprano
 // (.028, .034, .0322, .024 in; its tension chart's items J4501, NYL034,
 // J4502 and NYL024, https://nantelmusic.com/products/daddario-soprano-ukulele-set-ej65s),
-// EJ65C for the concert (.028, .0403, .0322, .028). The tenor keeps EJ65C:
-// EJ65T (.029, .041, .0327, .0285,
-// https://www.elderly.com/products/d-addario-ej65t-tenor-uke-set) is
-// 1.5-3.6% thicker, and its E string put the tenor's open F#4 in D tuning,
-// just below its T1, 5.5 cents flat in Aculele.Tuning's 0.3-1.3 s window,
-// which it read until 0.4.20 (4.0 with EJ65C). Near
+// EJ65C for the concert (.028, .0403, .0322, .028), and EJ65T for the
+// tenor (.029, .041, .0327, .0285,
+// https://www.elderly.com/products/d-addario-ej65t-tenor-uke-set), 1.5-3.6%
+// thicker. Until 0.4.21 the tenor kept EJ65C: EJ65T's E string put its open
+// F#4 in D tuning, just below its T1, 5.5 cents flat in Aculele.Tuning's
+// 0.3-1.3 s window (4.0 with EJ65C), which the test read until 0.4.20. Near
 // T1 the body pulls the polarisation normal to the top and hardly the
 // parallel one; the shared delay tunes the lasting parallel one
 // (coupledPolarisationDetune), so with either set the note's first half
@@ -1217,7 +1217,7 @@ constexpr std::array<StringMaterialSpec, 2> stringMaterialSpecs {{
 constexpr std::array<std::array<std::array<float, 4>, 3>, 2> standardStringGauges {{
     {{ {{ 0.7112e-3f, 0.8636e-3f, 0.8179e-3f, 0.6096e-3f }},
        {{ 0.7112e-3f, 1.0236e-3f, 0.8179e-3f, 0.7112e-3f }},
-       {{ 0.7112e-3f, 1.0236e-3f, 0.8179e-3f, 0.7112e-3f }} }},
+       {{ 0.7366e-3f, 1.0414e-3f, 0.8306e-3f, 0.7239e-3f }} }},
     {{ {{ 0.5690e-3f, 0.7391e-3f, 0.6604e-3f, 0.5207e-3f }},
        {{ 0.5690e-3f, 0.7391e-3f, 0.6604e-3f, 0.5207e-3f }},
        {{ 0.5690e-3f, 0.7391e-3f, 0.6604e-3f, 0.5690e-3f }} }}

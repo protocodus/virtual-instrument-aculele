@@ -5,6 +5,37 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-10-29 — the nylon tenor takes its maker's tenor set, 0.4.21 (the owner's 0.4.14 choice, extended)
+
+**What was decided.** The owner chose by ear in 0.4.14 that each Shape takes
+the set its maker sells for it (letter C, below). The nylon tenor was left on
+the concert set, EJ65C, because D'Addario's tenor set, EJ65T, failed
+`Aculele.Tuning` in its 0.3-1.3 s window. Since 0.4.20 that test reads 1-2 s
+after the pluck, and EJ65T passes it: on the nylon tenor every open string
+lies within 1.3 cents in every tuning. No new choice was made by ear, and no
+listening test was run.
+
+**What changed.** The nylon tenor now takes EJ65T (.029, .041, .0327,
+.0285 in). In Standard tuning, from the open strings to the twelfth fret,
+each note was played alone at velocity 90 on both sets:
+- **Pitch.** No note moved by more than 1.4 cents, read over 1-2 s, or by
+  more than 0.5 cents over 0.1-0.5 s.
+- **Level.** On Low G Tenor and on the nylon tenor in Standard tuning, no
+  note's level over its first 0.5 s moved by more than 0.26 dB.
+
+`LevelMatchData.h` was re-pinned on the new strings, which also moves the
+fluorocarbon tenor. Following `AculeleLevels --report`, Soprano D Tuning moved
++1.3 to +1.4 dB, Tenor Fluorocarbon Fingerstyle -0.6 to -0.7, Low G Tenor -1.1
+to -1.2, and Soprano Thumb -0.1 to 0.0.
+
+Tenor Picked Melody stays at -2.1, where it reads -8.90 VU. At the suggested
+-2.2 dB, its Strum would read 1.51 dB under the target, past the check's 1.5
+dB bound.
+
+**What it depends on.** This rests on the 1-2 s tuning window, which went to
+the owner for a yes or no with 0.4.20. If the window goes back to 0.3-1.3 s,
+this goes back too.
+
 ## 2026-10-29 — the tenor's air resonance rings where real tenors' do, 0.4.20 (adopted under the owner's standing rule, not yet heard)
 
 **What was decided.** This was settled by measurements, not by ear. Kala
@@ -323,6 +354,9 @@ the shared delay tunes the lasting parallel one. F#4's first half second is
 its normal member, and EJ65T's thicker E string is pulled further. So no
 correction to the estimate would let EJ65T pass, and the tenor's nylon set
 keeps EJ65C on that ground (README, Known gaps).
+
+*Extended on 2026-10-29:* the nylon tenor took EJ65T in 0.4.21, once the test
+read 1-2 s (above).
 
 ## 2026-10-28 — the 1-4.4 kHz band takes a ukulele's mode density at its own mean level, 0.4.13 (chosen by ear)
 

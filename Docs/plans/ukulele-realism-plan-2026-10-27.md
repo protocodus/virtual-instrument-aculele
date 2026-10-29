@@ -120,6 +120,26 @@ Checked on 28 October: no ratio the published figures allow closes the gap.
 So thickness does not enter the morph, and the excess stays until a ukulele
 body is measured (item 7).
 
+Checked again on 29 October, for the low modes rather than the excess: the
+thickness ratio is about 1, not 0.7-1.0.
+
+- Flamenco tops are thinner than the 2.0-2.5 mm above. Sheldon Urlik's *A
+  Collection of Fine Spanish Guitars* measures each top at 14 points. Over
+  19 of its flamencas, made 1883-1988, the top averages 1.82 mm around the
+  bridge (Joss Winn's tally, "Notes on a flamenco guitar (#5)", 2020).
+- The ukulele builders above take a hardwood top to about 1.8 mm and a
+  softwood top to about 2.1 mm before scraping, and tenors to 1.9-2.2 mm.
+  Against 1.82 mm, that is a ratio of 1.0-1.2, which the equal-thickness law
+  already assumes.
+- Two measured ukuleles put their first top mode well under the law's T1:
+  - a mid-priced concert at 395 Hz, against 466-485 Hz (Sunta, University of
+    Ljubljana thesis, 2020);
+  - the Labraña–Espinoza spruce soprano at 324 Hz, against 653 Hz.
+
+  A thinner top would lower T1, but the documented thicknesses do not allow
+  one. The difference lies in what thickness leaves out, such as bracing and
+  the back, and only a measured body can place it.
+
 ### 2. The 3-8 kHz deficit
 
 There are three candidates:

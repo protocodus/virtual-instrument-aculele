@@ -97,3 +97,40 @@ body is not a commercial soprano, so the model's low modes were left alone.
 
 All values are dB of model over recording, by third octave. Below 1 kHz
 nothing changed.
+
+### Where the 1–2.5 kHz excess comes from (29 October)
+
+The same arpeggio, rendered on 0.4.19 with the soprano's Finger, Mahogany and
+the stereo pair (Concert Strum's other settings, Pluck Position 0.50). Each
+note's harmonics are measured over 20–170 ms after its onset, in dB against
+its first harmonic, then averaged over the 16 notes:
+
+| | H2 | H3 | H4 | H5 | H6 | H7 | H8 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Recording | -2.5 | -28.0 | -28.9 | -32.0 | -38.7 | -36.7 | -39.2 |
+| Render, nail (shipping) | -10.4 | -20.8 | -17.6 | -14.8 | -28.1 | -23.4 | -27.1 |
+| Render, fingertip | -11.2 | -22.1 | -22.9 | -18.4 | -30.8 | -32.3 | -35.1 |
+| Measured soprano's radiation less the model's | -8.2 | -1.4 | -3.5 | -4.8 | -4.7 | -6.6 | -4.8 |
+
+The last row is the Labraña–Espinoza soprano's power-mean radiation minus
+the model body's, both smoothed over a sixth of an octave. It is read at
+each note's harmonics and taken against its first.
+
+- **The excess is in the excitation and the body together.** The render's
+  H3–H8 stand 7–17 dB over the recording's.
+  - The measured soprano's radiation in place of the model's would take
+    1.4–6.6 dB of that, because it radiates far more at 300–400 Hz, where
+    these notes' fundamentals lie.
+  - The fingertip in place of the nail would take 1.3–8.9 dB.
+- **Neither excitation fits the whole band.** In the long-term spectrum,
+  relative to its loudest band, the nail lies within 3 dB of the recording
+  from 3.2 to 5 kHz. The fingertip lies 5–12 dB under there.
+- **H2 points elsewhere.** The recording's H2 stands 8 dB higher than the
+  render's with either excitation, and the measured body would lower it
+  further. A pluck nearer the bridge raises H2: the default Pluck Position,
+  0.28, puts the Finger at 0.23 of the string against this preset's 0.31,
+  which raises H2 by about 2.6 dB by the ideal pluck comb. The recording's
+  pluck point is unknown.
+
+So no single change closes the gap. The nail is the owner's open choice (the
+0.4.17 page), and the body awaits a measured ukulele.

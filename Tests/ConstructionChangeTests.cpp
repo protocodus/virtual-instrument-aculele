@@ -11,17 +11,20 @@
 // over the rest and stood 39-53 dB under the chord.
 //
 // Strings and Shape restring the ringing chord, which brightens it for a
-// moment however smoothly it is done, so they are held to 45 and 40 dB under
+// moment however smoothly it is done, so they are held to 45 and 55 dB under
 // the chord. Nylon to Fluorocarbon drops the second dispersion section; cut
 // out at full strength it stood 27 dB under, and retired at zero strength
 // 49-53 dB (AculeleEngine::configureVoice). Concert to Tenor stood 27 dB
 // under while its sections ramped over one round trip, and 47 dB under over
-// 30 ms.
+// 30 ms. Then each retuned string's pull on the saddle set off at full
+// slope, a corner the piezo reads as a click, 40 dB under through it; eased
+// in through two stages, the change stands 59-65 dB under on either capture
+// (AculeleEngine::process).
 //
 // A C chord is strummed on channel 1 at velocity 90 through the Performer at
-// 48 kHz in 256-sample blocks, with the default controls and Strum. The
-// control changes 1 s later and changes back 1 s after that, on a block
-// boundary, as a host sends it.
+// 48 kHz in 256-sample blocks, with the default controls and Strum, and once
+// with the piezo as Capture. The control changes 1 s later and changes back
+// 1 s after that, on a block boundary, as a host sends it.
 //
 // Strings and Shape also restring the strings that are not played: one block
 // after the change, a held G4 and the three idle strings ringing with it each
@@ -94,10 +97,12 @@ struct HighPass
 };
 
 template <typename Change>
-void checkChange(Change change, double underChord, const char* what)
+void checkChange(Change change, double underChord, const char* what,
+                 aculele::CaptureType capture = aculele::CaptureType::StereoMic)
 {
     aculele::EngineParameters parameters;
     parameters.picking = aculele::PickingTechnique::Strum;
+    parameters.capture = capture;
     auto changed = parameters;
     change(changed);
 
@@ -208,8 +213,10 @@ int main()
                 "Mahogany to Maple and back");
     checkChange([] (P& p) { p.strings = aculele::StringMaterial::Fluorocarbon; }, 45.0,
                 "Nylon to Fluorocarbon and back");
-    checkChange([] (P& p) { p.shape = aculele::BodyShape::Tenor; }, 40.0,
+    checkChange([] (P& p) { p.shape = aculele::BodyShape::Tenor; }, 55.0,
                 "Concert to Tenor and back");
+    checkChange([] (P& p) { p.shape = aculele::BodyShape::Tenor; }, 55.0,
+                "Concert to Tenor, piezo", aculele::CaptureType::Piezo);
     checkTension([] (P& p) { p.strings = aculele::StringMaterial::Fluorocarbon; },
                  "Nylon to Fluorocarbon");
     checkTension([] (P& p) { p.shape = aculele::BodyShape::Tenor; }, "Concert to Tenor");

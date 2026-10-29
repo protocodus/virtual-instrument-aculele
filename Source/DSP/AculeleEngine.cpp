@@ -543,14 +543,23 @@ constexpr BodyGeometry measuredAnchorBody { 0.397f, 0.508f, 0.111f, 0.1016f, 0.7
 //   Concert KA-C    8 1/4 x 11 x 2 3/4 in, 14.8 in scale
 //   Tenor   KA-T    9 1/8 x 11 3/4 x 3.12 in, 17 in scale
 // Kala lists the depth at the tail; a ukulele's sides taper toward the neck,
-// so the mean depth here is 0.9 of it (an estimate, as are the soundholes,
-// 48, 51 and 54 mm, and the guitar plantilla's 0.72 outline fraction). As
-// configured (Tools/AculeleBodyModes.cpp) A0/T1 sit at 266/653 Hz
-// (Soprano), 215/485 Hz (Concert) and 190/414 Hz (Tenor) in Spruce; Mahogany
-// lowers T1 4% and Maple raises both 1%. A builder's two tenors tap at 211 and
-// 214 Hz (ukuleles.com, "Tunings for the 4-String Tenor"); a UBC student
-// baritone (10 1/4 in lower bout) at about 150 Hz air and 300 Hz top, where
-// this law gives about 165/320 Hz. Both are informal measurements. A
+// so the mean depth here is 0.9 of it (an estimate, as are the soprano's and
+// concert's soundholes, 48 and 51 mm, and the guitar plantilla's 0.72 outline
+// fraction). Kala publishes no soundhole. The tenor's is 2 5/8 in (66.7 mm),
+// the size a builder's table gives a tenor (Kawika, ukuleles.com, "Sounds",
+// its Dimensions table); players on Ukulele Underground report 2 5/8 in on a
+// Martin tenor and 2 1/2 in as typical. The 54 mm it replaces was an estimate
+// under every tenor reported, and put A0 at 190 Hz, 45 cents under the Low G
+// string's open G3. At 2 1/2 in A0 rings at 207 Hz, and at 2 5/8 in at
+// 212 Hz, where three measured tenors ring (below). As configured
+// (Tools/AculeleBodyModes.cpp) A0/T1 sit at 266/653 Hz (Soprano), 215/485 Hz
+// (Concert) and 212/415 Hz (Tenor) in Spruce; Mahogany lowers T1 4% and
+// Maple raises A0 1-2%. The same builder's two tenors tap at 211 and 214 Hz
+// (ukuleles.com, "Tunings for the 4-String Tenor"), and the knock FreePats
+// recorded on a Flight Fireball tenor (CC0, body-tap.wav, after its 190 Hz
+// high-pass) peaks at 212 Hz; a UBC student baritone (10 1/4 in lower bout)
+// rings at about 150 Hz air and 300 Hz top, where this law gives about
+// 165/320 Hz. All are informal measurements. A
 // mid-priced concert of unstated make, struck by hammer on its top and back
 // and heard by microphone, rings at 222 Hz (air) and 395 Hz (its first top
 // mode): Sunta, "Akusticne lastnosti ukulel", diploma thesis, University of
@@ -564,7 +573,7 @@ constexpr BodyGeometry measuredAnchorBody { 0.397f, 0.508f, 0.111f, 0.1016f, 0.7
 constexpr std::array<BodyGeometry, 3> ukuleleBodies {{
     { 0.1778f, 0.2413f, 0.9f * 0.0603f, 0.048f, 0.72f }, // Soprano
     { 0.2096f, 0.2794f, 0.9f * 0.0699f, 0.051f, 0.72f }, // Concert
-    { 0.2318f, 0.2985f, 0.9f * 0.0792f, 0.054f, 0.72f }  // Tenor
+    { 0.2318f, 0.2985f, 0.9f * 0.0792f, 0.0667f, 0.72f }  // Tenor
 }};
 
 // Christensen and Vistisen, "Simple model for low-frequency guitar
@@ -1190,7 +1199,8 @@ constexpr std::array<StringMaterialSpec, 2> stringMaterialSpecs {{
 // EJ65T (.029, .041, .0327, .0285,
 // https://www.elderly.com/products/d-addario-ej65t-tenor-uke-set) is
 // 1.5-3.6% thicker, and its E string put the tenor's open F#4 in D tuning,
-// just below its T1, 5.5 cents flat in Aculele.Tuning (4.0 with EJ65C). Near
+// just below its T1, 5.5 cents flat in Aculele.Tuning's 0.3-1.3 s window,
+// which it read until 0.4.20 (4.0 with EJ65C). Near
 // T1 the body pulls the polarisation normal to the top and hardly the
 // parallel one; the shared delay tunes the lasting parallel one
 // (coupledPolarisationDetune), so with either set the note's first half
@@ -5831,7 +5841,8 @@ void AculeleEngine::buildBodyConfiguration(BodyConfiguration& configuration,
     // It balanced two guitar models by ear and has no ukulele basis, but it
     // stays: switched off, the tenor's open F#4 in D tuning, just below its
     // T1, read 5.6 cents flat on nylon and 7.2 on fluorocarbon in
-    // Aculele.Tuning (4.0 flat and 0.1 sharp with it), past the test's
+    // Aculele.Tuning's 0.3-1.3 s window, which it read until 0.4.20 (4.0
+    // flat and 0.1 sharp with it), past the test's
     // 5-cent tuner tolerance. Apply once to the completed bank: the
     // continuation above takes its density from the untilted measured modes,
     // so none of its gain is counted twice. A positive gain preserves every

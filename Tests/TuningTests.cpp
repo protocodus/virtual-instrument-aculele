@@ -3,11 +3,23 @@
 // Each string is struck alone in tab input (CC126 = 4 on channel 1 makes
 // channels 1-4 the G, C, E and A strings), at the default controls, 48 kHz
 // and 256-sample blocks. Its fundamental is the peak of the Hann-windowed
-// spectrum over 0.3-1.3 s, past the attack's tension glide, searched in
-// 1-cent steps within 40 cents of the note and refined by a parabola through
-// the log magnitudes. It must lie within 5 cents of equal temperament at
+// spectrum over 1-2 s, the pitch a tuner settles on, searched in 1-cent
+// steps within 40 cents of the note and refined by a parabola through the
+// log magnitudes. It must lie within 5 cents of equal temperament at
 // A4 = 440 Hz, a tuner's tolerance; when the engine was forked (2026-10-27)
 // every open string measured within 3 cents.
+//
+// The window began at 0.3 s, past the attack's tension glide, until 0.4.20.
+// A string just under its body's T1 sounds two members: the polarisation
+// normal to the top, pulled flat by the bridge and soon drained, and the
+// lasting parallel one, which the delay tunes (AculeleEngine.cpp, the
+// string gauges). The tenor's open F#4 in D tuning, 7% under T1, starts
+// 7.6 cents flat over 0.1-0.5 s on fluorocarbon and settles at +0.8 cents
+// by 1 s, and a 0.3-1.3 s window read whichever member outweighed the
+// other in it: +0.09 cents at 0.4.19. The tenor's measured soundhole (0.4.20)
+// left the flat member 7.2 cents under and 2 dB stronger, and the same
+// window read it, -6.6 cents, though the note settles where it did. So the
+// window now opens once the flat member has gone.
 
 #include "DSP/AculelePerformer.h"
 
@@ -42,7 +54,7 @@ void check(bool condition, const char* what, double value)
 std::vector<float> renderOpenString(const aculele::Performer& prepared, int string, int note)
 {
     auto performer = std::make_unique<aculele::Performer>(prepared);
-    const auto total = static_cast<std::size_t>(1.4 * rate);
+    const auto total = static_cast<std::size_t>(2.1 * rate);
     std::vector<float> left(total), right(total);
     const std::uint8_t tab[3] { 0xB0, 126, 4 };
     const std::uint8_t on[3] { static_cast<std::uint8_t>(0x90 | string), static_cast<std::uint8_t>(note), 90 };
@@ -78,7 +90,7 @@ double magnitude(const std::vector<float>& x, std::size_t start, std::size_t len
 
 double fundamentalCents(const std::vector<float>& x, double nominal)
 {
-    const auto start = static_cast<std::size_t>(0.3 * rate);
+    const auto start = static_cast<std::size_t>(1.0 * rate);
     const auto length = static_cast<std::size_t>(1.0 * rate);
     std::array<double, 81> levels {};
     std::size_t best = 0;

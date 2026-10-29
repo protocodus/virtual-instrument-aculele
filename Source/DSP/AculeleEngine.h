@@ -878,6 +878,9 @@ private:
         float dispersionA1 { 0.0f };
         float dispersionA2 { 0.0f };
         bool secondDispersionActive { false };
+        // Dropped under a sounding wave while it still had strength: it
+        // stays in until its coefficients reach zero (configureVoice).
+        bool secondDispersionRetiring { false };
         float secondDispersionA1 { 0.0f };
         float secondDispersionA2 { 0.0f };
         // The string's own bending loss (bendingLossSection in
@@ -924,7 +927,8 @@ private:
         IntrinsicCoefficients intrinsicCoefficientStep {};
         int intrinsicCoefficientSamples { 0 };
         void setIntrinsicCoefficients(const IntrinsicCoefficients& target,
-                                      bool transition) noexcept;
+                                      bool transition,
+                                      int transitionSamples = 0) noexcept;
         OnePole broadLossFilter {};
         OnePole lossFilter {};
         SecondOrderAllpass dispersion {};
@@ -991,6 +995,9 @@ private:
         // Switches the second dispersion section in or out under a sounding
         // wave (see its definition).
         void switchSecondDispersion(bool active) noexcept;
+        // Switches the retiring second section out and gives its two
+        // samples back to the delay.
+        void retireSecondDispersion() noexcept;
         // Read-only point observation of both travelling waves; does not
         // advance the feedback allpass or alter the vibrating string.
         [[nodiscard]] float displacementAt(float fraction) const noexcept;
@@ -1001,7 +1008,9 @@ private:
         // host, which never did.
         ACULELE_ALWAYS_INLINE float advance(float delaySmoothing,
                                             float releaseGain) noexcept;
-        void setLoopGain(float gain, bool transition = false) noexcept;
+        // A transition lasts one round trip, or transitionSamples if longer.
+        void setLoopGain(float gain, bool transition = false,
+                         int transitionSamples = 0) noexcept;
         // A plucked string is released from rest, so the wave the bridge
         // reads was already standing there when the finger let go. Prime the
         // finite difference from the first value this loop actually produces
@@ -1864,7 +1873,8 @@ private:
     void configureVoice(Voice& voice, int stringIndex, int midiNote,
                         bool clearDelay, bool refreshPickReference = false,
                         bool transitionRetune = false,
-                        bool continuousRevision = false) noexcept;
+                        bool continuousRevision = false,
+                        int sectionSamples = 0) noexcept;
     void updateAttackPitch(Voice& voice, int stringIndex) noexcept;
     float effectiveTouch(float velocity) const noexcept;
     // MPE channel pressure for this voice's own member channel, -1 with no
@@ -1880,7 +1890,7 @@ private:
     // the delay line and each filter's memory - by gain.
     static void scaleStoredWaves(Voice& voice, float gain) noexcept;
     void returnToOpenString(Voice& voice, int stringIndex,
-                            bool clearDelay) noexcept;
+                            bool clearDelay, int sectionSamples = 0) noexcept;
     void firePluck(Voice& voice, int stringIndex) noexcept;
     [[nodiscard]] float frettingContactWeight(float speakingLength,
                                               int harmonic) const noexcept;
@@ -2226,6 +2236,9 @@ private:
     float releaseStepPole_ { 0.0f };
     int releaseStepSamples_ { 1 };
     float delaySmoothing_ { 0.001f };
+    // How long the sections of a string retuned under its wave take to
+    // follow (configureVoice).
+    int retuneSectionSamples_ { 1440 };
     float parameterSmoothing_ { 0.002f };
     float levelSmoothing_ { 0.0025f };
     std::array<float, midiChannelCount> pitchBendSemitones_ {};

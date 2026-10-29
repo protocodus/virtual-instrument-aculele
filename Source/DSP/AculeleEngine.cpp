@@ -3724,8 +3724,18 @@ void AculeleEngine::StringLoop::setCurrentDelay(float samples) noexcept
     delayProgressBits = exact::bits(samples);
 }
 
+void AculeleEngine::StringLoop::retireSecondDispersion() noexcept
+{
+    secondDispersionRetiring = false;
+    switchSecondDispersion(false);
+    targetDelay += 2.0f;
+}
+
 void AculeleEngine::StringLoop::reset() noexcept
 {
+    // Nothing is left sounding to hand over.
+    if (secondDispersionRetiring)
+        retireSecondDispersion();
     delay.fill(0.0f);
     writeIndex = 0;
     setCurrentDelay(currentDelay);
@@ -3777,7 +3787,8 @@ void AculeleEngine::StringLoop::reset() noexcept
 }
 
 void AculeleEngine::StringLoop::setIntrinsicCoefficients(
-    const IntrinsicCoefficients& target, bool transition) noexcept
+    const IntrinsicCoefficients& target, bool transition,
+    int transitionSamples) noexcept
 {
     // Repeated/forced configuration of the same target must not change its
     // applied values, step bits or remaining deadline.
@@ -3796,8 +3807,8 @@ void AculeleEngine::StringLoop::setIntrinsicCoefficients(
     for (std::size_t index = 0; index < applied.size(); ++index)
         changed |= *applied[index] != target[index];
     if (transition && targetChanged && changed)
-        intrinsicCoefficientSamples = std::max(1, static_cast<int>(
-            std::ceil(currentDelay)));
+        intrinsicCoefficientSamples = std::max(transitionSamples,
+            std::max(1, static_cast<int>(std::ceil(currentDelay))));
     // Interpolation stays inside each section's Schur-stable coefficient
     // triangle, and both loss sections run in a form whose gain at DC is
     // exactly one for any coefficients (StringLoop::advance). This is a
@@ -3814,7 +3825,8 @@ void AculeleEngine::StringLoop::setIntrinsicCoefficients(
     }
 }
 
-void AculeleEngine::StringLoop::setLoopGain(float gain, bool transition) noexcept
+void AculeleEngine::StringLoop::setLoopGain(float gain, bool transition,
+                                           int transitionSamples) noexcept
 {
     // A forced configuration and a cache hit must follow the same physical
     // transition. Recomputing an unchanged target's step from its rounded
@@ -3823,8 +3835,8 @@ void AculeleEngine::StringLoop::setLoopGain(float gain, bool transition) noexcep
         && exact::bits(gain) == exact::bits(targetLoopGain))
         return;
     if (transition && gain != targetLoopGain && gain != loopGain)
-        loopGainTransitionSamples = std::max(1, static_cast<int>(
-            std::ceil(currentDelay)));
+        loopGainTransitionSamples = std::max(transitionSamples,
+            std::max(1, static_cast<int>(std::ceil(currentDelay))));
     targetLoopGain = gain;
     if (loopGainTransitionSamples > 0)
         // Continuous control revisions keep the remaining deadline; a new
@@ -4097,6 +4109,8 @@ float AculeleEngine::StringLoop::advance(float delaySmoothing,
                     ? std::min(target, std::max(*applied[index], next))
                     : std::max(target, std::min(*applied[index], next));
         }
+        if (intrinsicCoefficientSamples == 0 && secondDispersionRetiring)
+            retireSecondDispersion();
     }
     // A float follower's increment rounds to zero while a physically
     // significant delay difference remains. Preserve its sub-ULP progress
@@ -4611,6 +4625,7 @@ void AculeleEngine::prepare(double sampleRate, int)
     piezoStringWeights_ = PiezoDesign::stringWeights;
     delaySmoothing_ = 1.0f - std::exp(-1.0f
         / (0.006f * static_cast<float>(sampleRate_)));
+    retuneSectionSamples_ = static_cast<int>(std::ceil(0.030 * sampleRate_));
     parameterSmoothing_ = 1.0f - std::exp(-1.0f
         / (0.020f * static_cast<float>(sampleRate_)));
     // The bridge hand is reconfigured at control rate, so its follower runs
@@ -4876,7 +4891,8 @@ void AculeleEngine::setMasterTuneCents(float cents) noexcept
     {
         auto& voice = voices_[static_cast<std::size_t>(string)];
         const float previousImpedance = voice.characteristicImpedance;
-        configureVoice(voice, string, voice.midiNote, false, false, !atRest);
+        configureVoice(voice, string, voice.midiNote, false, false, !atRest,
+                       false, retuneSectionSamples_);
         if (atRest)
         {
             for (auto& loop : voice.loops)
@@ -5005,6 +5021,7 @@ void AculeleEngine::applyDiscreteParameters(bool force) noexcept
     }
 
     const auto notes = openNotes(parameters_.tuning);
+    const int sectionSamples = tuningChanged && !force ? retuneSectionSamples_ : 0;
     for (int string = 0; string < stringCount; ++string)
     {
         auto& voice = voices_[static_cast<std::size_t>(string)];
@@ -5023,10 +5040,11 @@ void AculeleEngine::applyDiscreteParameters(bool force) noexcept
             // bridge. A tuning change moves its pitch and port, preserving
             // those waves; only reset/prepare clears them. Strings whose open
             // pitch stays unchanged retain their full sympathetic state.
-            returnToOpenString(voice, string, force);
+            returnToOpenString(voice, string, force, sectionSamples);
         else if (tuningChanged || ageChanged || shapeChanged)
             configureVoice(voice, string, voice.midiNote, false, false,
-                           tuningChanged && !force, ageChanged && !force);
+                           tuningChanged && !force, ageChanged && !force,
+                           sectionSamples);
     }
     // Nothing steps at the junction here, so the bridge derivatives are not
     // carried across a step (processAcrossStep): a retuned string's port
@@ -5067,7 +5085,7 @@ void AculeleEngine::applyDiscreteParameters(bool force) noexcept
                 configureVoice(voices_[static_cast<std::size_t>(string)], string,
                                voices_[static_cast<std::size_t>(string)].midiNote,
                                false, false, tuningChanged && !force,
-                               ageChanged && !force);
+                               ageChanged && !force, sectionSamples);
 
     if (tuningChanged && !force)
         for (int string = 0; string < stringCount; ++string)
@@ -6768,7 +6786,8 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
                                     int midiNote, bool clearDelay,
                                     bool refreshPickReference,
                                     bool transitionRetune,
-                                    bool continuousRevision) noexcept
+                                    bool continuousRevision,
+                                    int sectionSamples) noexcept
 {
     const auto& physical = physicalCalibration_.steel;
     const bool tuningChanged = voice.pitchGeometry.valid
@@ -7241,10 +7260,19 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
         // T60 well under the requested one (audit, 2026-09-30).
         if (clearDelay)
             loop.loopGainTransitionSamples = 0;
+        // A refret moves the sections in one round trip, as the wave meets
+        // the new stop. A retune of the ringing strings (Tuning, Strings,
+        // Shape, the host's tune) has no such moment: its callers pass the
+        // 30 ms the delay takes to settle (five of its 6 ms time constants,
+        // retuneSectionSamples_). Ramped over one round trip, the
+        // direct-form sections changed fast enough to ring the strings'
+        // upper partials: a Shape change under a ringing chord flashed
+        // above 5 kHz 27 dB under the chord's peak, and 47 dB under over
+        // 30 ms (Aculele.ConstructionChange).
         loop.setLoopGain(clamp(loopGain * stringRoundTripGain, 0.70f, 0.999995f),
             (transitionRetune
                 || (continuousRevision && loop.loopGainTransitionSamples == 0))
-            && !clearDelay);
+            && !clearDelay, sectionSamples);
         loop.broadLossMix = broadLoss;
         loop.highLossMix = mutedHighLoss;
         loop.broadLossCoefficient = broadLossCoefficient;
@@ -7279,11 +7307,33 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
             performanceRealism_.retuneContinuity
                 && (transitionRetune
                     || (continuousRevision && loop.intrinsicCoefficientSamples == 0))
-                && !clearDelay);
+                && !clearDelay, sectionSamples);
         if (clearDelay)
+        {
             loop.secondDispersionActive = dispersion.used[1];
+            loop.secondDispersionRetiring = false;
+        }
+        else if (!dispersion.used[1] && loop.secondDispersionActive
+                 && loop.intrinsicCoefficientSamples > 0
+                 && loop.intrinsicCoefficientTarget[5] == 0.0f
+                 && loop.intrinsicCoefficientTarget[6] == 0.0f
+                 && loop.targetDelay >= 5.0f)
+        {
+            // A change that drops the second section under a sounding wave
+            // (a string set, a tuning) keeps it until its coefficients have
+            // ramped to zero, where it is a plain two-sample delay and the handover
+            // is exact (StringLoop::advance); until then it supplies those
+            // two samples of the delay. Switched out at full strength, it
+            // left the wave a step: a ringing nylon chord turned to
+            // fluorocarbon flashed above 5 kHz 27 dB under its own peak.
+            loop.secondDispersionRetiring = true;
+            loop.targetDelay -= 2.0f;
+        }
         else
+        {
+            loop.secondDispersionRetiring = false;
             loop.switchSecondDispersion(dispersion.used[1]);
+        }
         if (clearDelay)
             loop.reset();
     }
@@ -8615,7 +8665,7 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
 }
 
 void AculeleEngine::returnToOpenString(Voice& voice, int stringIndex,
-                                       bool clearDelay) noexcept
+                                       bool clearDelay, int sectionSamples) noexcept
 {
     releaseHeldShapeOwner(stringIndex);
     voice.heldShapeOwners = 0u;
@@ -8706,7 +8756,7 @@ void AculeleEngine::returnToOpenString(Voice& voice, int stringIndex,
     else
         voice.tailRetiring = true;
     configureVoice(voice, stringIndex, voice.openMidi, clearDelay, false,
-                   !clearDelay);
+                   !clearDelay, false, sectionSamples);
 }
 
 void AculeleEngine::conditionRepluckContact(StringLoop& loop,

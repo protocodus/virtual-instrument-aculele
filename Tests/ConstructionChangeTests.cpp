@@ -10,10 +10,18 @@
 // (AculeleEngine::applyDiscreteParameters), that first 20 ms rose 31-46 dB
 // over the rest and stood 39-53 dB under the chord.
 //
+// Strings and Shape restring the ringing chord, which brightens it for a
+// moment however smoothly it is done, so they are held to 45 and 40 dB under
+// the chord. Nylon to Fluorocarbon drops the second dispersion section; cut
+// out at full strength it stood 27 dB under, and retired at zero strength
+// 49-53 dB (AculeleEngine::configureVoice). Concert to Tenor stood 27 dB
+// under while its sections ramped over one round trip, and 47 dB under over
+// 30 ms.
+//
 // A C chord is strummed on channel 1 at velocity 90 through the Performer at
-// 48 kHz in 256-sample blocks, with the default controls and Strum. Wood
-// changes 1 s later and changes back 1 s after that, on a block boundary,
-// as a host sends it.
+// 48 kHz in 256-sample blocks, with the default controls and Strum. The
+// control changes 1 s later and changes back 1 s after that, on a block
+// boundary, as a host sends it.
 
 #include "DSP/AculelePerformer.h"
 
@@ -67,12 +75,13 @@ struct HighPass
     }
 };
 
-void checkChange(aculele::BodyMaterial other, const char* what)
+template <typename Change>
+void checkChange(Change change, double underChord, const char* what)
 {
     aculele::EngineParameters parameters;
     parameters.picking = aculele::PickingTechnique::Strum;
     auto changed = parameters;
-    changed.bodyMaterial = other;
+    change(changed);
 
     auto performer = std::make_unique<aculele::Performer>();
     performer->setParameters(parameters);
@@ -120,20 +129,27 @@ void checkChange(aculele::BodyMaterial other, const char* what)
         const double depth = 20.0 * std::log10((chord + 1e-12) / (tick + 1e-12));
         std::printf("%-28s at %.3f s: first 20 ms %+.1f dB over the next 40 ms, "
                     "%.1f dB under the chord\n", what, at / rate, rise, depth);
-        check(rise < 6.0 || depth > 60.0, what);
+        check(rise < 6.0 || depth > underChord, what);
     }
 }
 } // namespace
 
 int main()
 {
-    checkChange(aculele::BodyMaterial::Spruce, "Mahogany to Spruce and back");
-    checkChange(aculele::BodyMaterial::Maple, "Mahogany to Maple and back");
+    using P = aculele::EngineParameters;
+    checkChange([] (P& p) { p.bodyMaterial = aculele::BodyMaterial::Spruce; }, 60.0,
+                "Mahogany to Spruce and back");
+    checkChange([] (P& p) { p.bodyMaterial = aculele::BodyMaterial::Maple; }, 60.0,
+                "Mahogany to Maple and back");
+    checkChange([] (P& p) { p.strings = aculele::StringMaterial::Fluorocarbon; }, 45.0,
+                "Nylon to Fluorocarbon and back");
+    checkChange([] (P& p) { p.shape = aculele::BodyShape::Tenor; }, 40.0,
+                "Concert to Tenor and back");
     if (failures > 0)
     {
         std::fprintf(stderr, "%d construction change checks failed\n", failures);
         return EXIT_FAILURE;
     }
-    std::puts("a Wood change under a ringing chord adds no tick");
+    std::puts("a Wood, Strings or Shape change under a ringing chord adds no tick");
     return EXIT_SUCCESS;
 }

@@ -132,6 +132,9 @@ int main()
     expectShape(Technique::Strum, { 71, 74, 79 }, { 7, 7, 7, 10 }, "B4 D5 G5 strum");
     expectShape(Technique::Strum, { 62, 66, 69, 72 }, { 2, 2, 2, 3 }, "D4 F#4 A4 C5 strum");
     expectShape(Technique::Strum, { 67, 72, 76 }, { 5, 7, 8, 7 }, "G4 C5 E5 strum");
+    // The hand frets the fill too, so its stretch counts: Fdim is 4-5-4-2,
+    // not 1-5-1-2, which spans four frets.
+    expectShape(Technique::Strum, { 65, 68, 71 }, { 4, 5, 4, 2 }, "F4 G#4 B4 strum");
     // Two notes below E4 need the one C string: the lowest moves up an
     // octave (Performer::liftChord), as the chord books fret Cm, F7 and Ab7.
     expectShape(Technique::Strum, { 60, 63, 67 }, { 0, 3, 3, 3 }, "C4 Eb4 G4 strum");

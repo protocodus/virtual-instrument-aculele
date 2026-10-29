@@ -10843,6 +10843,10 @@ void AculeleEngine::searchShape(ShapeSearch& search, int index,
         }
         // The free string's fill is part of what the stroke sounds: F4 A4 C5
         // is 2013 with its open C, not 5550 with its open A (chordFillNote).
+        // The hand holds it too, so its fret counts in the grip's cost: F4
+        // G#4 B4 is 4-5-4-2, as the chord books fret Fdim, not 1-5-1-2,
+        // which spans four frets.
+        StringFrets withFill = search.frets;
         for (int string = 0; search.fill && string < stringCount; ++string)
         {
             const auto& voice = voices_[static_cast<std::size_t>(string)];
@@ -10853,13 +10857,14 @@ void AculeleEngine::searchShape(ShapeSearch& search, int index,
                                       search.weights);
             if (fret >= 0)
             {
+                withFill[static_cast<std::size_t>(string)] = fret;
                 score.opens += fret == 0 ? 1 : 0;
                 score.fillOpens += fret == 0 ? 1 : 0;
                 score.fretSum += fret;
                 score.highestFret = std::max(score.highestFret, fret);
             }
         }
-        score.cost = shapeCost(search.frets, search.movable, search.weights);
+        score.cost = shapeCost(withFill, search.movable, search.weights);
         score.impossible = score.cost >= impossibleShapeCost ? 1 : 0;
         if (!search.found || betterShape(score, search.best))
         {

@@ -5,6 +5,41 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-10-29 — a strum's added string counts in the hand's stretch, 0.4.22 (the owner's 0.4.11 direction, checked against a chord book)
+
+**What was decided.** In 0.4.11 the owner chose a fretting rule on the
+understanding that it would be refined until no voicing got worse (below).
+A three-note stroke's free string already counted for its open strings and
+its frets when the shape was chosen, but the hand's stretch was costed
+without it. The hand frets that string too, so its fret now counts in the
+stretch. No choice was made by ear, and no listening test was run.
+
+**What it measured.** This uses 0.4.11's check against the MIT-licensed
+chords-db, for evaluation only:
+- **From a fresh hand.** Close triads on a book shape rose from 180 to 181
+  of 288 on Standard and in D tuning. Low G stayed at 253 of 378, and the
+  four-note voicings stayed at 391 of 401 and 623 of 623. The one that moved
+  is F4 G#4 B4, Fdim, from 1-5-1-2, which spans four frets, to the books'
+  4-5-4-2 (D tuning's Gdim likewise). None moved off a book shape.
+- **After another chord.** Each of the 2,379 chord-book voicings and close
+  triads, in all three tunings, was followed by four others drawn at random
+  (seed 7), 9,516 changes in all. The second chord landed on a book shape
+  6,781 times against 6,770: 11 moved onto one and none off one. Of the 30
+  others that changed, 10 moved between two book shapes. Cm after a chord at
+  the tenth fret now strums 5-3-3-6, nearer the hand, where it strummed
+  0-3-3-3 with an E-string fill whose fret the hand had not paid for.
+
+**Rejected: a fill that adds no bass.** In 32 of the 107 triads that still
+miss, a book shape sounds the same three pitches. In 24 of those 32 the
+model frets a fill below the lowest note given, as Abdim's 4-2-4-5 puts D4
+under G#4, where the books go higher up the neck (7-8-7-5). A rule that kept
+a fretted fill at or above that note, with open strings still free to sound
+below it, took 128 Standard triads off a book shape and put none on one. The
+books fret such a bass themselves, as Ab's 5-3-4-6 puts Eb4 on the C string
+under Ab4 C5 Eb5. So the rule was not adopted. The 24 follow the 0.4.11
+rules: open strings lead in first position, and above it the hand stays
+lowest.
+
 ## 2026-10-29 — the nylon tenor takes its maker's tenor set, 0.4.21 (the owner's 0.4.14 choice, extended)
 
 **What was decided.** The owner chose by ear in 0.4.14 that each Shape takes

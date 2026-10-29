@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.4.22 — 2026-10-29 — A strum's added string counts in the hand's stretch
+
+On one channel, a three-note strum frets its free string too, and that fret now counts in the stretch by which the shape is chosen. F4 G#4 B4 strums Fdim as 4-5-4-2, the chord books' shape, not 1-5-1-2, which spans four frets. Of 288 close triads, 181 now take a chord-book shape (180 before), and none that did lost it. Tab input and the demos are unchanged.
+
 ### 0.4.21 — 2026-10-29 — The nylon tenor takes tenor strings
 
 On nylon the tenor now takes D'Addario's tenor set, EJ65T, in place of the concert set. That follows the owner's 0.4.14 choice that each Shape takes the set its maker sells for it. The nylon tenor had waited for the tuning check to read the settled pitch, which it has done since 0.4.20. EJ65T's strings are 1.5-3.6% thicker. Across the tenor's range, no note's level moves by more than 0.26 dB, and no note's pitch by more than 1.4 cents. Low G Tenor is the one preset on these strings.
@@ -209,7 +213,7 @@ Levels are set on Reason's channel meter, a VU meter read with 0 VU at -12 dBFS 
   - just above T1 it radiates little again, and on Concert Mahogany a mode near 659 Hz rocks the bridge. That mode's conductance reaches 0.32 s/kg at the A string and 0.19 s/kg at the G, against 0.02 s/kg at the C, and it radiates little. The A string's third to seventh frets play 4.5-7.5 dB under the open A, and E5's fundamental on the A and G strings starts about 12 dB under the fret above.
 
   A small top under a ukulele's wide saddle rocks more readily than a guitar's, and real tops have such notes. How deep a ukulele's are would take a measured body.
-- **One channel chooses the voicing.** On one MIDI channel, a three-note strum's added string is the hand's cheapest chord tone, and the shape follows the notes given and where the hand already is. That is not always the voicing a player would choose. From a fresh hand on Standard, 10 of the 401 four-note voicings a ukulele chord book lists, and 108 of 288 close triads, strum a shape the book does not list for that chord (`Docs/decisions.md`, 2026-10-28):
+- **One channel chooses the voicing.** On one MIDI channel, a three-note strum's added string is the hand's cheapest chord tone, and the shape follows the notes given and where the hand already is. That is not always the voicing a player would choose. From a fresh hand on Standard, 10 of the 401 four-note voicings a ukulele chord book lists, and 107 of 288 close triads, strum a shape the book does not list for that chord (`Docs/decisions.md`, 2026-10-28 and 2026-10-29). For 75 of those triads, no shape the book lists sounds those three pitches. Of the voicings a player would fret otherwise:
   - E4 G4 B4 plays 0402, where most players fret Em as 0432, since both are in first position, where open strings lead;
   - D4 F#4 A4 C5 straight after a G at the seventh fret plays D7 as 5220, near where the hand was, where chord books show 2223.
 

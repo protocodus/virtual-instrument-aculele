@@ -134,3 +134,41 @@ each note's harmonics and taken against its first.
 
 So no single change closes the gap. The nail is the owner's open choice (the
 0.4.17 page), and the body awaits a measured ukulele.
+
+### The 1–2.5 kHz differences against real bodies' own unevenness (29 October)
+
+On 0.4.20, the FreePats comparison above reads, render minus recording:
+
+| Third octave | 1.26 kHz | 1.6 kHz | 2 kHz | 2.5 kHz |
+| --- | --- | --- | --- | --- |
+| Median | -7.2 | -8.5 | -1.9 | +6.3 |
+| Quartiles | -8.4 to -2.8 | -14.1 to -3.2 | -15.3 to +1.9 | +2.4 to +11.0 |
+
+So the tenor recording stands above the model through most of this band,
+and the Duke soprano stands 2–12 dB below it. The sign flips between the
+two instruments.
+
+No published measurement of a tenor's or a concert's radiation or bridge
+mobility was found beyond Elie et al. and Labraña–Espinoza. Šunta's concert
+(Ljubljana, 2020) gives its top's mode frequencies from 395 to 986 Hz, but
+not their levels.
+
+The Labraña–Espinoza deposit shows how unevenly real bodies radiate in this
+range. Each instrument's third octaves from 1 to 6.3 kHz were taken against
+its own least-squares line, as in `Tools/AculeleRadiation.cpp`:
+
+- **The measured bodies.** In the power mean of all 18 positions, they
+  depart from their own line by an rms of 1.8 dB (the Hybrid) to 3.3 dB
+  (PLA+1). At single positions the rms runs from 1.0 to 4.3 dB.
+- **One band can differ by 8 dB between real bodies.** At 2 kHz the Hybrid
+  stands 1.4 dB over its line and PLA+1 7.0 dB under. At 1 kHz the Hybrid
+  stands 1.0 dB under and PLA+3 5.5 dB over. The three printed tops share
+  one design and agree to within 2.2 dB at 2 kHz.
+- **The model's bodies.** They depart from their own line by an rms of 1.4
+  to 2.2 dB. The largest single departure is Tenor Mahogany's 5.3 dB dip at
+  1.6 kHz.
+
+Each recording's difference in this band is about the size by which two
+real bodies differ from each other, and the two recordings disagree in
+sign. Matching either one would fit that instrument's own lumps, so nothing
+changed.

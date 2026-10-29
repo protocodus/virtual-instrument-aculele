@@ -45,15 +45,15 @@ inline constexpr std::array<FactoryPreset, 7> factoryPresets {{
     { "Soprano D Tuning", "soprano-d-tuning",
       BodyShape::Soprano, BodyMaterial::Mahogany, StringMaterial::Nylon,
       Tuning::DTuning, PickingTechnique::Strum, CaptureType::StereoMic,
-      0.10f, 0.50f, 0.62f, 0.82f, 0.62f, 0.0f, 0.10f, 0.10f, 1.4f },
+      0.10f, 0.50f, 0.62f, 0.82f, 0.62f, 0.0f, 0.10f, 0.10f, 1.6f },
     { "Tenor Fluorocarbon Fingerstyle", "tenor-fluorocarbon-fingerstyle",
       BodyShape::Tenor, BodyMaterial::Spruce, StringMaterial::Fluorocarbon,
       Tuning::Standard, PickingTechnique::Finger, CaptureType::StereoMic,
-      0.10f, 0.40f, 0.55f, 0.86f, 0.62f, 0.0f, 0.10f, 0.10f, -0.7f },
+      0.10f, 0.40f, 0.55f, 0.86f, 0.62f, 0.0f, 0.10f, 0.10f, -0.6f },
     { "Low G Tenor", "low-g-tenor",
       BodyShape::Tenor, BodyMaterial::Mahogany, StringMaterial::Nylon,
       Tuning::LowG, PickingTechnique::Finger, CaptureType::StereoMic,
-      0.20f, 0.38f, 0.50f, 0.86f, 0.62f, 0.0f, 0.10f, 0.12f, -1.2f },
+      0.20f, 0.38f, 0.50f, 0.86f, 0.62f, 0.0f, 0.10f, 0.12f, -1.1f },
     { "Soprano Thumb", "soprano-thumb",
       BodyShape::Soprano, BodyMaterial::Mahogany, StringMaterial::Nylon,
       Tuning::Standard, PickingTechnique::Thumb, CaptureType::StereoMic,
@@ -61,10 +61,10 @@ inline constexpr std::array<FactoryPreset, 7> factoryPresets {{
     { "Tenor Picked Melody", "tenor-picked-melody",
       BodyShape::Tenor, BodyMaterial::Maple, StringMaterial::Fluorocarbon,
       Tuning::LowG, PickingTechnique::Pick, CaptureType::MonoMic,
-      // -2.1 dB, where typical playing reads -8.9 VU: at the -2.2 that reads
-      // -9.0, its Strum would read 1.51 dB under the target, past the 1.5
+      // -2.2 dB, where typical playing reads -8.9 VU: at the -2.3 that reads
+      // -9.0, its Strum would read 1.52 dB under the target, past the 1.5
       // dB that keeps switching Picking from jumping the level.
-      0.10f, 0.30f, 0.60f, 0.82f, 0.62f, 0.0f, 0.10f, 0.10f, -2.1f },
+      0.10f, 0.30f, 0.60f, 0.82f, 0.62f, 0.0f, 0.10f, 0.10f, -2.2f },
     { "Concert Piezo Stage", "concert-piezo-stage",
       BodyShape::Concert, BodyMaterial::Spruce, StringMaterial::Nylon,
       Tuning::Standard, PickingTechnique::Strum, CaptureType::Piezo,

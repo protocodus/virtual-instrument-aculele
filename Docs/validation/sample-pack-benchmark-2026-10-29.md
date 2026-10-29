@@ -2,7 +2,8 @@
 
 The owner supplied six free DecentSampler ukulele packs from the Pianobook
 community as a realism benchmark. None of them is in this repository, and
-nothing is fitted from them. `Tools/compare_sample_packs.py` measures them and
+nothing is fitted from them but how far 0.4.29's hand lands from pluck to
+pluck (Take to take). `Tools/compare_sample_packs.py` measures them and
 Aculele 0.4.26 the same way; its header gives the commands.
 
 ## The packs
@@ -138,3 +139,52 @@ smaller split, 2 cents, which 0.4.28 takes and which still beats within the
 instruments' range. For the strings the owner kept nylon in the presets,
 with fluorocarbon the player's choice (`Docs/decisions.md`).
 0.4.28's partial decays stay within the five instruments' spread.
+
+## Take to take
+
+Guffland and Leolani record each note four times, as round robins, which the
+other packs do not. `compare_sample_packs.py --takes` compares one note's
+takes with each other, so the capture, shared by every take of a note, drops
+out. Guffland files some recordings under more than one round robin; those
+are counted once, which leaves 19 of its notes with three takes or more.
+Aculele played C4 to B5 four times each through Concert Piezo Stage
+(`AculeleProbe 6 takes.mid out.wav 385 --float --picking 0`) and Concert
+Strum's mono microphone (`AculeleProbe 0 takes.mid out.wav 385 --float
+--picking 0 --capture 7`), both with Finger.
+
+| | notes | takes | level SD (dB) | brightness SD (dB) | tilt SD (dB/oct) | comb scatter (dB) |
+| --- | --- | --- | --- | --- | --- | --- |
+| Guffland | 19 | 50 | 2.45 | 4.03 | 1.11 | 2.42 |
+| Leolani (DI) | 24 | 73 | 1.56 | 3.64 | 1.22 | 3.01 |
+| 0.4.28 piezo | 24 | 94 | 0.62 | 0.91 | 0.36 | 1.41 |
+| 0.4.28 microphone | 24 | 90 | 0.69 | 0.86 | 0.42 | 1.16 |
+| ±0.06 piezo | 24 | 94 | 0.65 | 1.12 | 0.50 | 2.44 |
+| ±0.06 microphone | 24 | 92 | 0.74 | 1.22 | 0.66 | 2.07 |
+| 0.4.29 piezo | 24 | 95 | 0.66 | 1.25 | 0.58 | 2.83 |
+| 0.4.29 microphone | 24 | 89 | 0.82 | 1.84 | 0.72 | 2.59 |
+| 0.4.28 piezo, nail edge ±2 octaves | 24 | 93 | 0.74 | 1.23 | 0.43 | 1.77 |
+| 0.4.28 piezo, release angle 4° | 24 | 94 | 0.98 | 0.93 | 0.38 | 1.44 |
+| 0.4.28 piezo, release angle 8° | 24 | 93 | 1.64 | 1.22 | 0.47 | 1.46 |
+
+Level and brightness are SDs within a note, the median over notes. Tilt and
+comb scatter split each take's partials 1-12, against its note's mean, into
+a line in log partial number and what the line leaves; a take with fewer
+than six partials within 50 dB of the note's strongest is skipped. The
+±0.06 and the last three rows were rendered with experimental builds that
+changed only the named spread (the angle row's 2° is 0.4.28's).
+
+- **Real plucks land further apart.** The comb scatter, which only a pluck
+  point that moves leaves, is 2.4 and 3.0 dB on the two packs, and was
+  1.2-1.4 dB on Aculele, whose hand landed within ±0.02 of the string, the
+  archtop guitar's spread. A wider spread raises it, ±0.09 to 2.6-2.8 dB,
+  between the packs, which 0.4.29 takes (`Docs/decisions.md`).
+- **Real takes differ more in brightness, and it is not force.** Over
+  2.5 kHz the packs' takes vary by 3.6-4.0 dB, and the recorded takes'
+  brightness does not follow their level (correlations -0.07 and +0.10). A
+  sharper or duller nail edge and a wider release angle each move it little.
+  What does is not identified; how much nail and how much flesh meet the
+  string is a guess.
+- **Real takes differ more in level.** A release angle 8° wide gives the
+  piezo the DI's 1.6 dB, where Aculele's 2° (chosen by ear on 2026-10-28)
+  gives 0.6. The microphones' level was not measured that way, and
+  Guffland's samples may have been trimmed one by one, so nothing changed.

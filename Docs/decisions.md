@@ -5,6 +5,51 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-10-29 — each pluck lands within ±0.09 of the string, 0.4.29 (measured; adopted under the owner's standing rule, not yet heard)
+
+**What was decided.** How far the plucking hand lands from its place from
+one pluck to the next. Acustra's ±0.02 of the string came from an archtop
+guitar's takes. The round robins of two ukulele packs
+(`Docs/validation/sample-pack-benchmark-2026-10-29.md`,
+`Tools/compare_sample_packs.py --takes`) give a ukulele player's: once each
+take's level and tilt are taken out, a note's partials scatter 2.4 dB from
+take to take on Guffland's microphone and 3.0 dB on Leolani's DI. A force or
+a release angle moves every partial together and a sharper release tilts
+them; only a pluck point that moves scatters them one by one. Aculele
+scattered 1.2-1.4 dB. Rendering the same notes at ±0.06 gives 2.1-2.4 dB and
+at ±0.09 2.6-2.8 dB, between the two packs.
+
+**The letters.** C4, E4, G4, A4 and C5 four times each at velocity 90,
+0.55 s apart, through Low G Tenor (Finger, nylon, stereo microphones),
+rendered with `AculeleProbe` at 48 kHz in 256-sample blocks, 13 s:
+
+- A: the shipping engine (0.4.28), ±0.02.
+- B: ±0.06.
+- C: ±0.09.
+
+The takes are level-matched on whole-file RMS. B moved by +0.03 dB and C by
++0.06 dB.
+
+**What was chosen.** C, under the owner's standing rule to accept
+candidates over the baseline, and because it is the spread whose scatter
+lies between the two packs'. B, the gentler, would sit under both. The owner
+has not heard the set; a choice of B by ear would replace C.
+
+**What it licensed.** `takeSpread` = 0.09 in `AculeleEngine.cpp`, the scale
+of both the hand's slow drift and each pluck's own draw. `LevelMatchData.h`
+was re-pinned. Tenor Fluorocarbon Fingerstyle's Output moved from -0.6 to
+-0.8 dB, Low G Tenor's from -1.1 to -1.0 dB and Tenor Picked Melody's from
+-2.2 to -2.3 dB, so every preset reads -9 VU within 0.42 dB: Tenor Picked
+Melody's typical playing reads -8.58, as at the -2.7 dB that would bring it
+to -9.0 its Strum would read 1.8 dB under the target, past the 1.5 dB bound.
+
+**What it did not close.** The packs' takes also differ by 3.6-4.0 dB (SD) in
+their power above 2.5 kHz and by 1.1-1.2 dB per octave in tilt; Aculele's,
+now 1.3-1.8 dB and 0.6-0.7 dB per octave. That brightness does not follow
+the takes' level. Varying the nail's edge two octaves either way, or the
+release angle by 8°, raised the brightness spread from 0.9 to 1.2 dB at
+most; nothing was changed for it (README, Known gaps).
+
 ## 2026-10-29 — a string's two planes sound 2 cents apart, and the presets keep nylon, 0.4.28 (chosen by ear)
 
 **What was decided.** Measured on five DecentSampler ukulele packs the owner

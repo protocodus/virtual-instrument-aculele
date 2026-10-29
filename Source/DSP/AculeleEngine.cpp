@@ -7774,11 +7774,18 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
     const float distanceFromBridge = (0.045f
         + 0.135f * parameters_.pluckPosition) * physical.pluckDistanceScale
         * pickingDistance * (scaleLength / 0.648f);
-    // No two plucks land in the same place. The archtop's three takes of each
-    // note put their pluck points a median 0.02 of the string length apart
-    // (Traube-Smith comb on the soft rows, where the estimate is clean),
-    // which for three draws from a uniform spread is the spread's half-width;
-    // each pluck draws its own offset within it.
+    // No two plucks land in the same place. Acustra took +/-0.02 of the
+    // string from an archtop guitar's takes; a ukulele player's hand wanders
+    // further. Across the round robins of two sampled ukuleles
+    // (Docs/validation/sample-pack-benchmark-2026-10-29.md), one note's
+    // partials scatter 2.4 dB (microphone) and 3.0 dB (DI) from take to take
+    // once each take's level and tilt are taken out, which is what a moving
+    // pluck point leaves and a force or an angle does not. The same notes
+    // rendered scatter 1.2-1.4 dB at 0.02, 2.1-2.4 dB at 0.06 and 2.6-2.8 dB
+    // at 0.09, between the two (Tools/compare_sample_packs.py --takes;
+    // Docs/decisions.md, 2026-10-29). Each pluck draws its offset within
+    // +/-takeSpread.
+    constexpr float takeSpread = 0.09f;
     const float positionDraw = nextNoise(voice);
     // MPE Timbre, CC74, on this note's own member channel says directly
     // where the string was met (0-1 across the same 0.05-0.46 band the
@@ -7796,11 +7803,11 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
     // the bridge, so the hand's band reaches CC74's published 0.46 and its
     // knee (below) starts at Acustra's 0.36 limit rather than at 0.25.
     constexpr float handLimit = 0.46f;
-    float takeOffset = 0.02f * positionDraw;
+    float takeOffset = takeSpread * positionDraw;
     if (gesture.active && !hasTimbre)
     {
         // One hand moves the same physical distance across a fretted chord.
-        // Keep the established open-string travel (0.02 * 0.70 * 648 mm),
+        // Keep the open-string travel (takeSpread * 0.70 of the scale),
         // then express it in each string's actual speaking length. Scaling
         // that shared motion by the stopped length made an octave-fretted
         // string's hand move only half as far. The independent take spread
@@ -7811,13 +7818,13 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
         // travel. Approach the available position band smoothly there,
         // reserving the independent draw's 0.30 share. Ordinary playable
         // frets remain below this knee and keep exact physical travel.
-        constexpr float sharedLimit = (handLimit - lowestPoint) / 0.02f - 0.30f;
+        constexpr float sharedLimit = (handLimit - lowestPoint) / takeSpread - 0.30f;
         constexpr float sharedKnee = 0.5f * sharedLimit;
         const float travel = exact::abs(sharedOffset);
         if (travel > sharedKnee)
             sharedOffset = std::copysign(sharedLimit
                 - sharedKnee * sharedKnee / travel, sharedOffset);
-        takeOffset = 0.02f * (sharedOffset + 0.30f * positionDraw);
+        takeOffset = takeSpread * (sharedOffset + 0.30f * positionDraw);
     }
     float basePosition = hasTimbre
         ? 0.05f + 0.41f * mpeTimbre_[channelIndex]

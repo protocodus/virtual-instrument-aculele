@@ -5,6 +5,10 @@
     AculeleProbe 0 notes.mid concert.wav 101 --float --picking 0 --capture 7 --shape 1 --wood 1
     compare_sample_packs.py <pack-dir> [...] --render concert=concert.wav [...]
 
+    compare_sample_packs.py --write-midi takes.mid --takes
+    AculeleProbe 6 takes.mid piezo.wav 385 --float --picking 0
+    compare_sample_packs.py --takes <pack-dir> [...] --render piezo=piezo.wav [...]
+
 A pack directory holds a .dspreset and the samples it names; nothing from
 any pack is in this repository. Every attack sample whose pitch lands in
 C4-C6 is measured, after shifting each pack's root notes by the octave or
@@ -25,6 +29,25 @@ packs recorded through an SM58, a phone or a pickup can stand together:
     of notes whose residual spans more than 6 dB.
 Partial levels against each other follow the microphone and are left out.
 
+--takes compares a pack's round robins of one note with each other instead,
+so the capture, the same for every take of a note, drops out. Takes are the
+attack samples sharing a root and a velocity layer; one whose first 0.5 s
+correlates over 0.99 with another's is the same recording and is dropped,
+and a note needs three distinct takes. A render's takes are all kept. The render plays C4 to B5 four times
+each, 4 s apart. Over 30-330 ms after the onset each take gives:
+  - its level (RMS) and brightness (power above 2.5 kHz against all of it);
+    their SD within a note, the median over notes, and the correlation of
+    the two over every take's departure from its note's mean: a harder
+    stroke is both louder and brighter;
+  - partials 1-12, each found from the last two partials' spacing and
+    dropped 50 dB under the note's strongest; their deviation from the
+    note's mean is fitted with a + b log2(n). b, the tilt in dB per octave
+    of partial number, is what a sharper or duller release changes, and its
+    SD over all takes is printed. What the line leaves, its RMS the median
+    over takes, is the comb scatter: a force or a release angle moves every
+    partial together, and a pluck point that moves shifts the comb
+    |sin(n pi p)| under the partials one by one.
+
 Needs NumPy, SciPy and soundfile (the packs hold AIFF and 16-bit WAV).
 """
 
@@ -40,11 +63,12 @@ import soundfile
 from scipy import signal
 
 FIRST, LAST, SPACING, HOLD, VELOCITY = 60, 84, 4.0, 3.5, 90
+TAKES = 4
 REGISTERS = [(60, 63), (64, 68), (69, 74), (75, 79), (80, 84)]
 BANDS = [250, 400, 700, 1000, 1500, 2200, 3200, 4700, 7000]
 
 
-def write_midi(path):
+def write_midi(path, takes=1):
     def vlq(value):
         out = [value & 0x7F]
         value >>= 7
@@ -55,7 +79,8 @@ def write_midi(path):
 
     ticks = 960  # per second: 480 per quarter at 120 bpm
     events = []
-    for index, note in enumerate(range(FIRST, LAST + 1)):
+    notes = range(FIRST, LAST + 1) if takes == 1 else [n for n in range(FIRST, LAST) for _ in range(takes)]
+    for index, note in enumerate(notes):
         events.append((round(index * SPACING * ticks), 1, bytes([0x90, note, VELOCITY])))
         events.append((round((index * SPACING + HOLD) * ticks), 0, bytes([0x80, note, 0])))
     track = bytearray(b"\x00\xff\x51\x03" + (500000).to_bytes(3, "big"))
@@ -198,20 +223,21 @@ def pack_notes(directory):
         for sample in group.iter("sample"):
             fields = {k.lower(): v for k, v in sample.attrib.items()}
             x, rate = soundfile.read(str(preset.parent / fields["path"]), always_2d=True)
-            samples.append((int(fields["rootnote"]), x.mean(axis=1), rate))
-    shift = Counter(sounding_midi(x, rate) - root for root, x, rate in samples).most_common(1)[0][0]
-    return [(root + shift, x, rate) for root, x, rate in samples if FIRST <= root + shift <= LAST]
+            layer = tuple(fields.get(k, attributes.get(k, "")) for k in ("lovel", "hivel"))
+            samples.append((int(fields["rootnote"]), x.mean(axis=1), rate, layer))
+    shift = Counter(sounding_midi(x, rate) - root for root, x, rate, _ in samples).most_common(1)[0][0]
+    return [(root + shift, x, rate, layer) for root, x, rate, layer in samples if FIRST <= root + shift <= LAST]
 
 
 def render_notes(path):
     x, rate = soundfile.read(path, always_2d=True)
     x = x.mean(axis=1)
-    return [(FIRST + k, x[int(k * SPACING * rate):int((k * SPACING + HOLD + 0.1) * rate)], rate)
+    return [(FIRST + k, x[int(k * SPACING * rate):int((k * SPACING + HOLD + 0.1) * rate)], rate, None)
             for k in range(LAST - FIRST + 1)]
 
 
 def report(label, notes):
-    rows = [measure(x, rate, midi) for midi, x, rate in notes]
+    rows = [measure(x, rate, midi) for midi, x, rate, _ in notes]
     registers = []
     for low, high in REGISTERS:
         values = [r["inharmonicity"] for r in rows if low <= r["midi"] <= high and abs(r["inharmonicity"]) < 0.01]
@@ -228,14 +254,91 @@ def report(label, notes):
           + " | " + " ".join(f"{s:3.0f}" for s in shares))
 
 
-def main():
-    if len(sys.argv) == 3 and sys.argv[1] == "--write-midi":
-        write_midi(sys.argv[2])
+def take(x, rate, midi):
+    x = x[onset(x, rate):]
+    nominal = 440 * 2 ** ((midi - 69) / 12)
+    long_magnitude, long_bins = spectrum(x[int(0.3 * rate):int(1.5 * rate)], rate, 1 << 20)
+    segment = x[int(0.03 * rate):int(0.33 * rate)]
+    magnitude, bins = spectrum(segment, rate, 1 << 19)
+    found = [peak_near(long_magnitude, long_bins, nominal, 60)[0]]
+    while len(found) < 12:
+        # The next partial lies one spacing on: a stiff string's spacing
+        # widens, which a guess from n f1 misses by a semitone at H12.
+        guess = 2 * found[-1] - (found[-2] if len(found) > 1 else 0.0)
+        if guess > 9000:
+            break
+        found.append(peak_near(long_magnitude, long_bins, guess, 40)[0])
+    partials = np.full(12, np.nan)
+    partials[:len(found)] = [peak_near(magnitude, bins, f, 25)[1] for f in found]
+    power = magnitude ** 2
+    return dict(level=10 * math.log10(np.mean(segment ** 2)),
+                brightness=10 * math.log10(power[bins > 2500].sum() / power.sum()),
+                partials=partials, start=x[:int(0.5 * rate)])
+
+
+def same_recording(a, b):
+    n = min(len(a), len(b))
+    c = signal.correlate(a[:n], b[:n], mode="full", method="fft")
+    return np.abs(c).max() / math.sqrt((a[:n] ** 2).sum() * (b[:n] ** 2).sum()) > 0.99
+
+
+def report_takes(label, notes):
+    groups = {}
+    for index, (midi, x, rate, layer) in enumerate(notes):
+        key = (midi, layer) if layer is not None else index // TAKES
+        groups.setdefault(key, []).append((take(x, rate, midi), layer is not None))
+    spreads, tilts, scatter, departures = [], [], [], []
+    for takes in groups.values():
+        # A pack may file one recording under several round robins; every
+        # take of a render was played, however alike two of them sound.
+        distinct = []
+        for t, recorded in takes:
+            if not (recorded and any(same_recording(t["start"], d["start"]) for d in distinct)):
+                distinct.append(t)
+        if len(distinct) < 3:
+            continue
+        spreads.append([np.std([t[k] for t in distinct], ddof=1) for k in ("level", "brightness")])
+        pairs = np.array([[t["level"], t["brightness"]] for t in distinct])
+        departures.extend(pairs - pairs.mean(axis=0))
+        levels = np.array([t["partials"] for t in distinct])
+        levels[levels < np.nanmax(levels) - 50] = np.nan
+        order = np.log2(np.arange(1, 13))
+        for deviation in levels - np.nanmean(levels, axis=0):
+            use = np.isfinite(deviation)
+            if use.sum() >= 6:
+                slope, offset = np.polyfit(order[use], deviation[use], 1)
+                tilts.append(slope)
+                scatter.append(np.sqrt(np.mean((deviation[use] - offset - slope * order[use]) ** 2)))
+    if not spreads:
+        print(f"{label:12s} no note has three distinct takes")
         return
-    packs = [a for a in sys.argv[1:] if "=" not in a and a != "--render"]
-    renders = [a.split("=", 1) for a in sys.argv[1:] if "=" in a]
+    level, brightness = np.median(spreads, axis=0)
+    together = np.corrcoef(np.array(departures).T)[0, 1]
+    print(f"{label:12s} {len(spreads):5d} {len(tilts):5d} | {level:8.2f} {brightness:9.2f} {together:+9.2f}"
+          f" | {np.std(tilts):7.2f} {np.median(scatter):12.2f}")
+
+
+def main():
+    takes = "--takes" in sys.argv
+    arguments = [a for a in sys.argv[1:] if a not in ("--takes", "--render")]
+    if len(arguments) == 2 and arguments[0] == "--write-midi":
+        write_midi(arguments[1], TAKES if takes else 1)
+        return
+    packs = [a for a in arguments if "=" not in a]
+    renders = [a.split("=", 1) for a in arguments if "=" in a]
     if not packs and not renders:
         sys.exit(__doc__)
+    if takes:
+        print(f"{'':12s} notes takes | level SD bright SD  together | tilt SD comb scatter")
+        print(f"{'':12s}             |       dB        dB         r |  dB/oct           dB")
+        for directory in packs:
+            report_takes(Path(directory).name[:12], pack_notes(directory))
+        for label, path in renders:
+            x, rate = soundfile.read(path, always_2d=True)
+            x = x.mean(axis=1)
+            report_takes(label[:12], [(FIRST + k // TAKES, x[int(k * SPACING * rate):int((k * SPACING + HOLD + 0.1) * rate)], rate, None)
+                                      for k in range((LAST - FIRST) * TAKES)])
+        return
     print("                 | B x1e-4 by register" + " " * 10 + "| partial T60 (s) by band from"
           + " " * 18 + "| glide rise | beating %")
     print(f"{'':12s}   n | " + " ".join(f"{low}-{high}"[:5].rjust(5) for low, high in REGISTERS)

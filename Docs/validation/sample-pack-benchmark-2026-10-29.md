@@ -38,7 +38,7 @@ nothing here.
 ## Results
 
 `compare_sample_packs.py` on the five packs and on Aculele 0.4.26, and the
-beating on 0.4.27, which took the 0.2% split below:
+beating on 0.4.27, which took the owner's 2-cent split below:
 
 | | B ×1e-4, C4-D#4 | E4-G#4 | A4-D5 | D#5-G5 | G#5-C6 |
 | --- | --- | --- | --- | --- | --- |
@@ -75,9 +75,9 @@ beating on 0.4.27, which took the 0.2% split below:
 | Aculele soprano | +3.3 | 5.2 | 24% | 24% | 0% | 4% |
 | Aculele concert | +1.8 | 4.8 | 28% | 4% | 8% | 4% |
 | Aculele tenor | +0.7 | 5.8 | 36% | 8% | 4% | 12% |
-| 0.4.27 soprano | +4.7 | 4.8 | 32% | 36% | 40% | 48% |
-| 0.4.27 concert | +1.6 | 4.9 | 28% | 44% | 60% | 76% |
-| 0.4.27 tenor | +0.6 | 6.1 | 40% | 52% | 68% | 100% |
+| 0.4.27 soprano | +3.3 | 5.2 | 28% | 36% | 40% | 44% |
+| 0.4.27 concert | +1.5 | 4.9 | 36% | 44% | 56% | 76% |
+| 0.4.27 tenor | +0.6 | 6.1 | 24% | 44% | 64% | 96% |
 
 Beating is the share of notes in which a partial's envelope, less a
 quadratic fit to its decay, spans more than 6 dB within 2 s. Kai's rise time
@@ -133,7 +133,8 @@ Two changes were tried on the concert, rendering the same notes:
 What makes a real ukulele string's two planes differ by a few cents (the
 saddle's or the fret's sideways hold, the string's own asymmetry) has not
 been identified or measured, so a split's size would be chosen to match
-these recordings rather than derived. 0.4.27 takes the 0.2% split under the
-owner's standing rule to accept candidates, with the choice still open by
-ear, and the strings are left for the owner's ear (`Docs/decisions.md`).
+these recordings rather than derived. Asked by ear, the owner chose a
+smaller split, 2 cents, which 0.4.27 takes and which still beats within the
+instruments' range. For the strings the owner kept nylon in the presets,
+with fluorocarbon the player's choice (`Docs/decisions.md`).
 0.4.27's partial decays stay within the five instruments' spread.

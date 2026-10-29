@@ -5,7 +5,7 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
-## 2026-10-29 — a string's two planes sound 3.5 cents apart, 0.4.27 (adopted under the owner's standing rule, not yet heard)
+## 2026-10-29 — a string's two planes sound 2 cents apart, and the presets keep nylon, 0.4.27 (chosen by ear)
 
 **What was decided.** Measured on five DecentSampler ukulele packs the owner
 supplied (`Docs/validation/sample-pack-benchmark-2026-10-29.md`), partials
@@ -30,25 +30,28 @@ ringing, through Concert Strum's construction with Finger, rendered with
 The takes are level-matched on whole-file RMS. B moved by +0.15 dB and C by
 +0.35 dB.
 
-**What was chosen.** B, without a listening verdict, under the owner's
-standing rule of 2026-10-28 to lean towards accepting candidates: the
-smaller split that reaches the recordings' range. The set stays up for the
-owner in the project's `aculele-listening-2026-10-29/beating` folder. Over
-the three bodies, B beats in 36-52% of notes at H2, 40-68% at H3 and
-48-100% at H4.
+**What was chosen.** B by ear, with the owner's own size: 2 cents, under
+both B's 3.5 and C's 6.9. B was first adopted under the owner's standing
+rule to accept candidates; the owner then picked B and set the split. 2
+cents was not one of the letters and was not rendered for the owner before
+the choice. Over the three bodies it beats in 36-44% of notes at H2, 40-64%
+at H3 and 44-96% at H4, still within the recordings' range.
 
-**What it licensed.** `normalPlaneDelayRatio` in `AculeleEngine.cpp`.
-`LevelMatchData.h` was re-pinned. Soprano D Tuning's Output moved from +1.4
-to +1.8 dB, Low G Tenor's from -1.2 to -1.1 dB and Tenor Picked Melody's
-from -2.1 to -2.3 dB, so every preset reads -9 VU within 0.03 dB; that
-Strum reads 1.37 dB under it, inside the 1.5 dB bound.
+**What it licensed.** `normalPlaneDelayRatio` = 2^(-2/1200) in
+`AculeleEngine.cpp`. `LevelMatchData.h` was re-pinned. Soprano D Tuning's
+Output moved from +1.4 to +1.6 dB, Tenor Fluorocarbon Fingerstyle's from
+-0.7 to -0.6 dB, Low G Tenor's from -1.2 to -1.1 dB and Tenor Picked
+Melody's from -2.1 to -2.2 dB, so every preset reads -9 VU within 0.13 dB.
+Tenor Picked Melody stays 0.1 dB above the -2.3 dB its typical playing asks
+for, where its Strum would read 1.52 dB under the target, past the 1.5 dB
+bound.
 
-**Still open: the strings.** On the same packs the instruments'
-inharmonicity sits with Aculele's fluorocarbon and at a third to a half of
-its nylon, while their partials above 1 kHz die as fast as the nylon's. A
-set of the same phrase on nylon (A), fluorocarbon (B) and fluorocarbon at
-String Age 1.0 (C) is in the `strings` folder beside it. Nothing changed
-there until the owner chooses.
+**The strings.** On the same packs the instruments' inharmonicity sits with
+Aculele's fluorocarbon and at a third to a half of its nylon, while their
+partials above 1 kHz die as fast as the nylon's. The same phrase was put to
+the owner on nylon (A), fluorocarbon (B) and fluorocarbon at String Age 1.0
+(C). The owner chose A by ear: the presets keep nylon, and fluorocarbon
+stays the player's choice on the Strings control. Nothing changed.
 
 ## 2026-10-29 — a strum's added string counts in the hand's stretch, 0.4.22 (the owner's 0.4.11 direction, checked against a chord book)
 

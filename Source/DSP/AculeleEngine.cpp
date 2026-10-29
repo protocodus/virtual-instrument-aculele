@@ -370,6 +370,18 @@ constexpr float twoPi = 2.0f * pi;
 // within 2.8 dB/s, though the two planes' beat reads up to 4.7 dB/s slower
 // (Docs/research/string-hf-loss-2026-10-10.md). It is still an authored value.
 constexpr float stringRoundTripGain = 0.99915f;
+// A string's two planes do not sound at quite one pitch. On five sampled
+// ukuleles (Docs/validation/sample-pack-benchmark-2026-10-29.md) partials
+// 2-4 swell and fade within two seconds in 22-100% of notes, a DI as much as
+// a microphone, which takes two members a few cents apart. Here only the
+// bridge told the planes apart, a fraction of a cent on a nylon string, and
+// they beat in 0-12%. What sets a real string's planes apart (the saddle's
+// or the fret's sideways hold, the string's own asymmetry) is not
+// identified, so this split is not derived: it is the smaller of the two
+// that bring the three bodies into the recordings' range (0.4% did too).
+// The normal plane takes it, so the parallel one, which lasts and which the
+// tuning follows, keeps its pitch.
+constexpr float normalPlaneDelayRatio = 0.998f;
 constexpr float noteDetuneRangeCents = 20.0f;
 // No two contacts on a string sound at quite the same pitch. A fretting
 // finger stops the string a little differently each time it presses: deeper
@@ -7230,7 +7242,8 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
     for (int polarisation = 0; polarisation < 2; ++polarisation)
     {
         auto& loop = voice.loops[static_cast<std::size_t>(polarisation)];
-        const float planeDelay = rawDelay;
+        const float planeDelay = polarisation == 0
+            ? rawDelay * normalPlaneDelayRatio : rawDelay;
         const float planeBridgeDelay = measuredBridgeDelay;
         const float polarisationDelay = coupledDetune != 0.0f
             ? (planeDelay - planeBridgeDelay) * (1.0f + coupledDetune)

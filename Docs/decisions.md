@@ -5,6 +5,51 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-10-29 — a string's two planes sound 3.5 cents apart, 0.4.27 (adopted under the owner's standing rule, not yet heard)
+
+**What was decided.** Measured on five DecentSampler ukulele packs the owner
+supplied (`Docs/validation/sample-pack-benchmark-2026-10-29.md`), partials
+2-4 of real notes swell and fade within two seconds: after taking out each
+partial's decay curve, a dip of more than 6 dB shows in 38-84% of notes at
+H2, 40-86% at H3 and 22-100% at H4, through a DI as much as microphones.
+Aculele's did in 4-24%, 0-8% and 4-12%. Its two planes shared one loop, and
+the bridge alone parted them by a fraction of a cent. Doubling the saddle's
+height and releasing half of every pluck normal to the top changed nothing;
+splitting the planes' loops did. What parts a real string's planes is not
+identified, so the split's size comes from matching the recordings, and two
+sizes match them equally.
+
+**The letters.** C4, E4, G4 and A4 alone, then C4 E4 G4 C5 picked and left
+ringing, through Concert Strum's construction with Finger, rendered with
+`AculeleProbe` at 48 kHz in 256-sample blocks:
+
+- A: the shipping engine (0.4.26).
+- B: the normal plane's loop 0.2% shorter, about 3.5 cents higher.
+- C: 0.4% shorter, about 6.9 cents.
+
+The takes are level-matched on whole-file RMS. B moved by +0.15 dB and C by
++0.35 dB.
+
+**What was chosen.** B, without a listening verdict, under the owner's
+standing rule of 2026-10-28 to lean towards accepting candidates: the
+smaller split that reaches the recordings' range. The set stays up for the
+owner in the project's `aculele-listening-2026-10-29/beating` folder. Over
+the three bodies, B beats in 36-52% of notes at H2, 40-68% at H3 and
+48-100% at H4.
+
+**What it licensed.** `normalPlaneDelayRatio` in `AculeleEngine.cpp`.
+`LevelMatchData.h` was re-pinned. Soprano D Tuning's Output moved from +1.4
+to +1.8 dB, Low G Tenor's from -1.2 to -1.1 dB and Tenor Picked Melody's
+from -2.1 to -2.3 dB, so every preset reads -9 VU within 0.03 dB; that
+Strum reads 1.37 dB under it, inside the 1.5 dB bound.
+
+**Still open: the strings.** On the same packs the instruments'
+inharmonicity sits with Aculele's fluorocarbon and at a third to a half of
+its nylon, while their partials above 1 kHz die as fast as the nylon's. A
+set of the same phrase on nylon (A), fluorocarbon (B) and fluorocarbon at
+String Age 1.0 (C) is in the `strings` folder beside it. Nothing changed
+there until the owner chooses.
+
 ## 2026-10-29 — a strum's added string counts in the hand's stretch, 0.4.22 (the owner's 0.4.11 direction, checked against a chord book)
 
 **What was decided.** In 0.4.11 the owner chose a fretting rule on the

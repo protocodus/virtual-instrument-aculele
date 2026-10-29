@@ -2551,15 +2551,6 @@ double dispersionPhase(const DispersionSections& sections,
 // makes its residual smooth in the delay and lets the delay travel as far as
 // the pole pair moves it, and then re-derives the tap from its own answer and
 // solves again at that tap.
-double thiranDelayPhase(double samples, int anchor, double omega) noexcept
-{
-    double a1 = 0.0;
-    double a2 = 0.0;
-    thiranCoefficients(samples - static_cast<double>(anchor), a1, a2);
-    return static_cast<double>(anchor) * omega
-         + secondOrderAllpassPhase(a1, a2, omega);
-}
-
 double thiranDelayPhase(double samples, int anchor, double omega,
                          const AllpassPhaseBasis& basis) noexcept
 {
@@ -2593,19 +2584,22 @@ double tunedLoopDelay(double fundamental, double sampleRate,
     double delay = std::clamp(sampleRate / fundamental - fixedPhase / omega,
                               3.0,
                               static_cast<double>(delayCapacityForRate(sampleRate) - 3));
+    // Every read below is at this one frequency: its trig once.
+    const AllpassPhaseBasis basis { std::cos(omega), std::sin(omega),
+                                    std::cos(2.0 * omega), std::sin(2.0 * omega) };
     for (int round = 0; round < 3; ++round)
     {
         const int anchor = delayAnchor(delay);
         for (int iteration = 0; iteration < 6; ++iteration)
         {
-            const double residual = thiranDelayPhase(delay, anchor, omega)
+            const double residual = thiranDelayPhase(delay, anchor, omega, basis)
                                   + fixedPhase - twoPiDouble;
             if (exact::abs(residual) < 1.0e-11)
                 break;
             constexpr double step = 0.01;
             const double slope
-                = (thiranDelayPhase(delay + step, anchor, omega)
-                 - thiranDelayPhase(delay - step, anchor, omega))
+                = (thiranDelayPhase(delay + step, anchor, omega, basis)
+                 - thiranDelayPhase(delay - step, anchor, omega, basis))
                 / (2.0 * step);
             if (exact::abs(slope) < 1.0e-12)
                 break;
@@ -2730,19 +2724,37 @@ DispersionCalibration collocateDispersion(
                               constantN2, omega)
             - twoPiDouble * anchors[index];
     }
-    const auto evaluate = [&] (const double values[3], double residuals[3])
+    // A residual is the read's lag (the delay alone moves it) plus the
+    // section's (the two ratios alone), so a difference in one reuses the
+    // other's lags, already read at the point it is taken about.
+    const auto readLags = [&] (double delay, double lags[3])
+    {
+        for (int index = 0; index < 3; ++index)
+            lags[index] = thiranDelayPhase(delay, splitAnchor,
+                anchorOmega[index], anchorBasis[index]);
+    };
+    const auto sectionLags = [&] (double decayRatio, double poleRatio,
+                                  double lags[3])
     {
         double a1 = 0.0;
         double a2 = 0.0;
-        secondOrderAllpassCoefficients(
-            omega0, values[1], values[2], a1, a2);
+        secondOrderAllpassCoefficients(omega0, decayRatio, poleRatio, a1, a2);
         for (int index = 0; index < 3; ++index)
-        {
-            const double omega = anchorOmega[index];
-            residuals[index] = thiranDelayPhase(values[0], splitAnchor, omega,
-                                                anchorBasis[index])
-                + secondOrderAllpassPhase(a1, a2, anchorBasis[index]) + anchorLag[index];
-        }
+            lags[index] = secondOrderAllpassPhase(a1, a2, anchorBasis[index]);
+    };
+    const auto combine = [&] (const double read[3], const double section[3],
+                              double residuals[3])
+    {
+        for (int index = 0; index < 3; ++index)
+            residuals[index] = read[index] + section[index] + anchorLag[index];
+    };
+    const auto evaluate = [&] (const double values[3], double residuals[3])
+    {
+        double read[3] {};
+        double section[3] {};
+        readLags(values[0], read);
+        sectionLags(values[1], values[2], section);
+        combine(read, section, residuals);
     };
     const auto maximumResidual = [] (const double residuals[3])
     {
@@ -2760,8 +2772,12 @@ DispersionCalibration collocateDispersion(
     {
         for (int iteration = 0; iteration < 9; ++iteration)
         {
+            double read[3] {};
+            double section[3] {};
             double residuals[3] {};
-            evaluate(values, residuals);
+            readLags(values[0], read);
+            sectionLags(values[1], values[2], section);
+            combine(read, section, residuals);
             const double oldNorm = maximumResidual(residuals);
             if (oldNorm < 1.0e-10)
                 break;
@@ -2769,14 +2785,27 @@ DispersionCalibration collocateDispersion(
             double jacobian[3][3] {};
             for (int column = 0; column < 3; ++column)
             {
-                double higher[] { values[0], values[1], values[2] };
-                double lower[] { values[0], values[1], values[2] };
-                higher[column] += steps[column];
-                lower[column] -= steps[column];
                 double higherResiduals[3] {};
                 double lowerResiduals[3] {};
-                evaluate(higher, higherResiduals);
-                evaluate(lower, lowerResiduals);
+                double moved[3] {};
+                if (column == 0)
+                {
+                    readLags(values[0] + steps[0], moved);
+                    combine(moved, section, higherResiduals);
+                    readLags(values[0] - steps[0], moved);
+                    combine(moved, section, lowerResiduals);
+                }
+                else
+                {
+                    double higher[] { values[1], values[2] };
+                    double lower[] { values[1], values[2] };
+                    higher[column - 1] += steps[column];
+                    lower[column - 1] -= steps[column];
+                    sectionLags(higher[0], higher[1], moved);
+                    combine(read, moved, higherResiduals);
+                    sectionLags(lower[0], lower[1], moved);
+                    combine(read, moved, lowerResiduals);
+                }
                 for (int row = 0; row < 3; ++row)
                     jacobian[row][column] = (higherResiduals[row]
                         - lowerResiduals[row]) / (2.0 * steps[column]);

@@ -6833,7 +6833,7 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
     const float axialRigidity = stringAxialRigidity(parameters_, stringIndex,
                                                     voice.openMidi);
     const PitchGeometryKey pitchKey {
-        stoppedMidi, voice.openMidi, stringIndex,
+        voiceConfigurationGeneration_, stoppedMidi, voice.openMidi, stringIndex,
         exact::bits(static_cast<float>(sampleRate_)), exact::bits(performedBend),
         exact::bits(memberBendSemitones), exact::bits(vibratoInterval),
         exact::bits(voice.attackPitchCents), exact::bits(voice.noteDetuneCents),

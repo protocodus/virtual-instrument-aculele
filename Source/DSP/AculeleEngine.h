@@ -1215,8 +1215,17 @@ private:
     // include both length-changing slides and fixed-length tension bends; the
     // rounded final frequency alone cannot distinguish them. Host rate enters
     // every expression here as float, so its float bits are the complete key.
+    // Shape (the scale length) and Strings (the linear mass) set the length
+    // and tension too, and both advance the configuration generation. Without
+    // it, a string kept the old construction's tension until something else
+    // in the key moved: never for an idle string, and for a held note at its
+    // next attack-glide step, where its sections jumped to the new design
+    // with no transition. On Tenor Fluorocarbon Fingerstyle, a Shape change
+    // under a ringing C chord flashed above 5 kHz 13 dB under the chord's
+    // peak (Aculele.ConstructionChange checks every string's tension).
     struct PitchGeometryKey
     {
+        std::uint64_t generation { 0 };
         int stoppedMidi { 0 };
         int openMidi { 0 };
         int stringIndex { 0 };
@@ -1230,7 +1239,8 @@ private:
 
         bool operator==(const PitchGeometryKey& other) const noexcept
         {
-            return stoppedMidi == other.stoppedMidi && openMidi == other.openMidi
+            return generation == other.generation
+                && stoppedMidi == other.stoppedMidi && openMidi == other.openMidi
                 && stringIndex == other.stringIndex && sampleRate == other.sampleRate
                 && performedBend == other.performedBend && memberBend == other.memberBend
                 && vibrato == other.vibrato && attackPitch == other.attackPitch

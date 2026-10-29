@@ -22,6 +22,13 @@
 // 48 kHz in 256-sample blocks, with the default controls and Strum. The
 // control changes 1 s later and changes back 1 s after that, on a block
 // boundary, as a host sends it.
+//
+// Strings and Shape also restring the strings that are not played: one block
+// after the change, a held G4 and the three idle strings ringing with it each
+// carry the tension an instrument built that way from the start gives them.
+// Each string's pitch geometry was cached without the construction, so an
+// idle string kept the old tension, and the held note took the new one only
+// at its next attack-glide step, all at once (AculeleEngine::PitchGeometryKey).
 
 #include "DSP/AculelePerformer.h"
 
@@ -32,6 +39,17 @@
 #include <cstdlib>
 #include <memory>
 #include <vector>
+
+namespace aculele
+{
+struct AculeleEngineTestAccess
+{
+    static float tension(const AculeleEngine& engine, int string)
+    {
+        return engine.voices_[static_cast<std::size_t>(string)].pitchGeometry.value.tension;
+    }
+};
+} // namespace aculele
 
 namespace
 {
@@ -132,6 +150,53 @@ void checkChange(Change change, double underChord, const char* what)
         check(rise < 6.0 || depth > underChord, what);
     }
 }
+// Holds G4 on the G string, changes the control 1 s later, and returns each
+// string's tension one block after that; with atOneSecond false the control is
+// changed from the start.
+template <typename Change>
+std::vector<float> tensions(Change change, bool atOneSecond)
+{
+    aculele::EngineParameters parameters;
+    parameters.picking = aculele::PickingTechnique::Strum;
+    auto changed = parameters;
+    change(changed);
+    const auto& first = atOneSecond ? parameters : changed;
+
+    auto performer = std::make_unique<aculele::Performer>();
+    performer->setParameters(first);
+    performer->prepare(rate, block);
+    performer->setParameters(first);
+    const int changeBlock = static_cast<int>(std::ceil(1.0 * rate / block));
+    std::vector<float> left(block), right(block);
+    for (int index = 0; index <= changeBlock; ++index)
+    {
+        performer->setParameters(index >= changeBlock ? changed : first);
+        performer->beginBlock(left.data(), right.data(), block);
+        if (index == 10)
+        {
+            const std::uint8_t on[3] { 0x90, 67, 90 };
+            performer->handleMidi(0, on, 3);
+        }
+        performer->endBlock();
+    }
+    std::vector<float> result;
+    for (int string = 0; string < aculele::AculeleEngine::stringCount; ++string)
+        result.push_back(aculele::AculeleEngineTestAccess::tension(performer->engine(), string));
+    return result;
+}
+
+template <typename Change>
+void checkTension(Change change, const char* what)
+{
+    const auto after = tensions(change, true);
+    const auto built = tensions(change, false);
+    for (std::size_t string = 0; string < after.size(); ++string)
+    {
+        std::printf("%-28s string %zu: %.3f N, built so %.3f N\n", what, string,
+                    static_cast<double>(after[string]), static_cast<double>(built[string]));
+        check(after[string] == built[string], what);
+    }
+}
 } // namespace
 
 int main()
@@ -145,11 +210,15 @@ int main()
                 "Nylon to Fluorocarbon and back");
     checkChange([] (P& p) { p.shape = aculele::BodyShape::Tenor; }, 40.0,
                 "Concert to Tenor and back");
+    checkTension([] (P& p) { p.strings = aculele::StringMaterial::Fluorocarbon; },
+                 "Nylon to Fluorocarbon");
+    checkTension([] (P& p) { p.shape = aculele::BodyShape::Tenor; }, "Concert to Tenor");
     if (failures > 0)
     {
         std::fprintf(stderr, "%d construction change checks failed\n", failures);
         return EXIT_FAILURE;
     }
-    std::puts("a Wood, Strings or Shape change under a ringing chord adds no tick");
+    std::puts("a Wood, Strings or Shape change under a ringing chord adds no tick, "
+              "and Strings and Shape restring every string");
     return EXIT_SUCCESS;
 }

@@ -4893,8 +4893,8 @@ void AculeleEngine::setMasterTuneCents(float cents) noexcept
     }
     // A captured refret tail keeps its original string and port, as it does
     // under playing-wheel changes. No contact, emitted packet or random draw
-    // belongs to a reference-tuning notification.
-    bridgeDerivativesCrossConfigure_ = !atRest;
+    // belongs to a reference-tuning notification. The ports follow, so the
+    // junction does not step (applyDiscreteParameters).
 }
 
 void AculeleEngine::setPhysicalCalibration(
@@ -5028,16 +5028,13 @@ void AculeleEngine::applyDiscreteParameters(bool force) noexcept
             configureVoice(voice, string, voice.midiNote, false, false,
                            tuningChanged && !force, ageChanged && !force);
     }
-    // Switching the tuning under a ringing chord changes every string's
-    // impedance at once, so the junction's wave variables step with the
-    // port. That is the strings being retuned, not the bridge moving, and
-    // differencing it made a click 26 times the chord it landed on. A bridge
-    // rebuild can step them too. The derivatives carry the
-    // bridge's own motion across that sample (processAcrossStep); reading it
-    // as no motion at all, as a released shape is read, left a one-sample
-    // hole in every bridge force.
-    if (bodyChanged || tuningChanged)
-        bridgeDerivativesCrossConfigure_ = true;
+    // Nothing steps at the junction here, so the bridge derivatives are not
+    // carried across a step (processAcrossStep): a retuned string's port
+    // follows its new impedance at the delay's rate (below), and a live
+    // bridge rebuild fades its load. Carrying them across anyway replaced
+    // one sample of the bridge's motion with a straight line: a 1 ms tick up
+    // to 47 dB over the steady sound above 5 kHz when Wood changed under a
+    // ringing chord, and up to 11 dB more tick on a Tuning change.
 
     // A tail belongs to the string tuning it was taken from, and its loop is
     // not redesigned below. Shape changes the body attached to that string,
@@ -6100,7 +6097,6 @@ void AculeleEngine::applyPendingBridge(bool fade) noexcept
         fadingBridgeShape_ = configuredBridgeShape_;
         fadingBridgeMaterial_ = configuredBridgeMaterial_;
         bridgeLoadFade_ = 0.0f;
-        bridgeDerivativesCrossConfigure_ = true;
     }
     configureBridge(true);
 }

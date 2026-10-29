@@ -38,7 +38,10 @@ stays up for the owner to check:
 over 18 samples at velocity 16; its H2 and H5 rise 5 dB, and the G4 and C5
 end 1.7 and 2.3 dB brighter at velocity 16 than at 127. The E5 still ends
 5.8 dB brighter, and most notes brighten by up to 2.3 dB from velocity 32
-to 16: the shift is still there (README, Known gaps). Every velocity's level
+to 16: the shift is still there (README, Known gaps). Between soft and full
+a note darkens more gradually than before, so a medium stroke is slightly
+brighter: Soprano Thumb's demo, at velocity 72-96, is 0.2 dB brighter at
+2.5-6 kHz. Every velocity's level
 stays within 0.2 dB, and velocity 127 renders the same samples.
 
 **What it licensed.** `AculeleEngine::initialisePluck` gives the thumb's pad

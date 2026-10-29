@@ -5,6 +5,73 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-10-29 — the wheel's vibrato swings both ways, 60 cents at 5.07 Hz, 0.4.30 (from a source, not by ear)
+
+**What was decided.** The owner, playing the Rack device: "vibrato (mod max)
+is almost inaudible". The full wheel swung the note 20 cents, only upward, at
+1.4 Hz: Erkut et al.'s one player rose from the note, his slow rate was the
+wheel's top, and the 20 cents were authored. Notes chosen on open strings,
+which take no vibrato, made it rarer still. Measured on a held F4, the full
+wheel raised the note's mean pitch by 11 cents.
+
+**The source.** Rodrigues, "O vibrato no violão: aspectos qualitativos e
+quantitativos" (MSc thesis, UFMG 2014), Experiment 2: three guitarists, axial
+and transverse vibratos on the nylon 3rd and wound 4th strings at frets 1, 6
+and 11, slow, moderate and fast. The axial vibrato, a classical player's and
+a ukulele player's, swings both ways about the note in most takes. The
+eighteen fast axial takes run at 3.1-6.1 Hz, median 5.07; at frets 6 and 11
+they swing 20-60 cents from top to bottom, median 31, and the slow ones a
+median 22, so the faster vibrato is the wider.
+
+**What it licensed.** A two-sided sine at 5.07 Hz whose depth the wheel sets,
+the full wheel the widest swing measured (60 cents) and half of it about the
+median; Erkut's half-second onset stays. With the wheel up, `chooseString`
+prefers a stopped string where it preferred an open one. The strings' loss
+and dispersion designs hold at the swing's centre: re-solving them every 1.7
+cents of a 60-cent swing took one stiff note from 5% to 16% of real time on
+the development machine. Held at the centre, the fundamental at the swing's
+peak and trough lies within 0.6 cents and partials 2-8 within 1.3 cents of a
+design made there on ordinary notes; the stiffest (the nylon concert's C
+string at the 14th fret) miss H5-H12 by up to 38 cents more at the trough,
+where two sections already miss by 10-30. A full-wheel note now costs 4.2% of
+real time, under 0.4.29's 4.3-5.3%. `Aculele.Vibrato` checks the swing, its
+rate, that its mean stays on the note, that the wheel at zero changes no
+sample, and the stopped strings.
+
+**What it did not close.** At the 1st fret Rodrigues measured 4-16 cents, a
+third of the swing higher up; Aculele's is the same at every fret. The slow
+vibratos are not reachable from the wheel.
+
+## 2026-10-29 — Wood offers spruce, cedar, mahogany and koa; maple is gone, 0.4.30 (owner's direction, from sources)
+
+**What was decided.** The owner: "ensure wood is correct - there is maple,
+spruce, etc, but ukuleles are from different woods usually". Wood's three
+were Acustra's guitar woods. Ukulele tops are spruce or cedar over a hardwood
+body, or mahogany or koa, often the whole body's; maple is a guitar's back
+wood. Wood changes only the top, so it now offers those four.
+
+**The sources.** Spruce and mahogany are unchanged. Cedar is western red
+cedar's row of the USDA Wood Handbook (FPL-GTR-282, Tables 5-1, 5-2, 5-3a):
+12% specific gravity 0.32 (358.4 kg/m3), bending E 7.7 GPa, ER/EL 0.081, GLR/EL
+0.087, nuLR 0.378. Koa is not in the handbook. Skolmen, "Some woods of
+Hawaii" (USDA Forest Service Gen. Tech. Rep. PSW-8, 1974), gives it as
+identical in weight and strength with black walnut, and his appendix agrees:
+three koa trees at 12% weigh specific gravity 0.55 (Table 1, Gerhards 1963),
+walnut's 0.55, and koa bending specimens at 12% read 10.8 GPa (Table 2, Gerry
+1955), 7% under walnut's 11.6. No orthotropic ratio of koa is published, so
+koa takes walnut's handbook row whole (616 kg/m3, 11.6 GPa, ER/EL 0.106,
+GLR/EL 0.085, nuLR 0.495).
+
+**What it licensed.** `BodyMaterial::Koa` takes Maple's value 2, the closest
+in density, and `BodyMaterial::Cedar` is 3. Against spruce, koa's top is 1.38
+times as heavy and lowers T1 3%, and cedar's 0.80 times and lowers T1 1-2%;
+cedar's bridge reads 1.29 times spruce's conductance and koa's 0.74.
+`LevelMatchData.h` grew to four woods; the spruce and mahogany cells did not
+move. Tenor Picked Melody, maple until now, is koa at -2.5 dB Output: its
+typical playing reads -8.6 VU, as at the -2.9 dB that reads -9.0 its Strum
+would read 1.7 dB under the target, past the 1.5 dB bound. Nothing here was
+chosen by ear.
+
 ## 2026-10-29 — each pluck lands within ±0.09 of the string, 0.4.29 (measured; adopted under the owner's standing rule, not yet heard)
 
 **What was decided.** How far the plucking hand lands from its place from

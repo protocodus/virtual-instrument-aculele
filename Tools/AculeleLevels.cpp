@@ -49,6 +49,8 @@ constexpr double targetVu = -9.0;
 constexpr double readingOffsetDb = 20.0;
 constexpr CaptureType captures[] { CaptureType::StereoMic, CaptureType::MonoMic, CaptureType::Piezo };
 const char* const captureNames[] { "stereo", "mono", "piezo" };
+// Every shape, wood and Picking: (shape * 4 + wood) * 4 + picking.
+constexpr std::size_t cells = 3 * 4 * 4;
 
 void parallel(std::size_t count, int jobs, const std::function<void(std::size_t)>& work)
 {
@@ -78,7 +80,7 @@ double typical(const EngineParameters& parameters)
 
 void writeTable(std::ofstream& out, const char* name, const std::vector<double>& factors)
 {
-    out << "inline constexpr std::array<float, 36> " << name << " {{\n";
+    out << "inline constexpr std::array<float, " << cells << "> " << name << " {{\n";
     for (std::size_t i = 0; i < factors.size(); ++i)
     {
         char value[32];
@@ -91,14 +93,14 @@ void writeTable(std::ofstream& out, const char* name, const std::vector<double>&
 
 int write(const char* path, int jobs)
 {
-    const std::array<const std::array<float, 36>*, 3> compiled {
+    const std::array<const std::array<float, cells>*, 3> compiled {
         &detail::stereoMicLevel, &detail::monoMicLevel, &detail::piezoLevel };
-    std::vector<double> factors(3 * 36), readings(3 * 36);
+    std::vector<double> factors(3 * cells), readings(3 * cells);
     parallel(factors.size(), jobs, [&](std::size_t job) {
-        const std::size_t capture = job / 36, cell = job % 36;
+        const std::size_t capture = job / cells, cell = job % cells;
         auto parameters = engineParameters(factoryPresets[0]);
-        parameters.shape = static_cast<BodyShape>(cell / 12);
-        parameters.bodyMaterial = static_cast<BodyMaterial>(cell / 4 % 3);
+        parameters.shape = static_cast<BodyShape>(cell / 16);
+        parameters.bodyMaterial = static_cast<BodyMaterial>(cell / 4 % 4);
         parameters.picking = static_cast<PickingTechnique>(cell % 4);
         parameters.capture = captures[capture];
         parameters.strings = StringMaterial::Nylon;
@@ -111,8 +113,8 @@ int write(const char* path, int jobs)
     for (std::size_t capture = 0; capture < 3; ++capture)
     {
         std::printf("%-6s", captureNames[capture]);
-        for (std::size_t cell = 0; cell < 36; ++cell)
-            std::printf(" %6.2f", readings[capture * 36 + cell]);
+        for (std::size_t cell = 0; cell < cells; ++cell)
+            std::printf(" %6.2f", readings[capture * cells + cell]);
         std::printf("\n");
     }
     std::ofstream out(path);
@@ -121,11 +123,11 @@ int write(const char* path, int jobs)
            "// Each factor brings typical playing (Tools/ReasonMeter.h) on its Capture to\n";
     char line[160];
     std::snprintf(line, sizeof line, "// %.0f VU on Reason's channel meter at 0 dB Output. A cell is\n", targetVu);
-    out << line << "//   (shape * 3 + wood) * 4 + picking\n// in the enums' order in AculeleEngine.h.\n";
+    out << line << "//   (shape * 4 + wood) * 4 + picking\n// in the enums' order in AculeleEngine.h.\n";
     for (std::size_t capture = 0; capture < 3; ++capture)
         writeTable(out, capture == 0 ? "stereoMicLevel" : capture == 1 ? "monoMicLevel" : "piezoLevel",
-                   std::vector<double>(factors.begin() + static_cast<long>(capture * 36),
-                                       factors.begin() + static_cast<long>(capture * 36 + 36)));
+                   std::vector<double>(factors.begin() + static_cast<long>(capture * cells),
+                                       factors.begin() + static_cast<long>((capture + 1) * cells)));
     out << "} // namespace aculele::detail\n";
     return out ? 0 : 1;
 }

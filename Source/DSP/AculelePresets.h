@@ -59,12 +59,12 @@ inline constexpr std::array<FactoryPreset, 7> factoryPresets {{
       Tuning::Standard, PickingTechnique::Thumb, CaptureType::StereoMic,
       0.30f, 0.45f, 0.40f, 0.86f, 0.55f, 0.0f, 0.10f, 0.10f, 0.0f },
     { "Tenor Picked Melody", "tenor-picked-melody",
-      BodyShape::Tenor, BodyMaterial::Maple, StringMaterial::Fluorocarbon,
+      BodyShape::Tenor, BodyMaterial::Koa, StringMaterial::Fluorocarbon,
       Tuning::LowG, PickingTechnique::Pick, CaptureType::MonoMic,
-      // -2.3 dB, where typical playing reads -8.6 VU: at the -2.7 that reads
-      // -9.0, its Strum would read 1.8 dB under the target, past the 1.5 dB
+      // -2.5 dB, where typical playing reads -8.6 VU: at the -2.9 that reads
+      // -9.0, its Strum would read 1.7 dB under the target, past the 1.5 dB
       // that keeps switching Picking from jumping the level.
-      0.10f, 0.30f, 0.60f, 0.82f, 0.62f, 0.0f, 0.10f, 0.10f, -2.3f },
+      0.10f, 0.30f, 0.60f, 0.82f, 0.62f, 0.0f, 0.10f, 0.10f, -2.5f },
     { "Concert Piezo Stage", "concert-piezo-stage",
       BodyShape::Concert, BodyMaterial::Spruce, StringMaterial::Nylon,
       Tuning::Standard, PickingTechnique::Strum, CaptureType::Piezo,

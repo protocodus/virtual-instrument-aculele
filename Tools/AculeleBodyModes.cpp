@@ -24,7 +24,7 @@ struct AculeleEngineTestAccess
     static void print(const AculeleEngine& engine, int shape, int wood)
     {
         const auto& configuration = engine.bodyConfigurations_[
-            static_cast<std::size_t>(3 * shape + wood)];
+            static_cast<std::size_t>(4 * shape + wood)];
         struct Row { double hz, q, level; };
         std::vector<Row> rows;
         for (int index = 0; index < configuration.count; ++index)

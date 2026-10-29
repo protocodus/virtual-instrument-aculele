@@ -565,13 +565,13 @@ constexpr BodyGeometry measuredAnchorBody { 0.397f, 0.508f, 0.111f, 0.1016f, 0.7
 // string's open G3. At 2 1/2 in A0 rings at 207 Hz, and at 2 5/8 in at
 // 212 Hz, where three measured tenors ring (below). As configured
 // (Tools/AculeleBodyModes.cpp) A0/T1 sit at 266/653 Hz (Soprano), 215/485 Hz
-// (Concert) and 212/415 Hz (Tenor) in Spruce; Mahogany lowers T1 4% and
-// Maple raises A0 1-2%. The same builder's two tenors tap at 211 and 214 Hz
-// (ukuleles.com, "Tunings for the 4-String Tenor"), and the knock FreePats
-// recorded on a Flight Fireball tenor (CC0, body-tap.wav, after its 190 Hz
-// high-pass) peaks at 212 Hz; a UBC student baritone (10 1/4 in lower bout)
-// rings at about 150 Hz air and 300 Hz top, where this law gives about
-// 165/320 Hz. All are informal measurements. A
+// (Concert) and 212/415 Hz (Tenor) in Spruce; Mahogany lowers T1 4%, Koa
+// 3% and Cedar 1-2%, and Cedar lowers A0 about 1%. The same builder's two
+// tenors tap at 211 and 214 Hz (ukuleles.com, "Tunings for the 4-String
+// Tenor"), and the knock FreePats recorded on a Flight Fireball tenor (CC0,
+// body-tap.wav, after its 190 Hz high-pass) peaks at 212 Hz; a UBC student
+// baritone (10 1/4 in lower bout) rings at about 150 Hz air and 300 Hz top,
+// where this law gives about 165/320 Hz. All are informal measurements. A
 // mid-priced concert of unstated make, struck by hammer on its top and back
 // and heard by microphone, rings at 222 Hz (air) and 395 Hz (its first top
 // mode): Sunta, "Akusticne lastnosti ukulel", diploma thesis, University of
@@ -858,17 +858,29 @@ struct WoodSpec
     double effectiveBendingModulusPa;
 };
 
-// Fixed-thickness, quarter-cut representative tops: Sitka spruce, true
-// Honduras mahogany (Swietenia), and sugar/hard maple. USDA Wood Handbook,
-// FPL-GTR-282 ch.5 Tables 5-1/2/3/5 gives the 12% elastic constants:
+// Fixed-thickness, quarter-cut representative tops, from the woods ukuleles
+// are built of: Sitka spruce and western red cedar tops, and tops of true
+// Honduras mahogany (Swietenia) and Hawaiian koa (Acacia koa). Until 0.4.30
+// the third was sugar maple, Acustra's guitar back wood, which ukulele makers
+// hardly use. USDA Wood Handbook, FPL-GTR-282 ch.5 Tables 5-1/2/3/5 gives the
+// 12% elastic constants:
 // https://research.fs.usda.gov/download/treesearch/62244.pdf
 // Its bending E is increased by the handbook's approximate 10% axial
 // correction; ER/EL, GLR/EL and nuLR are the tabulated ratios. Domestic
 // specific gravity uses oven-dry mass, so 12% density is SG12 * 1120:
-// .40 -> 448 and .63 -> 705.6 kg/m3. Mahogany's 530 kg/m3 at 12% is the
+// .40 -> 448 (spruce), .32 -> 358.4 (cedar). Mahogany's 530 kg/m3 at 12% is the
 // Queensland government American-mahogany (Swietenia spp.) representative:
 // https://www.business.qld.gov.au/industries/farms-fishing-forestry/forests-wood/properties-timbers/american-mahogany
 // It is not the green-volume SG .45 mislabelled as 12% density.
+// Koa is not in the handbook's tables. Skolmen ("Some woods of Hawaii",
+// USDA Forest Service Gen. Tech. Rep. PSW-8, 1974,
+// https://research.fs.usda.gov/download/treesearch/27275.pdf) gives koa as
+// identical in weight and strength with black walnut, and his appendix
+// agrees: three koa trees at 12% weigh SG .55 (Table 1, Gerhards 1963), the
+// handbook's black walnut .55, and koa's bending specimens at 12% read
+// 1,570,000 psi (10.8 GPa; Table 2, Gerry 1955), 7% under walnut's 11.6 GPa.
+// No orthotropic ratio of koa is published, so koa takes black walnut's
+// handbook row whole: .55 -> 616 kg/m3, E 11.6 GPa, and its ratios.
 //
 // Divide the orthotropic bending tensor by its common h^3/12:
 // DL=EL/(1-nuLR^2 ER/EL), DR=ER/(...), D12=nuLR*DR, D66=GLR.
@@ -882,13 +894,15 @@ struct WoodSpec
 // This is a statistical equivalent plate, also the explicit closure for
 // the existing low-frequency piston. Unknown bracing/bridge mass fractions
 // and individual mode shapes cannot be inferred from species averages.
-constexpr std::array<WoodSpec, 3> woodSpecs {{
+constexpr std::array<WoodSpec, 4> woodSpecs {{
     { { 448.0f, 11.88e9f, 11.88e9f * 0.078f, 11.88e9f * 0.064f, 0.372f },
       2965459386.842000 },
     { { 530.0f, 11.33e9f, 11.33e9f * 0.107f, 11.33e9f * 0.066f, 0.314f },
       3254308675.304109 },
-    { { 705.6f, 13.86e9f, 13.86e9f * 0.132f, 13.86e9f * 0.111f, 0.424f },
-      4828334941.243270 }
+    { { 616.0f, 12.76e9f, 12.76e9f * 0.106f, 12.76e9f * 0.085f, 0.495f },
+      3901081906.872058 },
+    { { 358.4f, 8.47e9f, 8.47e9f * 0.081f, 8.47e9f * 0.087f, 0.378f },
+      2258038882.325055 }
 }};
 
 // Effective top substitution relative to the existing Spruce construction.
@@ -979,8 +993,8 @@ constexpr bool guitarCaptureContour = ACULELE_GUITAR_CAPTURE_CONTOUR;
 // too bright the same way (README, Known gaps). Three high shelves an octave
 // apart, each cut by its Shape's gain, bring every spruce body to the
 // measured slope on the summed microphone pressure. They are flat again by
-// 8 kHz, above which the measured levels rise and are not used. Mahogany
-// and Maple take their Shape's cut, so the woods keep their differences.
+// 8 kHz, above which the measured levels rise and are not used. The other
+// woods take their Shape's cut, so the woods keep their differences.
 // The concert and the tenor are assumed to fall as the soprano does; neither
 // is measured. Aculele.Radiation (Tools/AculeleRadiation.cpp) holds each
 // spruce body to the measured slope.
@@ -1426,11 +1440,11 @@ static_assert(detail::constructionMicReference.size() == 4 * 3 * 3);
 // (LevelMatchData.h, written by Tools/AculeleLevels.cpp).
 std::size_t levelCell(const EngineParameters& parameters) noexcept
 {
-    return (static_cast<std::size_t>(parameters.shape) * 3
+    return (static_cast<std::size_t>(parameters.shape) * woodSpecs.size()
             + static_cast<std::size_t>(parameters.bodyMaterial)) * 4
         + static_cast<std::size_t>(parameters.picking);
 }
-static_assert(detail::stereoMicLevel.size() == 3 * 3 * 4);
+static_assert(detail::stereoMicLevel.size() == 3 * woodSpecs.size() * 4);
 
 // A float follower otherwise stops one rounding cell short of its target;
 // the cell depends on its approach direction. Every settled control and
@@ -3524,7 +3538,7 @@ EngineParameters AculeleEngine::sanitise(const EngineParameters& source) noexcep
         static_cast<int>(source.shape), 2,
         static_cast<int>(EngineParameters {}.shape)));
     result.bodyMaterial = static_cast<BodyMaterial>(enumOr(
-        static_cast<int>(source.bodyMaterial), 2,
+        static_cast<int>(source.bodyMaterial), static_cast<int>(woodSpecs.size()) - 1,
         static_cast<int>(EngineParameters {}.bodyMaterial)));
     switch (source.capture)
     {
@@ -5160,9 +5174,9 @@ void AculeleEngine::updateControlState() noexcept
         palmMute_ = targetPalmMute_;
     if (vibrato_ > 0.0f)
     {
-        // Erkut's two measured rates as the wheel's endpoints, in the
-        // direction he measured them: the fast vibrato is the shallow one.
-        const float rate = 4.9f + vibrato_ * (1.4f - 4.9f);
+        // The wheel sets the depth; the rate is the median of Rodrigues'
+        // eighteen fast axial vibratos (see vibratoSemitones).
+        constexpr float rate = 5.07f;
         vibratoPhase_ += twoPi * rate
             * static_cast<float>(controlPeriod) * inverseSampleRate_;
         if (vibratoPhase_ >= twoPi)
@@ -5302,7 +5316,7 @@ void AculeleEngine::configureBody() noexcept
     if (!bodyConfigurationsReady_)
         prepareBodyConfigurations(); // Only possible before the first prepare().
     const auto& configuration = bodyConfigurations_[
-        3 * static_cast<std::size_t>(parameters_.shape)
+        woodSpecs.size() * static_cast<std::size_t>(parameters_.shape)
         + static_cast<std::size_t>(parameters_.bodyMaterial)];
     bodyModes_ = configuration.modes;
     // g21's own modes are summed in index order, as ever; the parts after
@@ -5326,10 +5340,12 @@ void AculeleEngine::prepareBodyConfigurations() noexcept
     // setup-only player-contact policy.
     // Evaluate the continuation's frequency-response integral during setup,
     // never on a prepared instrument's Shape/Wood automation callback.
+    static_assert(std::tuple_size_v<decltype(bodyConfigurations_)> == 3 * woodSpecs.size());
+    constexpr int materials = static_cast<int>(woodSpecs.size());
     for (int shape = 0; shape < 3; ++shape)
-        for (int material = 0; material < 3; ++material)
+        for (int material = 0; material < materials; ++material)
             buildBodyConfiguration(bodyConfigurations_[
-                static_cast<std::size_t>(3 * shape + material)],
+                static_cast<std::size_t>(materials * shape + material)],
                 static_cast<BodyShape>(shape), static_cast<BodyMaterial>(material),
                 sampleRate_);
     bodyConfigurationsReady_ = true;
@@ -6891,7 +6907,8 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
         // tension at a fixed length (see vibratoSemitones), and a tension
         // modulation is heard as a pitch modulation: the same excursion goes into
         // the performed interval, so the tuned delay carries it, and into the
-        // tension below, so the inharmonicity and the junction port carry it too.
+        // tension below, so the junction port carries it too. The string's loss
+        // and dispersion stay designed at the swing's centre (lossDesignFrequency).
         // The wheel down is + 0.0f, which is exact.
         const float performedSemitones = clamp(performedBend, -192.0f, 192.0f)
             + 0.01f * voice.attackPitchCents + vibratoInterval
@@ -6909,8 +6926,18 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
         // from the string's own transverse energy. A loss realised once per
         // round trip must be designed at the pitch being played: probing the
         // old-fundamental section higher on its curve over-damps bent partials.
+        // The wheel's vibrato is left out, and with it the solve the design
+        // would need every 1.7 cents of a swing of up to 30 cents either way
+        // (dispersionDesignChanged): at the swing's peak and trough, a design
+        // held at its centre leaves the fundamental within 0.6 cents and
+        // partials 2-8 within 1.3 of one made there, on the nylon concert's
+        // C string at the 5th fret, its E string at the 7th and the
+        // fluorocarbon tenor's C string at the 12th. On the stiffest notes,
+        // where two sections already miss partials by 10-30 cents, the
+        // centre design misses H5-H12 by up to 38 cents more at the trough
+        // (the nylon concert's C string at the 14th fret).
         const float lossDesignFrequency = clamp(unbentFrequency * std::exp2(
-            (clamp(performedBend, -192.0f, 192.0f) + vibratoInterval
+            (clamp(performedBend, -192.0f, 192.0f)
                 + 0.01f * voice.noteDetuneCents) / 12.0f),
             static_cast<float>(sampleRate_) / (activeDelaySamples() - 3.0f),
             0.24f * static_cast<float>(sampleRate_));
@@ -6941,9 +6968,15 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
             ? bentStringTension(tension, axialRigidity,
                                 std::exp2(tensionSemitones / 12.0f))
             : tension;
+        const float designSemitones = memberBendSemitones
+            + 0.01f * voice.noteDetuneCents;
+        const float designTension = designSemitones != 0.0f
+            ? bentStringTension(tension, axialRigidity,
+                                std::exp2(designSemitones / 12.0f))
+            : tension;
         geometry.value = { soundingLength, speakingFret,
             contactPeriodSamples, frequency, lossDesignFrequency,
-            tension, tensionSemitones, bentTension };
+            tension, tensionSemitones, bentTension, designTension };
         geometry.key = pitchKey;
         geometry.valid = true;
     }
@@ -6989,7 +7022,7 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
     // The string's own stiffness and loss (ukuleleStringLoss) at the tension
     // it carries and the length it sounds.
     const auto ukuleleLoss = ukuleleStringLoss(parameters_, stringIndex,
-        bentTension, soundingLength, lossDesignFrequency);
+        pitch.designTension, soundingLength, lossDesignFrequency);
     const float inharmonicity = ukuleleLoss.inharmonicity;
     const float age = parameters_.stringAge;
     // Preserve the material/age law while allowing one shared fitted cutoff
@@ -7479,21 +7512,25 @@ void AculeleEngine::updateAttackPitch(Voice& voice, int stringIndex) noexcept
 // fret - and what a tension modulation is heard as is a modulation of the
 // fundamental (Erkut: the string is repeatedly stretched to fluctuate the
 // fundamental frequency), which is why configureVoice puts the interval this
-// returns into the performed pitch as well as into the tension. What those
-// measurements fix: the lowest frequency during a vibrato is the note's own
-// unmodulated one (Erkut), so the modulation is one-sided upward and starts
-// from the note's pitch; the depth converges over a transient of about 0.5 s
-// from the moment the player begins it (Erkut's tt); the fitted rates are
-// 1.4 Hz slow and 4.9 Hz fast (Erkut), the fast one just under Laurson et
-// al.'s 5-6 Hz for the same instrument (CMJ 25(3):38-49, 2001), and the fast
-// vibrato's depth is systematically the smaller, so the wheel runs from the
-// shallow fast end to the deep slow one rather than raising both; and an
-// open string gets none, because no finger is stopping it
-// (Laurson's max-depth is zero at fret zero). What no source fixes is the
-// wheel's top in cents - Erkut reports the depth varying with string and fret
-// without a figure, Laurson scales it by an integer 1 to 9 - so that endpoint
-// is authored, and set to the same 20 cents the attack-pitch surrogate is
-// bounded at, which keeps a new magnitude out of the model.
+// returns into the performed pitch as well as into the tension. The depth
+// converges over a transient of about 0.5 s from the moment the player
+// begins it (Erkut's tt), and an open string gets none, because no finger
+// is stopping it (Laurson et al., CMJ 25(3):38-49, 2001: max-depth is zero
+// at fret zero).
+//
+// The swing itself is measured. Rodrigues ("O vibrato no violao: aspectos
+// qualitativos e quantitativos", MSc thesis, UFMG 2014, Ch. 3, Experiment 2)
+// recorded three guitarists' axial and transverse vibratos on the nylon 3rd
+// and the wound 4th string at frets 1, 6 and 11, slow, moderate and fast. An
+// axial vibrato swings both ways about the note: its mean pitch lies between
+// its deviations above and below in most notes, as Carlevaro (1985) teaches
+// it, where Erkut's one player only rose. Its eighteen fast takes run at
+// 3.1-6.1 Hz, median 5.07 (updateControlState), and at frets 6 and 11 swing
+// 20-60 cents from top to bottom, median 31; the slow ones a median 22. So
+// the faster vibrato is the wider, against Erkut's fast and shallow one, and
+// the wheel raises the depth at the fast rate: the full wheel is the widest
+// swing measured, 60 cents (the 3rd string's 11th fret), and half of it the
+// median. The sine starts upward from the note's own pitch.
 float AculeleEngine::vibratoSemitones(const Voice& voice,
                                       float speakingLength) const noexcept
 {
@@ -7507,10 +7544,10 @@ float AculeleEngine::vibratoSemitones(const Voice& voice,
     // the established depth, and an open string receives exactly none.
     const float stoppingWeight = frettingContactWeight(speakingLength,
                                                        voice.harmonic);
-    constexpr float fullWheelSemitones = 0.20f;
+    constexpr float fullWheelSemitones = 0.60f;
     // MPE channel pressure biases how deep this one note's vibrato reaches,
     // a firmer grip letting more of the wheel's own travel through; it never
-    // raises the wheel's own 20-cent ceiling above, only trims it down for a
+    // raises the wheel's own 60-cent ceiling above, only trims it down for a
     // lighter grip, so no new pitch magnitude enters the model. A pressure
     // that was never sent leaves the factor at 1, exactly as before.
     constexpr float pressureDepthFloor = 0.5f;
@@ -7519,7 +7556,7 @@ float AculeleEngine::vibratoSemitones(const Voice& voice,
         ? pressureDepthFloor + (1.0f - pressureDepthFloor) * pressure
         : 1.0f;
     return stoppingWeight * fullWheelSemitones * depthBias * vibrato_ * vibratoOnset_
-        * 0.5f * (1.0f - std::cos(vibratoPhase_));
+        * 0.5f * std::sin(vibratoPhase_);
 }
 
 float AculeleEngine::effectiveTouch(float velocity) const noexcept
@@ -10273,14 +10310,17 @@ int AculeleEngine::chooseString(int midiNote) const noexcept
     // In order: never a string whose key is still down while another can
     // sound the note; then the fret the hand reaches from where it is
     // (shapeCost zero; otherwise the fewest frets moved, weighted by how
-    // recently the hand was there); then an open string; then the lower
-    // fret; then a silent string over one still ringing, and the one that
-    // has rung longest. With no hand on the neck (a fresh engine, or two
+    // recently the hand was there); then an open string, or a stopped one
+    // while the wheel's vibrato is up, as a player who means to vibrato a
+    // note frets it (an open string takes none, vibratoSemitones); then the
+    // lower fret; then a silent string over one still ringing, and the one
+    // that has rung longest. With no hand on the neck (a fresh engine, or two
     // seconds with nothing fretted) every fret costs nothing, so the hand
     // starts in first position: a melody around the open strings frets C5
     // at the A string's third fret, where a free string first put it on the
     // C string's twelfth.
     constexpr float tie = 1.0e-4f;
+    const bool preferOpen = !(vibrato_ > 0.0f);
     int best = -1;
     bool bestSteal = true;
     float bestCost = 0.0f;
@@ -10307,7 +10347,7 @@ int AculeleEngine::chooseString(int midiNote) const noexcept
         else if (!better && exact::abs(cost - bestCost) > tie)
             better = cost < bestCost;
         else if (!better && open != bestOpen)
-            better = open;
+            better = open == preferOpen;
         else if (!better && fret != bestFret)
             better = fret < bestFret;
         else if (!better && ringing != bestRinging)

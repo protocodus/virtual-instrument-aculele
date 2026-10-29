@@ -66,11 +66,15 @@ enum class BodyShape
     Tenor
 };
 
+// The top's wood (woodSpecs in AculeleEngine.cpp): a spruce or cedar top,
+// or a mahogany or koa one, as ukuleles are built. Koa took Maple's value
+// in 0.4.30.
 enum class BodyMaterial
 {
     Spruce,
     Mahogany,
-    Maple
+    Koa,
+    Cedar
 };
 
 // Legacy numeric values remain valid for offline renderers; sanitisation maps
@@ -1259,6 +1263,9 @@ private:
         float tension { 0.0f };
         float tensionSemitones { 0.0f };
         float bentTension { 0.0f };
+        // bentTension less the wheel's vibrato: what the string's loss and
+        // dispersion are designed at (configureVoice).
+        float designTension { 0.0f };
     };
 
     struct PitchGeometryCache

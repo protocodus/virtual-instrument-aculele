@@ -102,12 +102,12 @@ int main(int argc, char** argv)
         }
         return 0;
     }
-    static const char* woods[] { "Spruce", "Mahogany", "Maple" };
+    static const char* woods[] { "Spruce", "Mahogany", "Koa", "Cedar" };
     std::printf("Mean conductance Re(Y) at the normal port, s/kg (Elie et al. 2011, one ukulele:\n"
                 "0.012 mahogany bridge, 0.009 rosewood bridge, 1-6 kHz)\n\n");
     std::printf("%-8s %-9s %-6s %9s %9s %9s %9s\n", "Shape", "Wood", "String", "1-2 kHz", "2-4 kHz", "4-6 kHz", "1-6 kHz");
     for (int shape = 0; shape < 3; ++shape)
-        for (int wood = 0; wood < 3; ++wood)
+        for (int wood = 0; wood < 4; ++wood)
         {
             const auto engine = configured(shape, wood);
             for (int string = 0; string < 4; ++string)

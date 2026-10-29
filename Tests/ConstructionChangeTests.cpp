@@ -209,8 +209,10 @@ int main()
     using P = aculele::EngineParameters;
     checkChange([] (P& p) { p.bodyMaterial = aculele::BodyMaterial::Spruce; }, 60.0,
                 "Mahogany to Spruce and back");
-    checkChange([] (P& p) { p.bodyMaterial = aculele::BodyMaterial::Maple; }, 60.0,
-                "Mahogany to Maple and back");
+    checkChange([] (P& p) { p.bodyMaterial = aculele::BodyMaterial::Koa; }, 60.0,
+                "Mahogany to Koa and back");
+    checkChange([] (P& p) { p.bodyMaterial = aculele::BodyMaterial::Cedar; }, 60.0,
+                "Mahogany to Cedar and back");
     checkChange([] (P& p) { p.strings = aculele::StringMaterial::Fluorocarbon; }, 45.0,
                 "Nylon to Fluorocarbon and back");
     checkChange([] (P& p) { p.shape = aculele::BodyShape::Tenor; }, 55.0,

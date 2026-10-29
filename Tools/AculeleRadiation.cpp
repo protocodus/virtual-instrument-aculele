@@ -115,7 +115,7 @@ std::array<double, bands + 1> radiation(int shape, int wood)
 int main(int argc, char** argv)
 {
     static const char* shapes[] { "Soprano", "Concert", "Tenor" };
-    static const char* woods[] { "Spruce", "Mahogany", "Maple" };
+    static const char* woods[] { "Spruce", "Mahogany", "Koa", "Cedar" };
     if (argc == 2 && std::strcmp(argv[1], "--check") == 0)
     {
         constexpr double tolerance = 0.15;
@@ -137,7 +137,7 @@ int main(int argc, char** argv)
         std::printf(" %6.0f", centre(band));
     std::printf("  dB/oct\n");
     for (int shape = 0; shape < 3; ++shape)
-        for (int wood = 0; wood < 3; ++wood)
+        for (int wood = 0; wood < 4; ++wood)
         {
             const auto levels = radiation(shape, wood);
             std::printf("%-8s %-9s", shapes[shape], woods[wood]);

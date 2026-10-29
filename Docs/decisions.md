@@ -68,8 +68,8 @@ Tenor Picked Melody stays at -2.1, where it reads -8.90 VU. At the suggested
 dB bound.
 
 **What it depends on.** This rests on the 1-2 s tuning window, which went to
-the owner for a yes or no with 0.4.20. If the window goes back to 0.3-1.3 s,
-this goes back too.
+the owner for a yes or no with 0.4.20. The owner kept it on 2026-10-29
+(the 0.4.20 entry, below).
 
 ## 2026-10-29 — the tenor's air resonance rings where real tenors' do, 0.4.20 (adopted under the owner's standing rule, not yet heard)
 
@@ -115,7 +115,12 @@ before and after. The old window read whichever member was stronger inside
 it. At 54 mm that was the in-tune member, +0.09 cents. From 63.5 mm up it is
 the flat member, -6.6 cents at 66.7 mm, past the 5-cent tolerance, although
 the note settles where it did. The test's comment gives the diagnosis.
-Whether the check should go back to the onset is the owner's call.
+
+**The owner's verdict (2026-10-29).** Asked whether the check should keep
+reading the settled pitch, 1-2 s after the pluck, or go back to 0.3-1.3 s
+with the 54 mm soundhole restored, the owner kept the 1-2 s window. That was
+a product decision on what the check reads, not a listening verdict on the
+soundhole, which has still not been heard.
 
 ## 2026-10-28 — the bodies fall above 1 kHz as a measured soprano does, 0.4.19 (adopted under the owner's standing rule, not yet heard)
 

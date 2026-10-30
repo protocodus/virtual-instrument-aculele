@@ -45,9 +45,10 @@
 #define ACULELE_NOINLINE
 #endif
 
-// The bridge's modes step their two lanes as one SSE2 pair
-// (BridgeLoad::advanceModes); elsewhere each lane steps on its own.
-#if defined(__SSE2__) && defined(__x86_64__) && (defined(__clang__) || defined(__GNUC__))
+// The bridge's modes step their two lanes as one vector pair
+// (BridgeLoad::advanceModes) wherever the compiler has vector extensions,
+// the Rack SDK's own target included; elsewhere each lane steps on its own.
+#if defined(__clang__) || defined(__GNUC__)
 #define ACULELE_PACKED_BRIDGE_MODES 1
 #else
 #define ACULELE_PACKED_BRIDGE_MODES 0
@@ -4407,8 +4408,8 @@ void AculeleEngine::BridgeLoad::advanceModes(float bodyForce,
     const int count = activeModeCount;
     // Each lane's arithmetic is the scalar section's, and the residue sums
     // below stay serial, so packing changes no bit. The copies are
-    // __builtin_memcpy, not std::memcpy: the Rack toolchain's -fno-builtin
-    // turns std::memcpy into a library call, seven a rocking mode a sample.
+    // __builtin_memcpy, not std::memcpy: -fno-builtin turns std::memcpy into
+    // a library call, seven a rocking mode a sample.
 #if ACULELE_PACKED_BRIDGE_MODES
     typedef double Vector __attribute__((vector_size(16)));
     const auto load = [] (const BridgeMode::Lanes& lanes)

@@ -328,3 +328,38 @@ and Strum's A4-E5 and A5 at or below zero. The nails and the pick sit
 between the Kai pack's median 0.29 and its C5-C6 0.43. The thumb has no
 recording to be held to.
 
+
+## 0.4.35: how fast a low note loses its top (2026-10-30)
+
+A note's share of power above 2.5 kHz, against all of it above 60 Hz, over
+windows from its onset (this tool's onset), the median over C4-F#4. A share
+is a ratio within one note, so its fall from window to window does not
+depend on the microphone. The packs are measured as the tool loads them;
+Aculele plays the tool's notes at velocity 90 with Finger on the mono
+microphone.
+
+| C4-F#4, dB | 0-20 ms | 20-50 | 50-100 | 100-300 | 300-600 | fall |
+| --- | --- | --- | --- | --- | --- | --- |
+| Guffland | -34.5 | -37.1 | -38.4 | -45.2 | -54.0 | 19.5 |
+| James | -23.3 | -27.8 | -34.9 | -41.5 | -49.3 | 26.0 |
+| Kai | -13.5 | -16.3 | -18.1 | -21.7 | -23.9 | 10.4 |
+| Leolani (DI) | -14.1 | -16.7 | -16.5 | -21.5 | -41.2 | 27.1 |
+| Soprano | -40.0 | -43.1 | -48.6 | -60.1 | -69.7 | 29.7 |
+| Aculele soprano, nylon | -17.3 | -25.9 | -40.1 | -64.5 | -84.0 | 66.7 |
+| Aculele concert, nylon | -13.6 | -22.7 | -37.8 | -58.5 | -79.2 | 65.6 |
+| Aculele tenor, nylon | -14.9 | -19.6 | -25.4 | -44.3 | -73.1 | 58.2 |
+| Aculele concert, fluorocarbon | -11.3 | -14.2 | -19.7 | -26.0 | -43.9 | 32.6 |
+
+The fall is 0-20 ms less 300-600 ms. The packs' tails sit 56-69 dB under
+their first 20 ms above 2.5 kHz (Kai's 31), so their falls are not their
+noise. From G4 up Aculele's nylon falls 15-19 dB, within the packs' 6-33.
+
+- **On the C string the nylon's top dies 30-40 dB faster than any pack's.**
+  The bending loss, eta_E B n^2 / (1 + B n^2), grows with the stiffness: on
+  the concert's 1.02 mm nylon C (B 8e-4) a 2.6 kHz partial loses about
+  3.5 times what it would on a string of the packs' 2e-4. Fluorocarbon, as
+  stiff as the packs' strings, falls 33 dB, at their edge.
+- **Nothing changed.** The owner chose nylon over fluorocarbon by ear on
+  2026-10-29 (`Docs/decisions.md`), and a nylon as limber as the packs'
+  strings would need a modulus no measurement gives. The choice was put to
+  the owner again with this evidence.

@@ -7572,6 +7572,13 @@ void AculeleEngine::updateAttackPitch(Voice& voice, int stringIndex) noexcept
 // the wheel raises the depth at the fast rate: the full wheel is the widest
 // swing measured, 60 cents (the 3rd string's 11th fret), and half of it the
 // median. The sine starts upward from the note's own pitch.
+//
+// Near the nut the same gesture swings less. At the 1st fret Rodrigues'
+// takes swing 4-16 cents, against 20-60 at the 6th and 11th, which agree
+// with each other. So the depth is the widest swing measured at the fret's
+// own place: 16 of 60 cents at the 1st fret, rising linearly to all of it at
+// the 6th and holding above. The line between the two measured frets is an
+// interpolation, not a measurement; nothing was measured between them.
 float AculeleEngine::vibratoSemitones(const Voice& voice,
                                       float speakingLength) const noexcept
 {
@@ -7596,7 +7603,10 @@ float AculeleEngine::vibratoSemitones(const Voice& voice,
     const float depthBias = pressure >= 0.0f
         ? pressureDepthFloor + (1.0f - pressureDepthFloor) * pressure
         : 1.0f;
-    return stoppingWeight * fullWheelSemitones * depthBias * vibrato_ * vibratoOnset_
+    constexpr float firstFretShare = 16.0f / 60.0f;
+    const float fretShare = firstFretShare + (1.0f - firstFretShare)
+        * clamp((voice.speakingFret - 1.0f) / 5.0f, 0.0f, 1.0f);
+    return stoppingWeight * fretShare * fullWheelSemitones * depthBias * vibrato_ * vibratoOnset_
         * 0.5f * std::sin(vibratoPhase_);
 }
 
@@ -8185,12 +8195,50 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
     // hard edge the string slides off as it does a plectrum's, so it takes
     // the Pick's whole contact (nailStroke); where the stroke lands and how
     // hard stay the technique's.
-    const bool pick = parameters_.picking == PickingTechnique::Pick
-        || nailStroke(voice);
-    const float releaseShare = pick
+    const bool nail = nailStroke(voice);
+    const bool pick = parameters_.picking == PickingTechnique::Pick || nail;
+    const float nominalShare = pick
         ? physicalCalibration_.pickReleaseVelocityShare
             * std::pow(v, physicalCalibration_.pickReleaseVelocityExponent)
         : 0.0f;
+    // No two nail plucks meet the string alike: more nail and the string is
+    // dragged off the edge at speed, more flesh and it rolls off the pad
+    // nearly at rest. Measured take to take, a recorded ukulele's power above
+    // 2.5 kHz varies by 3.6-4.0 dB (SD) between round robins of one note, and
+    // not with their level (r -0.07 and +0.10; Guffland and Leolani,
+    // Tools/compare_sample_packs.py --takes), where Aculele's varied by
+    // 1.3-1.8 dB. So each nail pluck draws its release-velocity share, the
+    // part of the release a nail carries and flesh does not, log-uniformly
+    // within 1.75 octaves either way of the fitted share: the widest draw
+    // that keeps the full-velocity share (0.58) inside its calibrated bound
+    // of 2. On Concert Piezo Stage and Concert Strum's microphone with
+    // Finger it brings the spread to 1.9 and 2.7 dB (1.6 and 2.3 with
+    // another seed); the rest is not identified. The share is energy added
+    // on top of the displacement's, so a sharper draw also read louder
+    // (r +0.2-0.4). Holding the pluck's whole energy fixed overcorrected
+    // (r -0.44), since the hump's energy is in partials mostly gone after
+    // 30 ms; its square root, the fourth root of the energy ratio, leaves a
+    // take's 30-330 ms level nearly independent of its draw (r -0.06 to
+    // -0.32 over the two captures and three seeds), and its level SD where
+    // it was (0.7-0.8 dB). The draw hashes the voice's random state rather
+    // than consuming it, so the force, angle and noise draws that follow
+    // are the ones they were.
+    float releaseShare = nominalShare;
+    float nailShareGain = 1.0f;
+    if (nail && nominalShare > 0.0f)
+    {
+        constexpr float nailShareOctaves = 1.75f;
+        std::uint32_t hash = (voice.randomState ^ 0x5bd1e995u) * 0x9e3779b9u;
+        hash ^= hash >> 16;
+        hash *= 0x7feb352du;
+        hash ^= hash >> 15;
+        hash *= 0x846ca68bu;
+        hash ^= hash >> 16;
+        const float draw = 2.0f * static_cast<float>(hash) / 4294967295.0f - 1.0f;
+        releaseShare = nominalShare * std::exp2(nailShareOctaves * draw);
+        nailShareGain = exact::sqrt(exact::sqrt(
+            (1.0f + nominalShare) / (1.0f + releaseShare)));
+    }
     // Touch is how fast the hand lets go: a firm touch releases the string
     // over a smaller effective edge, a soft one over a larger, two octaves
     // of radius across the control and none at its default.
@@ -8410,7 +8458,7 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
             * (0.648f / scaleLength);
         if (releaseShare > 0.0f)
         {
-            writePickRelease(loop, length, releasedAmplitude * polarisationGain,
+            writePickRelease(loop, length, releasedAmplitude * polarisationGain * nailShareGain,
                              localPosition, aperture, modes, releaseShare,
                              slipPole, voice.referencePickDelay[
                                  static_cast<std::size_t>(polarisation)]);

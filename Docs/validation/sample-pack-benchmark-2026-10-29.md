@@ -165,13 +165,19 @@ Strum's mono microphone (`AculeleProbe 0 takes.mid out.wav 385 --float
 | 0.4.28 piezo, nail edge ±2 octaves | 24 | 93 | 0.74 | 1.23 | 0.43 | 1.77 |
 | 0.4.28 piezo, release angle 4° | 24 | 94 | 0.98 | 0.93 | 0.38 | 1.44 |
 | 0.4.28 piezo, release angle 8° | 24 | 93 | 1.64 | 1.22 | 0.47 | 1.46 |
+| 0.4.32 piezo | 24 | 95 | 0.74 | 1.94 | 0.82 | 2.99 |
+| 0.4.32 microphone | 24 | 89 | 0.79 | 2.66 | 0.95 | 2.42 |
+| 0.4.32 piezo, force ±3 dB | 24 | 95 | 1.62 | 1.95 | 0.82 | 2.88 |
+| 0.4.32 microphone, force ±3 dB | 24 | 88 | 1.64 | 2.62 | 0.86 | 2.45 |
 
 Level and brightness are SDs within a note, the median over notes. Tilt and
 comb scatter split each take's partials 1-12, against its note's mean, into
 a line in log partial number and what the line leaves; a take with fewer
 than six partials within 50 dB of the note's strongest is skipped. The
 ±0.06 and the last three rows were rendered with experimental builds that
-changed only the named spread (the angle row's 2° is 0.4.28's).
+changed only the named spread (the angle row's 2° is 0.4.28's). The force
+rows were rendered with an experimental build of 0.4.32 whose single-pluck
+force residual was ±3 dB; it did not ship.
 
 - **Real plucks land further apart.** The comb scatter, which only a pluck
   point that moves leaves, is 2.4 and 3.0 dB on the two packs, and was
@@ -188,3 +194,32 @@ changed only the named spread (the angle row's 2° is 0.4.28's).
   piezo the DI's 1.6 dB, where Aculele's 2° (chosen by ear on 2026-10-28)
   gives 0.6. The microphones' level was not measured that way, and
   Guffland's samples may have been trimmed one by one, so nothing changed.
+
+## 0.4.32: nail and flesh, take to take (2026-10-30)
+
+Each nail pluck now draws its release-velocity share, the part of the
+release a nail carries and flesh does not, log-uniformly within 1.75 octaves
+of the fitted share, and its displacement is scaled by the fourth root of
+the energy the draw adds (`AculeleEngine::initialisePluck`). The rows above
+were measured as before (Concert Piezo Stage and Concert Strum's mono
+microphone, both with Finger):
+
+- **Brightness**: 1.25 and 1.84 dB on 0.4.29 to 1.94 and 2.66 dB (1.55 and
+  2.28 with another draw seed), against the packs' 3.6-4.0. Tilt 0.58 and
+  0.72 to 0.82 and 0.95 dB/oct, against 1.1-1.2. Level and comb scatter are
+  where they were.
+- **Brightness still does not follow level**: r -0.16 and -0.25 (-0.06 to
+  -0.32 over three seeds), against the packs' -0.07 and +0.10. Unscaled, a
+  sharper draw read louder (r +0.2-0.4); scaled to hold the pluck's whole
+  energy, quieter (r -0.44).
+- **What else was tried**: the contact's width drawn 1-1.5 octaves either
+  way moved the brightness spread by 0.1-0.3 dB; a full flesh pluck is a
+  median 4.5 dB duller above 2.5 kHz than a nail one on these notes, so even
+  a draw across the whole range from nail to flesh could add only about
+  1.3 dB.
+- **The level spread**: a ±3 dB force residual (from ±1) brings it to the
+  Leolani DI's 1.6 dB (rows above). With the level table re-pinned, Tenor
+  Picked Melody's Pick then reads 2.2 dB over its Thumb and Strum, and Low G
+  Tenor's Pick 1.6 dB over its target, past `Aculele.Levels`' 1.5 dB, with
+  ±2 dB as well; no Output trim satisfies the check, so the residual stays
+  ±1 dB.

@@ -5,6 +5,53 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-10-30 — each nail pluck draws its nail's share, and the vibrato narrows toward the nut, 0.4.32 (standing rule, pending the owner's ear)
+
+**What was decided.** Two changes. First, each nail pluck (Finger, a Strum
+downstroke, a Thumb upstroke) draws its release-velocity share, the part of
+the release a nail carries and flesh does not, log-uniformly within 1.75
+octaves of the fitted share (the widest draw that keeps the full-velocity
+share inside its calibrated bound of 2), with its displacement scaled by the
+fourth root of the energy the draw adds. Across Guffland's and Leolani's
+round robins a note's power above 2.5 kHz varies by 3.6-4.0 dB and not with
+level; Aculele's varied by 1.3-1.8 dB and now by 1.6-2.7, with r -0.06 to
+-0.32 against level ([benchmark](validation/sample-pack-benchmark-2026-10-29.md)).
+The draw size is the share's bound, not fitted; the fourth root is fitted to
+the recordings' independence of brightness and level. Second, the wheel's
+vibrato is 16 cents at the 1st fret, rising linearly to the full 60 at the
+6th: Rodrigues' widest swings at those frets (4-16 and 20-60 cents). The line
+between the two measured frets is an interpolation. `Aculele.Vibrato` now
+checks F4 on the E string's 1st fret (15.0 cents through its window) and
+F#4 on the C string's 6th (56.6); the F4 it checked before sat on the 1st
+fret, so its 50-62 bound described the old same-at-every-fret depth.
+
+**The letters.** Two sets, not committed:
+
+- *Nail share*: Tenor Fluorocarbon Fingerstyle (Finger), a phrase of
+  repeated eighth notes at velocity 88 (C5 eight times, then pairs down to
+  E4 and back, E4 eight times, a held C5). A: the shipping engine. B: the
+  nail-share draw alone. Whole-file RMS matched, B trimmed by +0.04 dB; A-B
+  nulls at -20.9 dB.
+- *Vibrato*: Concert Strum, the full wheel held through F4 on the E string's
+  1st fret, F#4 on the C string's 6th, G#4 on the G string's 1st and D5 on
+  the E string's 10th, played as tab. A: the shipping engine. B: the fret
+  law alone. B trimmed by +0.01 dB; nulls at -11.3 dB.
+
+Both were rendered through `AculeleProbe` at 48 kHz in 256-sample blocks.
+
+**What it licensed.** Both B's were adopted under the owner's standing rule
+that a candidate wins unless the owner says otherwise; the owner has not
+listened yet. Pick, the plectrum, is bit-identical. The demos' levels move
+under 0.1 dB and their share above 2.5 kHz by up to 0.6 dB (Soprano Thumb).
+`Aculele.Levels` passes on the old level table and trims.
+
+**What was tried and dropped.** A single-pluck force residual of ±3 dB (from
+±1) brought the take-to-take level spread from 0.7-0.8 dB to the Leolani
+DI's 1.6. With the level table re-pinned, Tenor Picked Melody's Pick read
+2.2 dB over its Thumb and Strum and Low G Tenor's Pick 1.6 dB over its
+target; no Output trim met `Aculele.Levels`, at ±2 dB either, and the check
+is not loosened. The residual stays ±1 dB.
+
 ## 2026-10-30 — a re-plucked string's old wave retires once it is gone, 0.4.31 (standing rule, pending the owner's ear)
 
 **What was decided.** A re-plucked string keeps its old wave as a second pair

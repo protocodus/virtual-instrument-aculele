@@ -1,16 +1,19 @@
 // The modulation wheel's vibrato (AculeleEngine::vibratoSemitones).
 //
-// Every note plays on channel 1 at velocity 90 through the Performer, 48 kHz
-// and 256-sample blocks, with the default controls and Finger.
+// Every note plays at velocity 90 through the Performer, 48 kHz
+// and 256-sample blocks, with the default controls and Finger: on channel 1,
+// or as tab on a named string.
 //
 // - The wheel at zero sends the samples of a note with no wheel at all.
 // - The full wheel swings a stopped note both ways about its own pitch, as
 //   an axial vibrato does (Rodrigues 2014), 60 cents from top to bottom at
-//   5.07 Hz. F4 is tracked over 0.6-2.6 s with a 60 ms Hann window every
-//   5 ms: its mean lies within 3 cents of the same note's without the wheel
-//   (the one-sided swing before 0.4.30 raised it 11 cents), it swings 50-62
-//   cents between its 2nd and 98th percentiles (the window smooths the
-//   sine's 60 to about 56), and it crosses its mean upward at 4.8-5.4 Hz.
+//   5.07 Hz from the 6th fret up and 16 cents at the 1st. F#4 on the C
+//   string's 6th fret and F4 on the E string's 1st are tracked over
+//   0.6-2.6 s with a 60 ms Hann window every 5 ms: each one's mean lies
+//   within 3 cents of the same note's without the wheel (the one-sided swing
+//   before 0.4.30 raised it 11 cents), F#4 swings 50-62 cents between its 2nd
+//   and 98th percentiles (the window smooths the sine's 60 to about 56) and
+//   F4 12-17, and each crosses its mean upward at 4.8-5.4 Hz.
 // - With the wheel up, a hand stops what it can: C4 to A4 legato sounds no
 //   open string but C4, which only the open C string reaches, and stays
 //   within the first five frets.
@@ -55,8 +58,11 @@ std::unique_ptr<aculele::Performer> preparedPerformer()
     return performer;
 }
 
-// One note held for the whole render; wheel < 0 sends no CC1 at all.
-std::vector<float> renderNote(const aculele::Performer& prepared, int note, int wheel, double seconds)
+// One note held for the whole render; wheel < 0 sends no CC1 at all. A
+// string >= 0 plays the note as tab on that string (CC126 = 4: channels 1-4
+// are the G, C, E and A strings).
+std::vector<float> renderNote(const aculele::Performer& prepared, int note, int wheel, double seconds,
+                              int string = -1)
 {
     auto performer = std::make_unique<aculele::Performer>(prepared);
     const auto total = static_cast<std::size_t>(seconds * rate);
@@ -67,12 +73,20 @@ std::vector<float> renderNote(const aculele::Performer& prepared, int note, int 
         performer->beginBlock(left.data() + done, right.data() + done, frames);
         if (done == 0)
         {
+            const auto channel = static_cast<std::uint8_t>(string >= 0 ? string : 0);
+            if (string >= 0)
+            {
+                const std::uint8_t tab[3] { 0xB0, 126, 4 };
+                performer->handleMidi(0, tab, 3);
+            }
             if (wheel >= 0)
             {
-                const std::uint8_t modulation[3] { 0xB0, 1, static_cast<std::uint8_t>(wheel) };
+                const std::uint8_t modulation[3] { static_cast<std::uint8_t>(0xB0 | channel), 1,
+                                                   static_cast<std::uint8_t>(wheel) };
                 performer->handleMidi(0, modulation, 3);
             }
-            const std::uint8_t on[3] { 0x90, static_cast<std::uint8_t>(note), 90 };
+            const std::uint8_t on[3] { static_cast<std::uint8_t>(0x90 | channel),
+                                       static_cast<std::uint8_t>(note), 90 };
             performer->handleMidi(0, on, 3);
         }
         performer->endBlock();
@@ -151,10 +165,19 @@ int main()
         check(none == zero, "the wheel at zero changed the note", 0.0);
     }
 
+    // F4 on the E string's 1st fret, where the swing is 16 cents, and F#4 on
+    // the C string's 6th, where it is all 60 (vibratoSemitones). The window
+    // smooths both by about 7%. Notes beside the top's main resonance
+    // (466-485 Hz on the concert) swing wider or narrower, as the body pulls
+    // their normal plane (README, Known gaps), so neither is near it.
+    struct Swing { int note; int string; double low; double high; const char* what; };
+    for (const Swing& test : { Swing { 65, 2, 12.0, 17.0, "the full wheel's swing at the 1st fret is not 16 cents" },
+                               Swing { 66, 1, 50.0, 62.0, "the full wheel's swing at the 6th fret is not 60 cents" } })
     {
-        const double nominal = 440.0 * std::exp2((65 - 69) / 12.0);
-        const auto still = pitchTrack(renderNote(*prepared, 65, -1, 2.7), nominal);
-        const auto swung = pitchTrack(renderNote(*prepared, 65, 127, 2.7), nominal);
+        const int note = test.note;
+        const double nominal = 440.0 * std::exp2((note - 69) / 12.0);
+        const auto still = pitchTrack(renderNote(*prepared, note, -1, 2.7, test.string), nominal);
+        const auto swung = pitchTrack(renderNote(*prepared, note, 127, 2.7, test.string), nominal);
         const double offset = mean(swung) - mean(still);
         const double swing = percentile(swung, 0.98) - percentile(swung, 0.02);
         // Cycles between the first and the last upward crossing of the mean.
@@ -166,10 +189,10 @@ int main()
                     + (centre - swung[i - 1]) / (swung[i] - swung[i - 1])));
         const double perSecond = crossings.size() < 2 ? 0.0
             : static_cast<double>(crossings.size() - 1) / (crossings.back() - crossings.front());
-        std::printf("full wheel: mean %+.2f cents from the still note, swing %.1f cents, %.2f Hz\n",
-                    offset, swing, perSecond);
+        std::printf("full wheel, note %d: mean %+.2f cents from the still note, swing %.1f cents, %.2f Hz\n",
+                    note, offset, swing, perSecond);
         check(std::abs(offset) <= 3.0, "the full wheel moved the note's mean pitch", offset);
-        check(swing >= 50.0 && swing <= 62.0, "the full wheel's swing is not 60 cents", swing);
+        check(swing >= test.low && swing <= test.high, test.what, swing);
         check(perSecond >= 4.8 && perSecond <= 5.4, "the full wheel's rate is not 5 Hz", perSecond);
     }
 

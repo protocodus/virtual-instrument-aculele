@@ -5,7 +5,7 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
-## 2026-10-30 — each nail pluck draws its nail's share, and the vibrato narrows toward the nut, 0.4.32 (standing rule, pending the owner's ear)
+## 2026-10-30 — each nail pluck draws its nail's share, and the vibrato narrows toward the nut, 0.4.32 (chosen by ear)
 
 **What was decided.** Two changes. First, each nail pluck (Finger, a Strum
 downstroke, a Thumb upstroke) draws its release-velocity share, the part of
@@ -39,9 +39,11 @@ fret, so its 50-62 bound described the old same-at-every-fret depth.
 
 Both were rendered through `AculeleProbe` at 48 kHz in 256-sample blocks.
 
-**What it licensed.** Both B's were adopted under the owner's standing rule
-that a candidate wins unless the owner says otherwise; the owner has not
-listened yet. Pick, the plectrum, is bit-identical. The demos' levels move
+**The owner listened and chose B in both sets.**
+
+**What it licensed.** Both B's ship in 0.4.32. The nail share's draw size
+and the vibrato's fret law come from the bound and the measurements above;
+the ear chose between them and the shipping engine, and fitted nothing. Pick, the plectrum, is bit-identical. The demos' levels move
 under 0.1 dB and their share above 2.5 kHz by up to 0.6 dB (Soprano Thumb).
 `Aculele.Levels` passes on the old level table and trims.
 

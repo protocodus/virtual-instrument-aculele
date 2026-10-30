@@ -361,5 +361,5 @@ noise. From G4 up Aculele's nylon falls 19-31 dB, within the packs' 9-31.
   stiff as the packs' strings, falls 33 dB, at their edge.
 - **Nothing changed.** The owner chose nylon over fluorocarbon by ear on
   2026-10-29 (`Docs/decisions.md`), and a nylon as limber as the packs'
-  strings would need a modulus no measurement gives. The choice was put to
-  the owner again with this evidence.
+  strings would need a modulus no measurement gives. Put to the owner again
+  with this evidence, they kept nylon by ear (`Docs/decisions.md`).

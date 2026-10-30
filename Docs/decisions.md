@@ -5,6 +5,24 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-10-30 — the presets keep nylon, asked again (chosen by ear)
+
+**What was decided.** Whether the five nylon presets move to fluorocarbon.
+On C4-F#4 the five sample packs' share above 2.5 kHz falls a median 26 dB
+(19-30) from a note's first 20 ms to its 300-600 ms; nylon falls 58-66 dB,
+fluorocarbon 33 ([benchmark](validation/sample-pack-benchmark-2026-10-29.md)).
+With the packs' stiffness, this puts them with fluorocarbon; above 1 kHz
+fluorocarbon still rings 1.2-1.4 times longer than they do.
+
+**Letters.** A: 0.4.35 shipping, nylon. B: the same presets on fluorocarbon,
+nothing else changed. Concert Strum's and Soprano Thumb's README demos;
+whole-file RMS match, B trimmed by -0.25 dB.
+
+**Chosen.** A, by ear: the presets keep nylon, as on 2026-10-29. A prepared
+0.4.36 on fluorocarbon (levels re-pinned, all tests passing) was dropped.
+
+**What it licensed.** Nothing new: the measured gap stays in Known gaps.
+
 ## 2026-10-30 — every release is smoothed over the whole period and the loop's sections start out carrying it, 0.4.35 (measured against the Kai pack; adopted under the owner's standing rule, not yet heard)
 
 **What was decided.** 0.4.34 left soft nail and pick notes high up the neck

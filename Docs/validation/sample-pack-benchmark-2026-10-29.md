@@ -363,3 +363,34 @@ noise. From G4 up Aculele's nylon falls 19-31 dB, within the packs' 9-31.
   2026-10-29 (`Docs/decisions.md`), and a nylon as limber as the packs'
   strings would need a modulus no measurement gives. Put to the owner again
   with this evidence, they kept nylon by ear (`Docs/decisions.md`).
+
+## 0.4.35: how even the notes are, and how the decay bends (2026-10-30)
+
+Two more measures on the packs' attack samples (C4-C6) and on 0.4.35's
+Concert Mahogany Finger render (velocity 90, `--write-midi notes.mid`):
+
+- **Evenness.** Each note's RMS over its first second, the median of its
+  takes within one velocity layer, less a straight line through all notes:
+  the residual's SD and the largest step between neighbouring notes. The
+  Soprano Plucked pack's peaks are all equal, so its samples are normalised
+  and it is left out.
+
+  | | SD (dB) | largest step (dB) |
+  | --- | --- | --- |
+  | Guffland | 3.4 | 6.0 |
+  | James | 3.7 | 12.0 |
+  | Kai, loud layer | 3.6 | 9.9 |
+  | Leolani | 2.2 | 5.4 |
+  | Aculele, stereo mic | 2.3 | 5.7 |
+  | Aculele, piezo | 2.2 | 4.5 |
+
+  A sampled player's strokes differ from note to note, which adds to the
+  packs' figures, so these bound a real ukulele's unevenness from above. They
+  do not show Aculele's to be too large.
+- **Two-stage decay.** The broadband level's slope over 50-600 ms against
+  0.8-2.5 s, in notes still 10 dB over the floor at 2.5 s: Guffland 1.13,
+  James 1.29 and Leolani 1.47 times faster early (medians), Aculele 1.31
+  (microphone) and 1.20 (piezo). Kai's quiet floor and the Soprano pack's
+  seven usable notes give no reliable figure.
+
+Nothing was changed: both sit inside the packs' range.

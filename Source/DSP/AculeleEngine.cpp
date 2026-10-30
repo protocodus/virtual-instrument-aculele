@@ -2771,13 +2771,14 @@ DispersionCalibration collocateDispersion(
     constexpr double steps[] { 0.02, 0.01, 0.01 };
     const auto refine = [&] (double values[3])
     {
+        // An accepted step's lags are the next iteration's starting point.
+        double read[3] {};
+        double section[3] {};
+        readLags(values[0], read);
+        sectionLags(values[1], values[2], section);
         for (int iteration = 0; iteration < 9; ++iteration)
         {
-            double read[3] {};
-            double section[3] {};
             double residuals[3] {};
-            readLags(values[0], read);
-            sectionLags(values[1], values[2], section);
             combine(read, section, residuals);
             const double oldNorm = maximumResidual(residuals);
             if (oldNorm < 1.0e-10)
@@ -2826,12 +2827,19 @@ DispersionCalibration collocateDispersion(
                     std::clamp(values[1] + amount * update[1], 0.1, 30.0),
                     std::clamp(values[2] + amount * update[2], 0.05, 15.0)
                 };
+                double candidateRead[3] {};
+                double candidateSection[3] {};
                 double candidateResiduals[3] {};
-                evaluate(candidate, candidateResiduals);
+                readLags(candidate[0], candidateRead);
+                sectionLags(candidate[1], candidate[2], candidateSection);
+                combine(candidateRead, candidateSection, candidateResiduals);
                 if (maximumResidual(candidateResiduals) < oldNorm)
                 {
                     std::copy(std::begin(candidate), std::end(candidate),
                         values);
+                    std::copy(std::begin(candidateRead), std::end(candidateRead), read);
+                    std::copy(std::begin(candidateSection), std::end(candidateSection),
+                              section);
                     accepted = true;
                     break;
                 }

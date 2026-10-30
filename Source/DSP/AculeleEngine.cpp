@@ -4260,6 +4260,102 @@ void AculeleEngine::StringLoop::write(float value) noexcept
     writeIndex = wrapDelayIndex(writeIndex + 1);
 }
 
+void AculeleEngine::StringLoop::warmSections(const float* reads,
+                                             int count) noexcept
+{
+    // advance()'s sections, with no delay, gain or release, run from empty
+    // over reads that came before the first: their outputs went out before
+    // it, so only their states are kept. The Thiran's memory is its last
+    // two outputs, which these reads stand in for.
+    for (int index = 0; index < count; ++index)
+    {
+        float delayed = reads[index];
+        if (secondDispersionActive)
+            delayed = secondDispersion.process(delayed, secondDispersionA1,
+                                               secondDispersionA2);
+        float reflected = delayed;
+        if (broadLossMix != 0.0f)
+            reflected += broadLossMix * (broadLossFilter.process(
+                delayed, broadLossCoefficient) - delayed);
+        const float low = lossFilter.process(reflected, lowpassCoefficient);
+        reflected += highLossMix * (low - reflected);
+        // A section the configuration just switched on would seed itself
+        // on the first advance() and discard what is warmed here, so it
+        // seeds now, as advance() does, from the first wave it meets.
+        if (bendingLossActive)
+        {
+            if (bendingLossSeed)
+            {
+                bendingLossX1 = reflected;
+                bendingLossX2 = bendingLossY1 = bendingLossY2 = 0.0f;
+                bendingLossSeed = false;
+            }
+            const float difference = reflected - bendingLossX1;
+            const float taken = (1.0f - bendingLossGain) * difference
+                - bendingLossA2 * bendingLossX2
+                - bendingLossA1 * bendingLossY1 - bendingLossA2 * bendingLossY2;
+            bendingLossX1 = reflected;
+            bendingLossX2 = difference;
+            bendingLossY2 = bendingLossY1;
+            bendingLossY1 = taken;
+            reflected -= taken;
+        }
+        if (constantLossActive)
+        {
+            if (constantLossSeed)
+            {
+                constantLossX1 = reflected;
+                constantLossX2 = constantLossY1 = constantLossY2 = 0.0f;
+                constantLossSeed = false;
+            }
+            const float difference = reflected - constantLossX1;
+            const float taken = (1.0f - constantLossGain) * difference
+                + (constantLossN2 - constantLossA2) * constantLossX2
+                - constantLossA1 * constantLossY1 - constantLossA2 * constantLossY2;
+            constantLossX1 = reflected;
+            constantLossX2 = difference;
+            constantLossY2 = constantLossY1;
+            constantLossY1 = taken;
+            reflected -= taken;
+        }
+        dispersion.process(reflected, dispersionA1, dispersionA2);
+    }
+    if (count >= 2)
+    {
+        allpassY2 = reads[count - 2];
+        allpassY1 = reads[count - 1];
+    }
+}
+
+void AculeleEngine::StringLoop::addSectionStates(const StringLoop& other,
+                                                 float gain) noexcept
+{
+    const auto add = [gain] (float& to, float from) { to += gain * from; };
+    add(allpassY1, other.allpassY1);
+    add(allpassY2, other.allpassY2);
+    add(broadLossFilter.state, other.broadLossFilter.state);
+    add(broadLossFilter.previousInput, other.broadLossFilter.previousInput);
+    add(lossFilter.state, other.lossFilter.state);
+    add(lossFilter.previousInput, other.lossFilter.previousInput);
+    add(bendingLossX1, other.bendingLossX1);
+    add(bendingLossX2, other.bendingLossX2);
+    add(bendingLossY1, other.bendingLossY1);
+    add(bendingLossY2, other.bendingLossY2);
+    add(constantLossX1, other.constantLossX1);
+    add(constantLossX2, other.constantLossX2);
+    add(constantLossY1, other.constantLossY1);
+    add(constantLossY2, other.constantLossY2);
+    for (auto [to, from] : { std::pair<SecondOrderAllpass*, const SecondOrderAllpass*> {
+             &dispersion, &other.dispersion },
+             { &secondDispersion, &other.secondDispersion } })
+    {
+        add(to->x1, from->x1);
+        add(to->x2, from->x2);
+        add(to->y1, from->y1);
+        add(to->y2, from->y2);
+    }
+}
+
 void AculeleEngine::StringLoop::GestureContact::configure(
     float strength, int relaxationSamples) noexcept
 {
@@ -4561,6 +4657,7 @@ void AculeleEngine::prepare(double sampleRate, int)
     pickReleaseDisplacement_.prepareSize(active);
     pickReleaseVelocity_.prepareSize(active);
     releaseSlipFrame_.prepareSize(active);
+    releaseSlipChange_.prepareSize(active);
     for (auto& loop : repluckOldLoops_) loop.delay.prepareSize(active);
     for (auto& voice : voices_)
     {
@@ -8275,7 +8372,7 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
     // The thumb's pad takes the same law. Its edge was 1/v alone, so it
     // shrank as the thumb pressed harder and its release time went as 1/v^2:
     // on Concert Strum a velocity-16 E4 let go over 232 samples, 1.6
-    // periods, and the slip (applyPlectrumSlip), shifted so the line starts
+    // periods, and the one-pass slip of the time, shifted so the line starts
     // at rest in a loop 13% longer than the line, put back harmonics the
     // slow release had taken. From velocity 127 to 16, H2 rose 9 dB and H5
     // 10 dB against H1, and E4's 2.5-6 kHz share fell 10 dB to velocity 64
@@ -8461,7 +8558,8 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
             writePickRelease(loop, length, releasedAmplitude * polarisationGain * nailShareGain,
                              localPosition, aperture, modes, releaseShare,
                              slipPole, voice.referencePickDelay[
-                                 static_cast<std::size_t>(polarisation)]);
+                                 static_cast<std::size_t>(polarisation)],
+                             voice.contactPeriodSamples);
             continue;
         }
         const auto triangleAt = [localPosition] (double phase)
@@ -8618,38 +8716,12 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
             initialise(nearestCorner);
         else
             initialise(periodicCorner);
+        // Original Thumb retains its reference slip's inverse.
         if (unslipPole > 0.0)
-        {
-            const auto lineAt = [&loop] (int sample) -> float&
-            {
-                return loop.delay[static_cast<std::size_t>(
-                    maximumDelaySamples - sample - 1)];
-            };
-            const auto spread = [&] ()
-            {
-                double mean = 0.0;
-                for (int sample = 0; sample < length; ++sample)
-                    mean += lineAt(sample);
-                mean /= static_cast<double>(length);
-                double sum = 0.0;
-                for (int sample = 0; sample < length; ++sample)
-                    sum += (lineAt(sample) - mean) * (lineAt(sample) - mean);
-                return sum;
-            };
-            const double before = spread();
-            // Original Thumb retains its reference slip's inverse.
-            applyPadSlip(loop, length, voice.contactPeriodSamples, slipPole,
-                         fullSoftSlip ? 0.0 : unslipPole);
-            const double after = spread();
-            if (before > 0.0 && after > 0.0)
-            {
-                const float scale = static_cast<float>(exact::sqrt(before / after));
-                for (int sample = 0; sample < length; ++sample)
-                    lineAt(sample) *= scale;
-            }
-        }
+            releaseOverPeriod(loop, length, voice.contactPeriodSamples, slipPole,
+                              fullSoftSlip ? 0.0 : unslipPole, true);
         else
-            applyPadSlip(loop, length, voice.contactPeriodSamples, slipPole);
+            releaseOverPeriod(loop, length, voice.contactPeriodSamples, slipPole);
     }
 
     if (merge)
@@ -9122,6 +9194,9 @@ void AculeleEngine::mergeRepluckLoop(StringLoop& fresh, StringLoop& previous,
     // filter state. The ordinary continuing configure below adopts current
     // control coefficients without resetting those memories.
     previous.derivativeCrossesContact = true;
+    // The fresh release's part held in its sections (releaseOverPeriod)
+    // joins the travelling wave's, as its line did.
+    previous.addSectionStates(fresh, gain);
     fresh = previous;
 }
 
@@ -9747,83 +9822,45 @@ double AculeleEngine::plectrumSlipPole(const Voice& voice,
     return std::exp(-1.0 / tauSamples);
 }
 
-// The written loop holds one period of the released waves, read oldest
-// first, so a later output sits at a lower sample index. The anticausal
-// 1/(1 - j omega tau) is then y[s] = (1-b) x[s] + b y[s-1] run upward over
-// the period from its periodic steady state, exact per loop harmonic. The
-// sample at the bridge is re-zeroed afterwards, as the pluck itself is: the
-// loop's loss and dispersion states start empty, which only agrees with a
-// line that starts at rest there (smoothing the corner across that point and
-// leaving it raised put a broadband click into every note).
-// slipPeriod runs it over any one-period line, at(0) the bridge sample: the
-// loop here, and writePickRelease's 48 kHz reference line.
-namespace
-{
-template <typename At>
-void slipPeriod(const At& at, int length, double slipPole) noexcept
-{
-    const double b = slipPole;
-    double state = 0.0;
-    double weight = 1.0;
-    for (int k = 0; k < length; ++k)
-    {
-        state += weight * static_cast<double>(at(length - 1 - k));
-        weight *= b;
-    }
-    state *= (1.0 - b) / (1.0 - weight);
-    double first = 0.0;
-    for (int sample = 0; sample < length; ++sample)
-    {
-        state = (1.0 - b) * static_cast<double>(at(sample)) + b * state;
-        if (sample == 0)
-            first = state;
-        at(sample) = static_cast<float>(state - first);
-    }
-}
-} // namespace
-
-void AculeleEngine::applyPlectrumSlip(StringLoop& loop, int length,
-                                      double slipPole) noexcept
-{
-    if (!(slipPole > 0.0))
-        return;
-    slipPeriod([&loop] (int sample) -> float&
-    {
-        return loop.delay[static_cast<std::size_t>(
-            maximumDelaySamples - sample - 1)];
-    }, length, slipPole);
-}
-
-// A pad's release (initialisePluck) is slipped over the loop's whole
-// period instead. That period is longer than the line, by the samples the
-// loss, dispersion and bending sections hold, and those start empty, so the
-// period the string plays is the line followed by that many zeros. The
-// one-pass slip above moves the wave by its group delay, about tau samples,
-// over the line's end into those sections, where it is lost, and wraps the
-// zeros' place into the line. Where tau is a good part of the period that
-// put back the harmonics a slow release takes away: on Concert Strum's
-// Thumb, from velocity 127 to 16, E5's H2 rose 12 dB and its H5 17 dB
-// against H1, and A4, C5 and A5 brightened with it. Here the slip runs
-// forward and then backward over the line and its zeros, at tau/sqrt(2):
-// zero phase, so nothing moves, with the gain 1/(1 + (omega tau)^2/2),
-// the one-pole's to second order in omega tau, falling at -12 dB an
-// octave above it rather than -6. A Thumb's reference unslip is divided
-// out the same way. The bridge sample is re-zeroed as above. That E5 now
-// darkens as the stroke softens: its 2.5-6 kHz share falls 5 dB to
-// velocity 16, where it rose 3, and its H2 rises 1.6 dB against H1, not
-// 12. Its H5 still rises 10 dB against H1, where the exact law, measured
-// on the written line, has it fall 9: the zeros cut off what the slip
-// spreads into them.
+// The slip scales each of the string's harmonics by |1/(1 + j omega tau)|,
+// tau the slipPole's time, and a Thumb's reference unslip divides its own
+// back out. The written loop holds one period of the released waves, read
+// oldest first, so a later output sits at a lower sample index, but the
+// string's period is longer than that line, by the samples its loss,
+// dispersion and bending sections hold. So the slip runs over the whole
+// period, the line followed by what the sections would hold, and the
+// sections are then given their part: they are run over the period's worth
+// of what the slip changed, read in the order the loop reads it, before the
+// first sample (releaseOverPeriod). Untouched, the release writes the line
+// and leaves the sections empty, as every pluck always has, so a fast
+// release still sounds as it did.
 //
-// The pick and nail releases (writePickRelease) keep the one-pass slip.
-// Over the period they lost the darkening a softer stroke has: the
-// 2.5 kHz-up share of the 30-330 ms after onset falls 0.29 dB per dB of
-// level from the loud to the quiet layer of the Kai pack (median of 25
-// notes, Tools/compare_sample_packs.py's onset), and C4-A5 at velocity 127
-// against 12 fell by a median 0.20 (Finger) and 0.21 (Pick) dB per dB with
-// the one pass but 0.08 and -0.01 over the period. The pads' one pass
-// stood at -0.04 (Thumb, brighter when softer); over the period they fall
-// by 0.28.
+// Through 0.4.33 the slip was one anticausal pass, periodic over the line
+// alone, re-zeroed at the bridge sample since the sections started empty
+// (left raised, that sample put a broadband click into every note). It
+// moved the wave by about tau samples out of the line, and the re-zero
+// offset the line from the empty sections. Where tau is a good part of the
+// period that put back the harmonics a slow release takes away: from
+// velocity 127 to 16, a Thumb E5's H2 rose 12 dB and its H5 17 dB against H1.
+// 0.4.34 smoothed the pads over the period, still re-zeroed and with the
+// sections empty, which only part fixed it: what the slip spreads into the
+// sections was still cut off, and the pick and nail releases kept the one
+// pass, measured closer on their written line, so their soft high notes
+// stayed as bright as their loud ones. Measured on the written line against
+// the exact law, a Finger E5 at velocity 16 had its H10-H24 17 dB over it
+// with the one pass and 22-24 dB over it with either smoothing over the
+// period alone; the sections' share is what was missing.
+//
+// The slip runs forward and backward over the period at tau/sqrt(2): zero
+// phase, so nothing moves, with the gain 1/(1 + (omega tau)^2/2), the
+// one-pole's to second order in omega tau, falling at -12 dB an octave
+// above it rather than -6. The 2.5 kHz-up share of the 30-330 ms after
+// onset falls 0.29 dB per dB of level from the loud to the quiet layer of
+// the Kai pack (median of 25 notes; 0.43 over C5-C6, whose quiet layer
+// stands clearer of its noise). C4-A5 at velocity 127 against 12 now fall a
+// median 0.40 (Finger), 0.34 (Pick), 1.00 (Thumb) and 0.38 (Strum) dB per dB,
+// where 0.4.34 fell 0.20, 0.21, 0.28 and 0.10. No pack records a thumb, so
+// the pad's figure has nothing to be held to.
 namespace
 {
 template <typename At>
@@ -9873,25 +9910,100 @@ void slipFrame(const At& at, int length, int period, double slipPole,
     both(std::pow(slipPole, std::sqrt(2.0)), false);
     if (unslipPole > 0.0)
         both(std::pow(unslipPole, std::sqrt(2.0)), true);
-    const float first = frame[0];
-    for (int sample = 0; sample < length; ++sample)
-        at(sample) = frame[sample] - first;
 }
 } // namespace
 
-void AculeleEngine::applyPadSlip(StringLoop& loop, int length, float period,
-                                 double slipPole, double unslipPole) noexcept
+int AculeleEngine::slipFrameLength(int length, float period) const noexcept
+{
+    const int frame = exact::isfinite(period)
+        ? static_cast<int>(std::lround(period)) : length;
+    return std::clamp(frame, length, static_cast<int>(releaseSlipFrame_.size()));
+}
+
+void AculeleEngine::releaseOverPeriod(StringLoop& loop, int length, float period,
+                                      double slipPole, double unslipPole,
+                                      bool keepSpread) noexcept
 {
     if (!(slipPole > 0.0))
         return;
-    const int frame = exact::isfinite(period)
-        ? static_cast<int>(std::lround(period)) : length;
-    slipFrame([&loop] (int sample) -> float&
+    const auto lineAt = [&loop] (int sample) -> float&
     {
         return loop.delay[static_cast<std::size_t>(
             maximumDelaySamples - sample - 1)];
-    }, length, std::clamp(frame, length, static_cast<int>(releaseSlipFrame_.size())),
-       slipPole, unslipPole, releaseSlipFrame_.data());
+    };
+    const int n = slipFrameLength(length, period);
+    float* frame = releaseSlipFrame_.data();
+    float* change = releaseSlipChange_.data();
+    for (int sample = 0; sample < length; ++sample)
+        change[sample] = lineAt(sample);
+    slipFrame(lineAt, length, n, slipPole, unslipPole, frame);
+    if (keepSpread)
+    {
+        // The Thumb keeps the released line's spread about its mean,
+        // preserving the displacement-to-level law (initialisePluck).
+        const auto spread = [length] (const float* line)
+        {
+            double mean = 0.0;
+            for (int sample = 0; sample < length; ++sample)
+                mean += line[sample];
+            mean /= static_cast<double>(length);
+            double sum = 0.0;
+            for (int sample = 0; sample < length; ++sample)
+                sum += (line[sample] - mean) * (line[sample] - mean);
+            return sum;
+        };
+        const double before = spread(change);
+        const double after = spread(frame);
+        if (before > 0.0 && after > 0.0)
+        {
+            const float scale = static_cast<float>(exact::sqrt(before / after));
+            for (int sample = 0; sample < n; ++sample)
+                frame[sample] *= scale;
+        }
+    }
+    for (int sample = 0; sample < n; ++sample)
+    {
+        const float written = sample < length ? change[sample] : 0.0f;
+        if (sample < length)
+            lineAt(sample) = frame[sample];
+        change[sample] = frame[sample] - written;
+    }
+    // The change is one period of a wave that has been going round: past
+    // the line's end it is the sections' part, and then on round from the
+    // line's start. The Thiran reads it at a fraction past the integer taps
+    // (StringLoop::readDelay): its first read takes taps from at(whole - 1)
+    // to at(whole + 1), which can reach past the written line, so the
+    // change's continuation is written there too - the released shape is
+    // zero there, so that alone is unchanged - and the reads that came
+    // before are the Thiran's own outputs over two periods, from empty.
+    // Reading the change at whole samples instead put a click of up to
+    // 27 dB over 0.4.34's above 6 kHz into soft notes whose fraction sat
+    // near a band edge (A5 and G5 at velocity 28).
+    const auto history = [change, n] (int sample) { return change[sample % n]; };
+    const float delayed = clamp(loop.currentDelay, 3.0f,
+        static_cast<float>(static_cast<int>(loop.delay.size()) - 3));
+    const int whole = delayAnchor(delayed);
+    double first = 0.0;
+    double second = 0.0;
+    thiranCoefficients(static_cast<double>(delayed - static_cast<float>(whole)),
+                       first, second);
+    for (int sample = length; sample <= whole + 1; ++sample)
+        lineAt(sample) = history(sample);
+    float* reads = frame;
+    float y1 = 0.0f;
+    float y2 = 0.0f;
+    for (int ago = 2 * n; ago >= 1; --ago)
+    {
+        const int tap = whole - 1 + ago;
+        const float output = static_cast<float>(second) * history(tap)
+            + static_cast<float>(first) * history(tap + 1) + history(tap + 2)
+            - static_cast<float>(first) * y1 - static_cast<float>(second) * y2;
+        y2 = y1;
+        y1 = output;
+        if (ago <= n)
+            reads[n - ago] = output;
+    }
+    loop.warmSections(reads, n);
 }
 
 double AculeleEngine::gaussianReleaseStep(double argument,
@@ -9914,7 +10026,7 @@ double AculeleEngine::gaussianReleaseStep(double argument,
 void AculeleEngine::writePickRelease(StringLoop& loop, int length, float height,
                                      float position, float aperture, int modes,
                                      float releaseShare, double slipPole,
-                                     float referenceDelay) noexcept
+                                     float referenceDelay, float period) noexcept
 {
     // As the shape's own bound (initialisePluck): p of the written line.
     // The reference grid below moves it (setApex) and puts it back.
@@ -10165,14 +10277,19 @@ void AculeleEngine::writePickRelease(StringLoop& loop, int length, float height,
             if (referencePole > 0.0)
             {
                 // The rest line per unit height, from zero at the bridge,
-                // slipped as applyPlectrumSlip slips the loop.
+                // slipped over its period as releaseOverPeriod slips the loop.
                 const float first = pickReleaseDisplacement_[0];
                 for (int sample = 0; sample < grid; ++sample)
                     pickReleaseDisplacement_[static_cast<std::size_t>(sample)] -= first;
-                slipPeriod([this] (int sample) -> float&
+                slipFrame([this] (int sample) -> float&
                 {
                     return pickReleaseDisplacement_[static_cast<std::size_t>(sample)];
-                }, grid, referencePole);
+                }, grid, slipFrameLength(grid, period * static_cast<float>(grid)
+                                                   / static_cast<float>(length)),
+                   referencePole, 0.0, releaseSlipFrame_.data());
+                for (int sample = 0; sample < grid; ++sample)
+                    pickReleaseDisplacement_[static_cast<std::size_t>(sample)]
+                        = releaseSlipFrame_[static_cast<std::size_t>(sample)];
                 const auto slipped = slippedOn(grid,
                     [this] (int sample)
                     {
@@ -10253,7 +10370,7 @@ void AculeleEngine::writePickRelease(StringLoop& loop, int length, float height,
     for (int sample = 1; sample <= length; ++sample)
         loop.delay[static_cast<std::size_t>(wrapDelayIndex(
             loop.writeIndex - sample))] = restFrame(sample) - restEndpoint;
-    applyPlectrumSlip(loop, length, slipPole);
+    releaseOverPeriod(loop, length, period, slipPole);
     // The displacement the tip leaves behind is now the slipped one, so the
     // share is of its energy and the cross term is read against it: the
     // same exact solve on what is written.

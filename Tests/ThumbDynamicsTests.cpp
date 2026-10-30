@@ -11,7 +11,8 @@
 // velocity 127 to 32, and E5's falls over 3 dB from velocity 127 to 16. With the old edge
 // it fell 3.8 dB to velocity 64 and rose 1.8 dB again below it: the slip,
 // shifted so the line starts at rest in a loop longer than the line, put back
-// the harmonics the slow release had taken.
+// the harmonics the slow release had taken. And soft G5 and A5 start
+// without a click above 6 kHz.
 //
 // One E4 on channel 1, a fresh Performer for each velocity, the default
 // controls with Picking Thumb, 48 kHz in 256-sample blocks. The share is the
@@ -87,6 +88,7 @@ struct Note
 {
     double releaseTau = 0.0;
     double share = 0.0;
+    double onsetClick = 0.0;
 };
 
 Note play(int velocity, int key = 64)
@@ -141,6 +143,27 @@ Note play(int velocity, int key = 64)
         }
     }
     note.share = 10.0 * std::log10((band + 1e-30) / (whole + 1e-30));
+    // The loudest millisecond above 6 kHz from 2 ms before the onset to 5 ms
+    // after it, against the note's mean power over 5-155 ms.
+    Biquad click1(6000.0, true), click2(6000.0, true);
+    const std::size_t millisecond = static_cast<std::size_t>(0.001 * rate);
+    const std::size_t clickFrom = onset > 2 * millisecond ? onset - 2 * millisecond : 0;
+    double window = 0.0, loudest = 0.0;
+    for (std::size_t sample = 0; sample < onset + 5 * millisecond
+                                 && sample < output.size(); ++sample)
+    {
+        const double y = click2.process(click1.process(output[sample]));
+        if (sample < clickFrom)
+            continue;
+        window += y * y;
+        if ((sample - clickFrom + 1) % millisecond == 0)
+        {
+            loudest = std::max(loudest, window / static_cast<double>(millisecond));
+            window = 0.0;
+        }
+    }
+    const double mean = whole / static_cast<double>(to - from);
+    note.onsetClick = 10.0 * std::log10((loudest + 1e-30) / (mean + 1e-30));
     return note;
 }
 } // namespace
@@ -168,12 +191,24 @@ int main()
     // An octave up the slip spans a quarter of E5's period at velocity 16.
     // Slipped over the line alone, which the loop's sections lengthen by
     // 13%, its share rose 2.3 dB from velocity 127 to 16; over the loop's
-    // whole period it falls 5.7 (AculeleEngine::applyPadSlip).
+    // whole period it fell 5.7 (0.4.34), and 14.5 with the loop's sections
+    // carrying their part of it (AculeleEngine::releaseOverPeriod).
     const double highLoud = play(127, 76).share;
     const double highSoft = play(16, 76).share;
     std::printf("E5: 2.5-6 kHz share %.1f dB at velocity 127, %.1f at 16\n",
                 highLoud, highSoft);
     check(highSoft < highLoud - 3.0, "a softer thumb is darker up the neck too");
+    // The loop's sections start out carrying their part of the released wave
+    // (AculeleEngine::releaseOverPeriod). Given it at whole samples rather
+    // than at the fraction the loop reads, soft G5 and A5 clicked: their
+    // loudest millisecond above 6 kHz stood 1-2 dB over the note's mean
+    // power, where it is 30 dB under, and was 20-24 dB under in 0.4.34.
+    for (const int key : { 79, 81 })
+    {
+        const double click = play(28, key).onsetClick;
+        std::printf("key %d at velocity 28: onset above 6 kHz %.1f dB\n", key, click);
+        check(click < -10.0, "a soft high thumb note starts without a click");
+    }
     if (failures > 0)
     {
         std::fprintf(stderr, "%d thumb dynamics checks failed\n", failures);

@@ -5,6 +5,52 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-10-30 — every release is smoothed over the whole period and the loop's sections start out carrying it, 0.4.35 (measured against the Kai pack; adopted under the owner's standing rule, not yet heard)
+
+**What was decided.** 0.4.34 left soft nail and pick notes high up the neck
+as bright as loud ones (README, Known gaps), and its own pad smoothing kept
+part of the flaw: the loop's loss, dispersion and Thiran sections started
+empty, so what the release spreads into them was cut off. The candidate
+smooths every release, nail, pick and pad, forward and backward over the
+whole period with no bridge re-zero, and before the first sample runs the
+sections over one period of what the release changed, in the order the loop
+reads it; the Thiran's part is its own output over two periods at the
+fraction the loop reads (`releaseOverPeriod`). A first version fed the
+sections the change at whole samples and clicked: soft A5 and G5, whose
+fraction sat near a band edge, rose 20-27 dB above 6 kHz in their first
+2 ms. Taking the Thiran's outputs removed it; every onset from C4 to C6 at
+velocities 28 and 100 is within 5 dB of 0.4.34 above 6 kHz at 44.1, 48 and
+96 kHz.
+
+**Letters.** A: 0.4.34 shipping. B: the candidate. The material is the same
+high phrase loud (105) and soft (28), then E5 and A5 at 112, 64, 32 and 16,
+through Tenor Fluorocarbon Fingerstyle (nails), Soprano Thumb (pad) and Tenor
+Picked Melody (pick). Whole-file RMS match; B trimmed by -0.070 dB.
+
+**Measured.** The 2.5 kHz-up share of the 30-330 ms after onset, C4-A5 at
+velocity 127 against 12, median dB per dB of level, against the Kai pack's
+0.29 (25 notes; 0.43 over C5-C6):
+
+| Picking | 0.4.34 | B |
+| --- | --- | --- |
+| Finger (nails) | 0.20 | 0.40 |
+| Pick | 0.21 | 0.34 |
+| Thumb | 0.28 | 1.00 |
+| Strum (single notes take a nail) | 0.10 | 0.38 |
+
+Every one of the 32 notes now darkens; under 0.4.34 seven did not. Loud
+picked A5 and C6 are about 4 dB brighter above 10 kHz, the release law no
+longer over-smoothing them.
+
+**Chosen.** B, under the owner's standing rule that the candidate wins
+unless they say otherwise; the owner has not listened yet. The set is in the
+project files under `aculele/listening-tests/2026-10-30-soft-nail-and-pick/`.
+
+**What it licensed.** The release law over the period for every technique
+and warming the sections at a pluck. The thumb's 1.00 is the slip model's
+alone: no pack records a thumb, and nothing here licenses tuning the pad's
+release time toward the nails' figure.
+
 ## 2026-10-30 — a pad's slow release is smoothed over the string's whole period, 0.4.34 (measured on the line and against the Kai pack; adopted under the owner's standing rule, not yet heard)
 
 **What was decided.** A pad lets go more slowly the softer the stroke, and

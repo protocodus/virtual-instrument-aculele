@@ -999,6 +999,10 @@ private:
         // Switches the second dispersion section in or out under a sounding
         // wave (see its definition).
         void switchSecondDispersion(bool active) noexcept;
+        // Runs the sections over reads before the first, keeping only
+        // their states (releaseOverPeriod).
+        void warmSections(const float* reads, int count) noexcept;
+        void addSectionStates(const StringLoop& other, float gain) noexcept;
         // Switches the retiring second section out and gives its two
         // samples back to the delay.
         void retireSecondDispersion() noexcept;
@@ -1964,16 +1968,17 @@ private:
     void writePickRelease(StringLoop& loop, int length, float height,
                           float position, float aperture, int modes,
                           float releaseShare, double slipPole,
-                          float referenceDelay) noexcept;
+                          float referenceDelay, float period) noexcept;
     double plectrumSlipPole(const Voice& voice, float releasedAmplitude,
                             float heldDistance, float soundingLength,
                             float scaleLength, float edgeRadius) const noexcept;
-    static void applyPlectrumSlip(StringLoop& loop, int length,
-                                  double slipPole) noexcept;
     // period is the loop's round trip in samples, which its sections
-    // lengthen past the written line.
-    void applyPadSlip(StringLoop& loop, int length, float period,
-                      double slipPole, double unslipPole = 0.0) noexcept;
+    // lengthen past the written line; the sections get their part of it.
+    // keepSpread keeps the line's spread about its mean (the Thumb's).
+    void releaseOverPeriod(StringLoop& loop, int length, float period,
+                           double slipPole, double unslipPole = 0.0,
+                           bool keepSpread = false) noexcept;
+    int slipFrameLength(int length, float period) const noexcept;
     void resetSoundState() noexcept;
     struct VoiceBend
     {
@@ -2168,8 +2173,10 @@ private:
     // arrays for the aligned increments shared by its work and merge passes.
     DelayHistory<maximumDelaySamples> pickReleaseDisplacement_ {};
     DelayHistory<maximumDelaySamples> pickReleaseVelocity_ {};
-    // A pad release's whole loop period (applyPadSlip).
+    // A release's whole loop period, and what its slip changed
+    // (releaseOverPeriod).
     DelayHistory<maximumDelaySamples> releaseSlipFrame_ {};
+    DelayHistory<maximumDelaySamples> releaseSlipChange_ {};
     int nextDispersionSolve_ { 0 };
     // Advanced whenever engine state that configureVoice reads changes; see
     // VoiceConfigurationKey. Starts past the keys' never-matching zero.

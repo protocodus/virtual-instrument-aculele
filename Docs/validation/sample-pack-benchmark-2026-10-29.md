@@ -309,3 +309,22 @@ apart), median dB per dB:
 0.4.34 smooths a pad's slow release over the loop's whole period; smoothing
 the pick and nail releases the same way took Finger to 0.08 and Pick to
 -0.01, so they keep the one pass (decisions, 2026-10-30).
+
+## 0.4.35: every release, and the sections warmed (2026-10-30)
+
+The same measure and notes as 0.4.34's, after smoothing every release over
+the period and running the loop's sections over one period of what it
+changed before the first sample:
+
+| Picking | 0.4.34 | 0.4.35 |
+| --- | --- | --- |
+| Finger (nails) | 0.20 | 0.40 |
+| Pick | 0.21 | 0.34 |
+| Thumb (pad) | 0.28 | 1.00 |
+| Strum (a single note takes the nail) | 0.10 | 0.38 |
+
+Every note darkens (lowest 0.15, Finger C4); 0.4.34 had Thumb's C4, Finger's E5 and A5
+and Strum's A4-E5 and A5 at or below zero. The nails and the pick sit
+between the Kai pack's median 0.29 and its C5-C6 0.43. The thumb has no
+recording to be held to.
+

@@ -5,6 +5,29 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-10-30 — a re-plucked string's old wave retires once it is gone, 0.4.31 (standing rule, pending the owner's ear)
+
+**What was decided.** A re-plucked string keeps its old wave as a second pair
+of loops with a 10 ms T60, and it retired only after 80 ms below a quiet
+threshold. Its reaction force includes the bridge's motion under its port, so
+while anything sounded it never fell below that threshold: in continuous
+strumming 3.8-4.0 such tails ran at once and none retired. The tail now also
+retires eight T60s (80 ms, 480 dB of its own decay) after a contact, legato or
+re-pluck arrival last fed it. On an SDK-like build (clang `-fno-builtin`, no
+vectorisation, 64-frame blocks) steady strumming through every preset costs
+10.8% less CPU (7.61 s to 6.79 s).
+
+**The letters.** A: the shipping engine. B: the candidate. Two sets, the
+`01-concert-strum` and `04-low-g-tenor` demos, whole-file RMS matched (B
+trimmed by -0.094 and -0.066 dB). A-B nulls at -31.3 and -33.4 dB re A; the
+demos' levels move under 0.1 dB, short windows within 0.6 dB. The set was not
+committed.
+
+**What it licensed.** B was adopted under the owner's standing rule that a
+candidate wins unless the owner says otherwise; the owner has not listened
+yet. It is not bit-identical, and is recorded as chosen by that rule, not by
+ear or by a measurement of preference.
+
 ## 2026-10-29 — the wheel's vibrato swings both ways, 60 cents at 5.07 Hz, 0.4.30 (from a source, not by ear)
 
 **What was decided.** The owner, playing the Rack device: "vibrato (mod max)

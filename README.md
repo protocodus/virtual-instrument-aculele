@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.4.31 — 2026-10-30 — Less CPU while strumming
+
+When a string is plucked again, the wave it was still carrying now lets go once it has died away, where the bridge's own motion used to keep it running for as long as anything sounded. Steady strumming costs about 11% less CPU, and the dispersion design that runs after a preset loads and on new notes about 16% less. The sound moves very slightly (levels within 0.1 dB over a demo); it was adopted under the owner's standing rule to accept candidates.
+
 ### 0.4.30 — 2026-10-29 — A vibrato you can hear, and ukulele woods
 
 The mod wheel's vibrato now swings the note both ways about its own pitch, up to 60 cents from top to bottom at 5.07 Hz. Those are the widest swing and the median rate of three guitarists' fast vibratos along a nylon string (Rodrigues, UFMG 2014), and half the wheel gives their median swing, 31 cents. It used to rise only above the note, by up to 20 cents at 1.4 Hz, which was hard to hear and raised the note's mean pitch by up to 11 cents. While the wheel is up, a note the hand can stop is fretted instead of played on an open string, which takes no vibrato: E4 goes to the C string's 4th fret. The strings' dispersion now holds through the swing, so a vibrato costs less CPU than before. With the wheel down, nothing changes on spruce or mahogany.

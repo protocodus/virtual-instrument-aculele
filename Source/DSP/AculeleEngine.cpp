@@ -4560,6 +4560,7 @@ void AculeleEngine::prepare(double sampleRate, int)
     const auto active = static_cast<std::size_t>(delayCapacityForRate(sampleRate_));
     pickReleaseDisplacement_.prepareSize(active);
     pickReleaseVelocity_.prepareSize(active);
+    releaseSlipFrame_.prepareSize(active);
     for (auto& loop : repluckOldLoops_) loop.delay.prepareSize(active);
     for (auto& voice : voices_)
     {
@@ -8636,24 +8637,9 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
                 return sum;
             };
             const double before = spread();
-            applyPlectrumSlip(loop, length, slipPole);
-            if (!fullSoftSlip)
-            {
-                // Original Thumb retains its reference slip's periodic inverse,
-                // re-zeroed at the bridge sample as the slip itself is.
-                const double b = unslipPole;
-                double previous = lineAt(length - 1);
-                double first = 0.0;
-                for (int sample = 0; sample < length; ++sample)
-                {
-                    const double current = lineAt(sample);
-                    const double value = (current - b * previous) / (1.0 - b);
-                    previous = current;
-                    if (sample == 0)
-                        first = value;
-                    lineAt(sample) = static_cast<float>(value - first);
-                }
-            }
+            // Original Thumb retains its reference slip's inverse.
+            applyPadSlip(loop, length, voice.contactPeriodSamples, slipPole,
+                         fullSoftSlip ? 0.0 : unslipPole);
             const double after = spread();
             if (before > 0.0 && after > 0.0)
             {
@@ -8663,7 +8649,7 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
             }
         }
         else
-            applyPlectrumSlip(loop, length, slipPole);
+            applyPadSlip(loop, length, voice.contactPeriodSamples, slipPole);
     }
 
     if (merge)
@@ -9806,6 +9792,106 @@ void AculeleEngine::applyPlectrumSlip(StringLoop& loop, int length,
         return loop.delay[static_cast<std::size_t>(
             maximumDelaySamples - sample - 1)];
     }, length, slipPole);
+}
+
+// A pad's release (initialisePluck) is slipped over the loop's whole
+// period instead. That period is longer than the line, by the samples the
+// loss, dispersion and bending sections hold, and those start empty, so the
+// period the string plays is the line followed by that many zeros. The
+// one-pass slip above moves the wave by its group delay, about tau samples,
+// over the line's end into those sections, where it is lost, and wraps the
+// zeros' place into the line. Where tau is a good part of the period that
+// put back the harmonics a slow release takes away: on Concert Strum's
+// Thumb, from velocity 127 to 16, E5's H2 rose 12 dB and its H5 17 dB
+// against H1, and A4, C5 and A5 brightened with it. Here the slip runs
+// forward and then backward over the line and its zeros, at tau/sqrt(2):
+// zero phase, so nothing moves, with the gain 1/(1 + (omega tau)^2/2),
+// the one-pole's to second order in omega tau, falling at -12 dB an
+// octave above it rather than -6. A Thumb's reference unslip is divided
+// out the same way. The bridge sample is re-zeroed as above. That E5 now
+// darkens as the stroke softens: its 2.5-6 kHz share falls 5 dB to
+// velocity 16, where it rose 3, and its H2 rises 1.6 dB against H1, not
+// 12. Its H5 still rises 10 dB against H1, where the exact law, measured
+// on the written line, has it fall 9: the zeros cut off what the slip
+// spreads into them.
+//
+// The pick and nail releases (writePickRelease) keep the one-pass slip.
+// Over the period they lost the darkening a softer stroke has: the
+// 2.5 kHz-up share of the 30-330 ms after onset falls 0.29 dB per dB of
+// level from the loud to the quiet layer of the Kai pack (median of 25
+// notes, Tools/compare_sample_packs.py's onset), and C4-A5 at velocity 127
+// against 12 fell by a median 0.20 (Finger) and 0.21 (Pick) dB per dB with
+// the one pass but 0.08 and -0.01 over the period. The pads' one pass
+// stood at -0.04 (Thumb, brighter when softer); over the period they fall
+// by 0.28.
+namespace
+{
+template <typename At>
+void slipFrame(const At& at, int length, int period, double slipPole,
+               double unslipPole, float* frame) noexcept
+{
+    const int n = std::max(period, length);
+    for (int sample = 0; sample < n; ++sample)
+        frame[sample] = sample < length ? at(sample) : 0.0f;
+    // y[s] = (1-b) x[s] + b y[s-1] from its periodic steady state, or its
+    // inverse (x[s] - b x[s-1]) / (1-b), up the frame and then down it.
+    const auto both = [&] (double b, bool inverse)
+    {
+        for (int pass = 0; pass < 2; ++pass)
+        {
+            const auto x = [&] (int k) -> float&
+            {
+                return frame[pass == 0 ? k : n - 1 - k];
+            };
+            if (inverse)
+            {
+                double previous = x(n - 1);
+                for (int k = 0; k < n; ++k)
+                {
+                    const double current = x(k);
+                    x(k) = static_cast<float>((current - b * previous) / (1.0 - b));
+                    previous = current;
+                }
+                continue;
+            }
+            double state = 0.0;
+            double weight = 1.0;
+            for (int k = 0; k < n; ++k)
+            {
+                state += weight * static_cast<double>(x(n - 1 - k));
+                weight *= b;
+            }
+            state *= (1.0 - b) / (1.0 - weight);
+            for (int k = 0; k < n; ++k)
+            {
+                state = (1.0 - b) * static_cast<double>(x(k)) + b * state;
+                x(k) = static_cast<float>(state);
+            }
+        }
+    };
+    // b^sqrt(2) is the pole at tau/sqrt(2).
+    both(std::pow(slipPole, std::sqrt(2.0)), false);
+    if (unslipPole > 0.0)
+        both(std::pow(unslipPole, std::sqrt(2.0)), true);
+    const float first = frame[0];
+    for (int sample = 0; sample < length; ++sample)
+        at(sample) = frame[sample] - first;
+}
+} // namespace
+
+void AculeleEngine::applyPadSlip(StringLoop& loop, int length, float period,
+                                 double slipPole, double unslipPole) noexcept
+{
+    if (!(slipPole > 0.0))
+        return;
+    const int frame = exact::isfinite(period)
+        ? static_cast<int>(std::lround(period)) : length;
+    slipFrame([&loop] (int sample) -> float&
+    {
+        return loop.delay[static_cast<std::size_t>(
+            maximumDelaySamples - sample - 1)];
+    }, length, std::clamp(frame, length, static_cast<int>(releaseSlipFrame_.size())),
+       slipPole, unslipPole, releaseSlipFrame_.data());
 }
 
 double AculeleEngine::gaussianReleaseStep(double argument,

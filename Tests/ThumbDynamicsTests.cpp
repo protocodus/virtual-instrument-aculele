@@ -8,7 +8,7 @@
 // 1/v^2 and the ratio was 68.
 //
 // Then E4's share of its sound between 2.5 and 6 kHz falls at every step from
-// velocity 127 to 32, by 0.1-1.2 dB a step, 5.4 dB in all. With the old edge
+// velocity 127 to 32, and E5's falls over 3 dB from velocity 127 to 16. With the old edge
 // it fell 3.8 dB to velocity 64 and rose 1.8 dB again below it: the slip,
 // shifted so the line starts at rest in a loop longer than the line, put back
 // the harmonics the slow release had taken.
@@ -89,7 +89,7 @@ struct Note
     double share = 0.0;
 };
 
-Note play(int velocity)
+Note play(int velocity, int key = 64)
 {
     aculele::EngineParameters parameters;
     parameters.picking = aculele::PickingTechnique::Thumb;
@@ -106,7 +106,8 @@ Note play(int velocity)
         performer->beginBlock(left.data(), right.data(), block);
         if (index == 4)
         {
-            const std::uint8_t on[3] { 0x90, 64, static_cast<std::uint8_t>(velocity) };
+            const std::uint8_t on[3] { 0x90, static_cast<std::uint8_t>(key),
+                                       static_cast<std::uint8_t>(velocity) };
             performer->handleMidi(0, on, 3);
         }
         performer->endBlock();
@@ -164,6 +165,15 @@ int main()
         check(share < previous, "a softer thumb is darker");
         previous = share;
     }
+    // An octave up the slip spans a quarter of E5's period at velocity 16.
+    // Slipped over the line alone, which the loop's sections lengthen by
+    // 13%, its share rose 2.3 dB from velocity 127 to 16; over the loop's
+    // whole period it falls 5.7 (AculeleEngine::applyPadSlip).
+    const double highLoud = play(127, 76).share;
+    const double highSoft = play(16, 76).share;
+    std::printf("E5: 2.5-6 kHz share %.1f dB at velocity 127, %.1f at 16\n",
+                highLoud, highSoft);
+    check(highSoft < highLoud - 3.0, "a softer thumb is darker up the neck too");
     if (failures > 0)
     {
         std::fprintf(stderr, "%d thumb dynamics checks failed\n", failures);

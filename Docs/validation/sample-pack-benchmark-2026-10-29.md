@@ -285,3 +285,27 @@ fit, the median over them. The Soprano pack has no C4.
   piezo reads 11-20 dB over the Leolani DI from 4 to 6.3 kHz, where that DI
   falls about 14 dB a third octave; it is one pickup of unstated type, so
   nothing changed for it either.
+
+## 0.4.34: softer is darker (2026-10-30)
+
+Of the five packs only Kai has velocity layers. Over its 25 notes with two
+or more layers, the quiet layer sits a median 25.6 dB under the loud one,
+and its share of power above 2.5 kHz over the 30-330 ms after onset (this
+tool's onset) a median 7.8 dB under (IQR -0.1 to 10.8): 0.29 dB per dB of
+level. The quiet layer's high band is within 1.8 dB of its own noise, so
+the darkening is if anything understated.
+
+Aculele, the same measure on C4, E4, G4, A4, C5, E5, G5 and A5 alone, a fresh
+Performer each, default controls, velocity 127 against 12 (about 22 dB
+apart), median dB per dB:
+
+| Picking | 0.4.33 | 0.4.34 |
+| --- | --- | --- |
+| Finger (nails) | 0.20 | 0.20 |
+| Pick | 0.21 | 0.21 |
+| Thumb (pad) | -0.04 | 0.28 |
+| Strum (a single note takes the nail) | 0.10 | 0.10 |
+
+0.4.34 smooths a pad's slow release over the loop's whole period; smoothing
+the pick and nail releases the same way took Finger to 0.08 and Pick to
+-0.01, so they keep the one pass (decisions, 2026-10-30).

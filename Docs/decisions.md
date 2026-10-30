@@ -5,6 +5,53 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-10-30 — a pad's slow release is smoothed over the string's whole period, 0.4.34 (measured on the line and against the Kai pack; adopted under the owner's standing rule, not yet heard)
+
+**What was decided.** A pad lets go more slowly the softer the stroke, and
+the slip that models it (`initialisePluck`) took a soft high Thumb note
+brighter, not darker: from velocity 127 to 16 E5's H2 rose 12 dB and its H5
+17 dB against H1. Dumping the written line and taking its harmonics over the
+loop's period (the line, then the zeros its sections hold at a pluck)
+reproduced the engine's numbers exactly and traced it to the one-pass slip,
+periodic over the line alone: it moved the wave by about tau samples out of
+the line. The candidate smooths forward and backward over the whole period
+at tau/sqrt(2). Several variants were measured the same way and set aside:
+the one pass made periodic over the period (zeros or a ramp to the far
+bridge in the gap), causal from rest, without the bridge re-zero, a shift
+back by the group delay, and a re-zero confined near the bridge; each moved
+the line's H2 and H5 further from the exact law, or brightened Thumb.
+
+**Letters.** A: 0.4.33 shipping. B: the candidate on the pads only (Thumb's
+downstrokes and single notes, Strum's upstrokes). The material is Soprano
+Thumb's high phrase loud and soft, E5 and A5 at four velocities, then
+Concert Strum's C chord soft, medium, loud and soft. Whole-file RMS match;
+B trimmed by -0.007 dB.
+
+**Measured.** In the Kai pack's velocity layers a note's share above 2.5 kHz
+over the 30-330 ms after onset falls a median 0.29 dB per dB of level, loud
+to quiet, over 25 notes (the other four packs have one layer). The same
+measure on C4-A5 at velocity 127 against 12, median of eight notes:
+
+| Picking | 0.4.33 | Over the period, every release | B (pads only) |
+| --- | --- | --- | --- |
+| Finger (nails) | 0.20 | 0.08 | 0.20 |
+| Pick | 0.21 | -0.01 | 0.21 |
+| Thumb | -0.04 | 0.28 | 0.28 |
+| Strum (single notes take a nail) | 0.10 | 0.28 | 0.10 |
+
+So the pick and nail releases keep the one pass, which serves them better
+on this measure, and their soft high notes keep the flaw (README, Known
+gaps).
+
+**Chosen.** B, under the owner's standing rule that the candidate wins
+unless they say otherwise; the owner has not listened yet. The set is in the
+project files under `aculele/listening-tests/2026-10-30-soft-strokes/`.
+
+**What it licensed.** The pads' release only. The new filter's gain
+falls at -12 dB an octave above 1/tau where the one-pole's falls at -6; it
+matches it to second order below. That is a modelling choice the
+measurements here do not separate.
+
 ## 2026-10-30 — a fretted note loses a little at its stop, and open strings ring longer, 0.4.33 (fitted to recordings; adopted under the owner's standing rule, not yet heard)
 
 **What was decided.** In all five sampled ukuleles the open strings'

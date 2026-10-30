@@ -1970,6 +1970,10 @@ private:
                             float scaleLength, float edgeRadius) const noexcept;
     static void applyPlectrumSlip(StringLoop& loop, int length,
                                   double slipPole) noexcept;
+    // period is the loop's round trip in samples, which its sections
+    // lengthen past the written line.
+    void applyPadSlip(StringLoop& loop, int length, float period,
+                      double slipPole, double unslipPole = 0.0) noexcept;
     void resetSoundState() noexcept;
     struct VoiceBend
     {
@@ -2164,6 +2168,8 @@ private:
     // arrays for the aligned increments shared by its work and merge passes.
     DelayHistory<maximumDelaySamples> pickReleaseDisplacement_ {};
     DelayHistory<maximumDelaySamples> pickReleaseVelocity_ {};
+    // A pad release's whole loop period (applyPadSlip).
+    DelayHistory<maximumDelaySamples> releaseSlipFrame_ {};
     int nextDispersionSolve_ { 0 };
     // Advanced whenever engine state that configureVoice reads changes; see
     // VoiceConfigurationKey. Starts past the keys' never-matching zero.

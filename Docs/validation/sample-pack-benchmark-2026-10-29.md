@@ -352,12 +352,12 @@ microphone.
 
 The fall is 0-20 ms less 300-600 ms. The packs' tails sit 56-69 dB under
 their first 20 ms above 2.5 kHz (Kai's 31), so their falls are not their
-noise. From G4 up Aculele's nylon falls 15-19 dB, within the packs' 6-33.
+noise. From G4 up Aculele's nylon falls 19-31 dB, within the packs' 9-31.
 
 - **On the C string the nylon's top dies 30-40 dB faster than any pack's.**
   The bending loss, eta_E B n^2 / (1 + B n^2), grows with the stiffness: on
   the concert's 1.02 mm nylon C (B 8e-4) a 2.6 kHz partial loses about
-  3.5 times what it would on a string of the packs' 2e-4. Fluorocarbon, as
+  about four times what it would on a string of the packs' 2e-4. Fluorocarbon, as
   stiff as the packs' strings, falls 33 dB, at their edge.
 - **Nothing changed.** The owner chose nylon over fluorocarbon by ear on
   2026-10-29 (`Docs/decisions.md`), and a nylon as limber as the packs'

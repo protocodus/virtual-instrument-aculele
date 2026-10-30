@@ -354,23 +354,6 @@ namespace
 {
 constexpr float pi = 3.14159265358979323846f;
 constexpr float twoPi = 2.0f * pi;
-// A string's loss per round trip of its loop at every frequency, on top of
-// the fundamental T60 the loop is designed for, as one gain both
-// polarisations share. A string's intrinsic loss is the same in both planes:
-// measured on a symmetric frame, "the results are similar for both
-// polarizations" (Paté, Le Carrou and Fabre, "Predicting the decay time of
-// solid body electric guitar tones", JASA 135(5) (2014) 3045-3055, Sec.
-// III.D). The planes now differ only where their terminations do, the
-// saddle's heave and rocking ports. Until 2026-10-10 two authored factors
-// split it, 0.9995 normal and 0.9988 parallel, with the parallel plane's
-// broad and high shelves 6% and 8% deeper; this is their geometric mean.
-// With the rest of that day's string loss, the fundamentals' decay at the
-// default construction, the sustain steel.fundamentalT60Scale was chosen by
-// ear against, stays within 1.4 dB/s of what it was from E2 to B4 but A4
-// (3.5 dB/s faster); on the top string's E5 and B5 each plane's stays
-// within 2.8 dB/s, though the two planes' beat reads up to 4.7 dB/s slower
-// (Docs/research/string-hf-loss-2026-10-10.md). It is still an authored value.
-constexpr float stringRoundTripGain = 0.99915f;
 // A string's two planes do not sound at quite one pitch. On five sampled
 // ukuleles (Docs/validation/sample-pack-benchmark-2026-10-29.md) partials
 // 2-4 swell and fade within two seconds in 22-100% of notes, a DI as much as
@@ -6660,7 +6643,7 @@ AculeleEngine::restingStringModels() noexcept
             * static_cast<float>(bendingLossMagnitude(model.bendingGain, model.bendingA1, model.bendingA2, omega)
                 * constantLossMagnitude(model.constantGain, model.constantA1, model.constantA2,
                     model.constantN2, omega));
-        model.loopGain = clamp(desiredGain / std::max(filterGain, 0.50f) * stringRoundTripGain, 0.70f, 0.999995f);
+        model.loopGain = clamp(desiredGain / std::max(filterGain, 0.50f), 0.70f, 0.999995f);
     }
     restingStringNotes_ = notes;
     restingStringRate_ = sampleRate_;
@@ -7226,6 +7209,25 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
     // Woodhouse and Lynch-Aird's law already follows the stopped string's
     // pitch, so steel's fitted fret slope is not carried over.
     float fundamentalT60 = ukuleleLoss.fundamentalT60;
+    // A stopped string ends at the fret with the fingertip pressed on it just
+    // behind, and the pad takes a little of every wave that reaches that end;
+    // an open string ends on the bone nut. In all five sampled ukuleles
+    // (Docs/validation/sample-pack-benchmark-2026-10-29.md, Open and
+    // fretted) the open strings' partials ring 1.15-1.46 times as long as
+    // fretted notes' at the same frequency, and C4, open on any ukulele,
+    // 1.17-1.86 times; Aculele's rang 1.01-1.06 times. That loss replaces
+    // Acustra's authored 0.0074 dB per round trip, which every string, open
+    // or stopped, lost alike. Its size, per round trip at the stop, is
+    // fitted to those recordings (open notes now ring 1.15-1.32 times as
+    // long on nylon); no fingertip impedance has been measured. One loss per
+    // round trip takes every partial alike, so the low ones, which the string
+    // itself loses least, lose the most of their ring, as the recordings' do
+    // (1.5 times under 700 Hz, 1.2 above 1.8 kHz). Rates add.
+    constexpr float fretStopLossDb = 0.022f;
+    const float fretStop = frettingContactWeight(soundingLength, voice.harmonic);
+    if (fretStop > 0.0f)
+        fundamentalT60 = 1.0f / (1.0f / fundamentalT60
+            + fretStop * fretStopLossDb / 60.0f * frequency);
     if (handRate > 0.0f)
         fundamentalT60 = 1.0f / (1.0f / fundamentalT60 + handRate);
     const float rawDelay = static_cast<float>(tunedLoopDelay(
@@ -7301,8 +7303,8 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
         voice, stringIndex, unbentImpedance, unbentImpedance
             * exact::sqrt((bentTension / tension) / (1.0f
                 + (bentTension - tension) / std::max(axialRigidity, 1.0f))),
-        lossDesignFrequency, nominalPeriodGain * stringRoundTripGain,
-        nominalPeriodGain * stringRoundTripGain);
+        lossDesignFrequency, nominalPeriodGain,
+        nominalPeriodGain);
     voice.polarisationDetune = coupledDetune;
     const float lossOmega = static_cast<float>(referenceLossOmega(omega, sampleRate_));
     const float filterGain = magnitudeForOnePoleMix(
@@ -7343,11 +7345,8 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
         }
         else if (clearDelay && !usePickReference)
             voice.referencePickDelay[static_cast<std::size_t>(polarisation)] = 0.0f;
-        // Both planes lose the string's own loss alike: the same loss per
-        // round trip (stringRoundTripGain) on top of the requested
-        // fundamental T60, the same shelves and the same loss sections. On
-        // the longest-ringing notes the round-trip loss leaves the realised
-        // T60 well under the requested one (audit, 2026-09-30).
+        // Both planes lose the string's own loss alike: the requested
+        // fundamental T60, the same shelves and the same loss sections.
         if (clearDelay)
             loop.loopGainTransitionSamples = 0;
         // A refret moves the sections in one round trip, as the wave meets
@@ -7359,7 +7358,7 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
         // upper partials: a Shape change under a ringing chord flashed
         // above 5 kHz 27 dB under the chord's peak, and 47 dB under over
         // 30 ms (Aculele.ConstructionChange).
-        loop.setLoopGain(clamp(loopGain * stringRoundTripGain, 0.70f, 0.999995f),
+        loop.setLoopGain(clamp(loopGain, 0.70f, 0.999995f),
             (transitionRetune
                 || (continuousRevision && loop.loopGainTransitionSamples == 0))
             && !clearDelay, sectionSamples);
@@ -9376,8 +9375,8 @@ void AculeleEngine::updateTailHandLoss(Voice& voice) noexcept
     const float loopGain = std::pow(0.001f,
         1.0f / std::max(fundamentalT60 * frequency, 1.0f))
         / std::max(filterGain, 0.50f);
-    voice.tailLoop.setLoopGain(clamp(loopGain * stringRoundTripGain, 0.70f, 0.999995f));
-    voice.tailParallelLoop.setLoopGain(clamp(loopGain * stringRoundTripGain, 0.70f, 0.999995f));
+    voice.tailLoop.setLoopGain(clamp(loopGain, 0.70f, 0.999995f));
+    voice.tailParallelLoop.setLoopGain(clamp(loopGain, 0.70f, 0.999995f));
     voice.tailLoop.highLossMix = mutedHighLoss;
     voice.tailParallelLoop.highLossMix = mutedHighLoss;
 }

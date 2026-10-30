@@ -5,6 +5,41 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-10-30 — a fretted note loses a little at its stop, and open strings ring longer, 0.4.33 (fitted to recordings; adopted under the owner's standing rule, not yet heard)
+
+**What was decided.** In all five sampled ukuleles the open strings'
+partials ring 1.15-1.46 times as long as fretted notes' at the same
+frequency, C4 1.17-1.86 times; Aculele's rang 1.01-1.06 times
+([benchmark](validation/sample-pack-benchmark-2026-10-29.md), 0.4.33). A
+stopped string ends at the fret with the fingertip pressed behind it; an
+open one on the nut. Two forms were defensible, and both were rendered:
+
+**The letters.** Concert Strum's construction with Finger, each note held
+2 s at velocity 90: C4, C#4, D4, G4, G#4, A4, A#4, E4, F4, open notes among
+fretted ones. `AculeleProbe` at 48 kHz in 256-sample blocks, 19 s, whole-file
+RMS matched to A (B +0.71 dB, C +0.25 dB). Not committed.
+
+- A: the shipping engine (0.4.32).
+- B: a fretted note loses 0.030 dB per round trip at its stop, on top of
+  Acustra's authored 0.0074 dB every string lost. Open/fretted 1.23-1.40,
+  fretted notes' partials 10-25% under the shortest of the instruments' at
+  400 Hz to 1.5 kHz. Null against A -16.1 dB.
+- C: 0.022 dB at the stop, and the authored all-strings loss gone.
+  Open/fretted 1.15-1.32; those bands 10-17% shorter than 0.4.32, up to
+  12% under the instruments' range. Null against A -19.1 dB.
+
+**What was chosen.** C, under the owner's standing rule to accept
+candidates over the baseline, and because it replaces a guitar's authored
+loss with the contrast the ukulele recordings show rather than adding to
+it. The owner has not heard the set; a choice by ear would replace it.
+
+**What it licensed.** `fretStopLossDb` = 0.022 in `AculeleEngine.cpp`, its
+size fitted to the five recordings' ratios; no fingertip impedance was
+measured. `stringRoundTripGain` is removed. `LevelMatchData.h` was
+re-pinned; Tenor Fluorocarbon Fingerstyle's Output moved from -0.8 to
+-0.9 dB, Soprano Thumb's from 0.0 to -0.1 dB and Tenor Picked Melody's from
+-2.5 to -2.2 dB, which its Strum now allows (1.2 dB under the target).
+
 ## 2026-10-30 — each nail pluck draws its nail's share, and the vibrato narrows toward the nut, 0.4.32 (chosen by ear)
 
 **What was decided.** Two changes. First, each nail pluck (Finger, a Strum

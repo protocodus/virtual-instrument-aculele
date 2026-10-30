@@ -26,7 +26,11 @@ packs recorded through an SM58, a phone or a pickup can stand together:
   - the 10-90% rise time of the broadband envelope;
   - beating: each of partials 1-4's envelope in dB, from 0.1 s to 2 s while
     it stays 20 dB above the file's floor, less a quadratic fit; the share
-    of notes whose residual spans more than 6 dB.
+    of notes whose residual spans more than 6 dB;
+  - open against fretted: log T60 of every partial under 4 kHz of the
+    fretted notes C#4-E5 fitted as a quadratic in log frequency, and the
+    open strings' notes (C4, E4, G4, A4, as first position plays them)
+    read against that fit, the mean of their per-note medians as a ratio.
 Partial levels against each other follow the microphone and are left out.
 
 --takes compares a pack's round robins of one note with each other instead,
@@ -236,6 +240,23 @@ def render_notes(path):
             for k in range(LAST - FIRST + 1)]
 
 
+OPEN_NOTES = {60, 64, 67, 69}
+
+
+def open_against_fretted(rows):
+    points = [(r["midi"], math.log2(f), math.log(t)) for r in rows if 60 <= r["midi"] <= 76
+              for f, t in r["decays"] if t < 30 and f < 4000]
+    if not points:
+        return math.nan
+    points = np.array(points)
+    basis = np.vstack([np.ones(len(points)), points[:, 1], points[:, 1] ** 2]).T
+    fretted = np.array([m not in OPEN_NOTES for m in points[:, 0]])
+    fit = np.linalg.lstsq(basis[fretted], points[fretted, 2], rcond=None)[0]
+    residual = points[:, 2] - basis @ fit
+    medians = [np.median(residual[points[:, 0] == m]) for m in OPEN_NOTES if np.any(points[:, 0] == m)]
+    return math.exp(np.mean(medians)) if medians else math.nan
+
+
 def report(label, notes):
     rows = [measure(x, rate, midi) for midi, x, rate, _ in notes]
     registers = []
@@ -246,12 +267,14 @@ def report(label, notes):
     for low, high in zip(BANDS[:-1], BANDS[1:]):
         values = [t for r in rows for f, t in r["decays"] if low <= f < high and t < 30]
         decays.append(f"{np.median(values):5.2f}" if len(values) >= 3 else "    -")
+    open_ratio = open_against_fretted(rows)
     beating = np.array([r["beating"] for r in rows])
     shares = [np.nanmean(beating[:, n] > 6) * 100 for n in range(4)]
     print(f"{label:12s} {len(rows):3d} | " + " ".join(registers)
           + " | " + " ".join(decays)
           + f" | {np.nanmedian([r['glide'] for r in rows]):+5.1f} {np.nanmedian([r['rise'] for r in rows]):5.1f}"
-          + " | " + " ".join(f"{s:3.0f}" for s in shares))
+          + " | " + " ".join(f"{s:3.0f}" for s in shares)
+          + f" | {open_ratio:5.2f}")
 
 
 def take(x, rate, midi):
@@ -343,7 +366,7 @@ def main():
           + " " * 18 + "| glide rise | beating %")
     print(f"{'':12s}   n | " + " ".join(f"{low}-{high}"[:5].rjust(5) for low, high in REGISTERS)
           + " | " + " ".join(f"{b:5d}" for b in BANDS[:-1])
-          + " | cents   ms | H1  H2  H3  H4")
+          + " | cents   ms | H1  H2  H3  H4 | open")
     for directory in packs:
         report(Path(directory).name[:12], pack_notes(directory))
     for label, path in renders:

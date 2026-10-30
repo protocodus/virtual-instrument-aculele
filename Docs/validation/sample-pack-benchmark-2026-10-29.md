@@ -223,3 +223,65 @@ microphone, both with Finger):
   Tenor's Pick 1.6 dB over its target, past `Aculele.Levels`' 1.5 dB, with
   ±2 dB as well; no Output trim satisfies the check, so the residual stays
   ±1 dB.
+
+## 0.4.33: open and fretted (2026-10-30)
+
+`compare_sample_packs.py` now also reads how long the open strings ring
+against the fretted notes around them: every partial's T60 under 4 kHz of
+the fretted notes C#4-E5 is fitted as a quadratic in log frequency, and the
+open notes (C4, E4, G4, A4, as first position plays them) are read against
+that fit. A ratio over 1 means the open strings ring longer at the same
+frequency. C4 is open on any ukulele; the others are open in first
+position, which the packs' notes are assumed to be played in.
+
+| | open/fretted | C4 alone | under 700 Hz | 700-1800 Hz | over 1800 Hz |
+| --- | --- | --- | --- | --- | --- |
+| Guffland | 1.15 | 1.43 | 1.38 | 1.28 | 0.95 |
+| James | 1.30 | 1.86 | 1.28 | 1.52 | 1.27 |
+| Kai | 1.31 | 1.51 | 1.74 | 1.44 | 1.21 |
+| Soprano | 1.41 | - | 1.60 | 1.47 | 1.23 |
+| Leolani (DI) | 1.46 | 1.17 | 1.49 | 1.63 | 1.34 |
+| 0.4.32 soprano | 1.04 | 0.86 | | | |
+| 0.4.32 concert | 1.06 | 0.95 | 0.92 | 1.18 | 1.03 |
+| 0.4.32 tenor | 1.01 | 0.93 | | | |
+| 0.4.33 soprano | 1.32 | 1.17 | | | |
+| 0.4.33 concert | 1.27 | 1.14 | | | |
+| 0.4.33 tenor | 1.15 | 1.10 | | | |
+| 0.4.32 concert, fluorocarbon | 1.05 | 0.86 | | | |
+| 0.4.33 concert, fluorocarbon | 1.34 | 1.09 | | | |
+
+The band columns are each open note's partials in that band against the
+fit, the median over them. The Soprano pack has no C4.
+
+- **Every recorded ukulele's open strings ring longer**, by 1.15-1.46 times,
+  and most at the low partials. Aculele's rang alike: its string loss
+  follows the stopped length and pitch, and its one loss per round trip,
+  Acustra's authored 0.0074 dB, took every string the same.
+- **What 0.4.33 does.** A fretted note loses 0.022 dB per round trip at its
+  stop, the fingertip pressed behind the fret, and the authored all-strings
+  loss is gone (`fretStopLossDb` in `Source/DSP/AculeleEngine.cpp`). The
+  size is fitted to the ratios above: 0.030 on top of the old loss gave
+  1.23-1.40 and fretted notes 10-25% under the shortest of the instruments'
+  from 400 Hz to 1.5 kHz; 0.022 without it gives 1.15-1.32. One loss per round trip
+  takes every partial alike, so the low partials, which the string loses
+  least, lose most of their ring, as the recordings' do.
+- **What it costs.** Most of the notes measured are fretted, so the bands'
+  medians fall (the rows above, `c-` in the tool's output on the same
+  renders): on the concert 2.41 to 2.01 s at 400 Hz, 2.03 to 1.69 at 700,
+  1.09 to 0.95 at 1.5 kHz, a little under the five instruments' 1.92-2.76
+  and 1.05-1.33 there. Fluorocarbon's fretted notes come closer to the
+  instruments: 2.22 to 1.88 s at 1 kHz and 1.70 to 1.43 at 1.5 kHz, against
+  their 1.30-1.67 and 1.05-1.33.
+- **The microphones**, compared the same way while looking for this
+  (partial power by band against the note's whole, render minus pack, the
+  median over shared pitches): the mono and stereo microphones lie between
+  the mic-recorded packs, which disagree with each other by 20 dB above
+  2.5 kHz. The mono microphone, the upper-bout position, reads 2-10 dB under
+  the treble-bridge one at 1.3-2 kHz and under Guffland, James and Kai at
+  1.6 kHz, as it read under the FreePats tenor
+  ([recording comparison](recording-comparison-2026-10-28.md)); above
+  2.5 kHz the treble-bridge position is the brighter, against Guffland
+  and James. Neither position matches all three, so nothing changed. The
+  piezo reads 11-20 dB over the Leolani DI from 4 to 6.3 kHz, where that DI
+  falls about 14 dB a third octave; it is one pickup of unstated type, so
+  nothing changed for it either.

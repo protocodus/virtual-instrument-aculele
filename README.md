@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.4.37 — 2026-10-31 — A reset plays as a fresh instance
+
+A reset (the host's audio reset, before a bounce) now restarts every random draw from the instrument's seeds, so the performance after it plays exactly as a fresh instance's does, at every Oversampling. Before, the strokes' and strings' small variations carried on from wherever the last performance left them.
+
 ### 0.4.36 — 2026-10-31 — String Age, Pluck Position and Wood are audible
 
 Three panel controls changed the sound too little to hear. String Age only darkened the strings above 11 kHz, where nylon has nothing left, so age 0 against 1 moved the spectrum under 1 dB; a worn string is now a lossier material, its loss modulus rising from the measured new string's at age 0 to six times that at age 1 (an authored range), so its upper partials die faster and age 0 against 1 now moves the spectrum 5-6 dB. Strum and Thumb played 1.95 times the Finger's distance from the bridge, which put Pluck Position's middle at 0.43 of the string, against the band's edge, and left the knob's upper half almost dead; they now take the Finger's distance, so the middle is over the soundhole and the knob reaches the neck joint. Concert Strum and Concert Piezo Stage strum brighter at their default; Soprano D Tuning moves to Pluck Position 0.65 to keep its neckward strum. Wood took every top at one thickness, and the four woods' stiffness for their weight agrees within 10%, so they moved the body's modes 2-4%; each top is now graduated to the same bending stiffness, as a maker thins a stiff top, so koa's modes sit 11% under spruce's and cedar's 7% over, and which notes ring out moves up to 5 dB between woods. The bridge was re-pinned to the one measured ukulele and the levels re-pinned; three presets' Output moved 0.1-0.2 dB. Adopted under the owner's standing rule to accept candidates; the owner has not heard it yet.

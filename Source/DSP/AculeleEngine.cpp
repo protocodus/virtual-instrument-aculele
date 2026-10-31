@@ -3533,10 +3533,9 @@ AculeleEngine::AculeleEngine() noexcept
 }
 
 // Every random draw starts again from the constructor's seeds, so a
-// prepared engine plays as a new one does, whatever it played before or at
-// whichever rate. reset() alone does not restart the draws: a panic is not a
-// new performance, and the strums after it keep varying as repeated real
-// strums do.
+// prepared or reset engine plays as a new one does, whatever it played
+// before or at whichever rate. A host's audio reset (the Rack's, before a
+// bounce) starts a new performance, which must sound as a fresh instance's.
 void AculeleEngine::restartRandomDraws() noexcept
 {
     strumRandomState_ = 0x9e3779b9u;
@@ -4821,6 +4820,7 @@ void AculeleEngine::prepare(double sampleRate, int)
 
 void AculeleEngine::reset() noexcept
 {
+    restartRandomDraws();
     resetSoundState();
     palmMute_ = targetPalmMute_;
     pitchBendSemitones_.fill(0.0f);

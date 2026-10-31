@@ -914,17 +914,28 @@ WoodFactors woodFactorsFor(BodyMaterial material) noexcept
     const auto& wood = woodSpecs[static_cast<std::size_t>(material)];
     const auto& reference = woodSpecs[0];
     WoodFactors factors;
-    factors.mass = wood.properties.densityKgPerCubicMetre
+    // A maker thins a stiffer top and leaves a softer one thicker, until it
+    // bends as stiffly as the reference (graduating it by deflection): equal
+    // bending stiffness D = E h^3 / 12, not equal thickness. So h goes as
+    // E^(-1/3) and the top's mass per area as rho h. At equal thickness the
+    // four species' specific stiffness E/rho agree within 10%, and Wood moved
+    // the body's modes 2-4% and changed which notes ring out by under 1 dB;
+    // graduated, koa's modes sit 11% under spruce's and cedar's 7% over.
+    const float density = wood.properties.densityKgPerCubicMetre
         / reference.properties.densityKgPerCubicMetre;
-    const float stiffness = static_cast<float>(wood.effectiveBendingModulusPa
+    const float modulus = static_cast<float>(wood.effectiveBendingModulusPa
         / reference.effectiveBendingModulusPa);
+    const float thickness = std::cbrt(1.0f / modulus);
+    factors.mass = density * thickness;
+    const float stiffness = modulus * thickness * thickness * thickness;
     factors.inverseMass = 1.0f / factors.mass;
     factors.frequency = exact::sqrt(stiffness / factors.mass);
     // Pressure is proportional to modal acceleration. Its pole residue
     // therefore scales as frequency / mass, its resonant peak as 1/mass.
     factors.radiation = factors.frequency * factors.inverseMass;
-    // Dense plate driving-point mobility: 1 / sqrt(D * rho * h). All
-    // geometry/thickness factors cancel against the reference top.
+    // Dense plate driving-point mobility: 1 / sqrt(D * rho * h), the
+    // graduated thickness carried in D and rho h; the plan geometry cancels
+    // against the reference top.
     factors.conductance = 1.0f / exact::sqrt(stiffness * factors.mass);
     // Species-average elastic data contains no modal damping measurement:
     // preserve the measured body's Q, with no authored brightness EQ.
@@ -951,12 +962,15 @@ constexpr bool studioSpatialObservation = false;
 // bridge, at the base of the lowest string. That is the C string, the lowest
 // in pitch, so this pins Concert Mahogany's C string, its normal port's mean
 // conductance over 1-6 kHz, to it. Read by the guitars' convention, at the
-// bass-side edge (the G string), it would be 0.485; the owner chose this
+// bass-side edge (the G string), it would be 0.453; the owner chose this
 // reading by ear between the two (Docs/decisions.md, 2026-10-27).
 // Aculele.BridgeMobility (Tools/AculeleBridgeMobility.cpp) checks it. The
 // equal-thickness plate law keeps the other bodies within about 10% of it,
 // and Wood scales it by the top's density and stiffness (woodFactorsFor).
-constexpr float ukuleleTopMobilityRatio = 0.982f;
+// Re-pinned from 0.982 (0.485) when Wood took graduated tops (0.4.36):
+// Concert Mahogany's top is thinner than the reference spruce's, so its
+// bridge became 7% more mobile at the old ratio.
+constexpr float ukuleleTopMobilityRatio = 0.917f;
 constexpr bool ukuleleAirModeBoost = false;
 // Acustra's capture contour (CaptureVoicingData.h) corrects its close
 // microphones toward steel-string recordings in fixed hertz: -6 dB at 250
@@ -1342,6 +1356,15 @@ float stringAxialRigidity(const EngineParameters& parameters, int stringIndex,
 // String Age keeps Acustra's authored shelf (its 0.035 + 0.42 age mix at
 // steel's 0.52 scale, without the wound strings' extra) and lowers T60 by
 // its 12% at age 1; Woodhouse and Lynch-Aird measured settled new strings.
+// Those two alone left the control inaudible on a ukulele: the shelf's
+// cutoff (11.6 kHz at age 1 with the fitted scale) sits above where nylon's
+// partials have any energy, so String Age 0 to 1 moved the spectrum under
+// 1 dB. A worn string is a lossier material: the measured loss modulus E''
+// is the settled new string's, at age 0, and age raises it to six times
+// that at age 1 (stringAgeLossRise). The endpoint is an authored range for
+// the control, not a measurement of worn nylon; it acts through the
+// bending loss, eta_E B n^2, so the upper partials die faster and the
+// fundamental barely moves, as on a dull string.
 struct UkuleleStringLoss
 {
     float inharmonicity;
@@ -1361,7 +1384,9 @@ UkuleleStringLoss ukuleleStringLoss(const EngineParameters& parameters,
     const float inharmonicity = std::clamp(pi * pi * pi * modulus * d2 * d2
         / (64.0f * std::max(tension, 1.0f) * soundingLength * soundingLength),
         0.0f, 0.004f);
-    const float bending = stringBendingLossFactor(string, tension);
+    constexpr float stringAgeLossRise = 5.0f;
+    const float bending = stringBendingLossFactor(string, tension)
+        * (1.0f + stringAgeLossRise * parameters.stringAge);
     const float air = stringAirLossFactor(string, frequency);
     const float fundamentalLoss = air + bending * inharmonicity / (1.0f + inharmonicity);
     const float age = parameters.stringAge;
@@ -7949,11 +7974,17 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
     // excited modes (Traube/Smith, DAFx00); these ratios are not measured
     // dimensions or universal laws of a plectrum/finger. The panel remains
     // the base hand position; explicit MPE position below takes precedence.
-    // Strum is the index finger swept across the strings where the neck meets
-    // the body, the place the Thumb plays; it shares the Thumb's distance.
+    // Strum and Thumb take the Finger's distance: the panel's middle is over
+    // the soundhole, where a ukulele is most often strummed, and Pluck
+    // Position carries the hand to the neck joint. They played 1.95 times the
+    // Finger's distance, which put the middle of the knob at 0.43 of a
+    // Concert's open string, already against the 0.46 band edge below, so
+    // its whole upper half moved the point under 0.02 of the string, inside
+    // a single pluck's own +/-0.09 scatter. Past the middle a pluck point
+    // mirrors about the string's midpoint, so there is no further neckward
+    // sound to reach there.
     const float pickingDistance = parameters_.picking == PickingTechnique::Pick
-        ? 0.40f : parameters_.picking == PickingTechnique::Thumb
-            || parameters_.picking == PickingTechnique::Strum ? 1.95f : 1.0f;
+        ? 0.40f : 1.0f;
     // Acustra's distances are for its 648 mm guitar scale; the ukulele keeps
     // the same fractions of its own, shorter string.
     const float distanceFromBridge = (0.045f

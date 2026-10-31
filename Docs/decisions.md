@@ -5,6 +5,43 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-10-31 — String Age, Pluck Position and Wood made audible, 0.4.36 (measured; adopted under the owner's standing rule, not yet heard)
+
+**What was decided.** The owner could not hear Pluck Position or String Age
+and asked that Wood have an effect too. The Rack wiring carries all three to
+the engine; their effects in it were too small. On Concert Strum's phrase,
+the knob's extremes against each other (log-spectral distance, level taken
+out): String Age 0.86 dB; Pluck Position's upper half moved the centroid
+515 -> 529 Hz; spruce against koa 4.8 dB, with per-note levels within about
+1 dB between woods. Three candidates, each on its own physics:
+
+- **String Age** raises the loss modulus E'' from the measured settled new
+  string's at age 0 to six times it at age 1 (`stringAgeLossRise`). The
+  endpoint is an authored range for the control, not a measurement of worn
+  nylon. Age 0 against 1 now differs by 5.4 dB.
+- **Pluck Position**: Strum and Thumb take the Finger's distance from the
+  bridge instead of 1.95 times it, so the knob's middle is over the soundhole
+  rather than against the 0.46 band edge. Centroid at 0 / 0.5 / 1: 584 / 515 /
+  529 Hz before, 709 / 506 / 486 Hz now. Soprano D Tuning moves to Pluck
+  Position 0.65, nearer its old strum point, which also keeps its Piezo Mix
+  step inside `Aculele.Levels`' 3 dB (it read 3.04 at 0.50).
+- **Wood**: each top is graduated to the reference spruce top's bending
+  stiffness (thickness as E^(-1/3)) instead of one thickness for all. Concert
+  T1: spruce 485, mahogany 453 (was 466), koa 434, cedar 518 Hz. Spruce
+  against koa now 6.9 dB, and per-note levels move up to 5 dB between woods.
+  `ukuleleTopMobilityRatio` re-pinned 0.982 -> 0.917 so Concert Mahogany's C
+  string keeps Elie et al.'s 0.009 s/kg; `Aculele.Vibrato`'s 6th-fret note
+  moved from F#4, now beside Mahogany's moved body mode, to C#5.
+
+**The letters.** Each set A (0.4.35) against B (0.4.36), one phrase at the
+knob's two extremes, RMS-matched, in the project's
+`aculele/listening-tests/2026-10-31-{string-age,pluck-position,wood}/`.
+
+**What it licensed.** All three B's, under the owner's standing rule that a
+candidate wins unless the owner says otherwise. `LevelMatchData.h`
+re-pinned; Soprano D Tuning's Output +1.7 -> +1.9 dB, Low G Tenor's -1.3 ->
+-1.5 dB, Tenor Picked Melody's -1.9 -> -2.0 dB.
+
 ## 2026-10-30 — the presets keep nylon, asked again (chosen by ear)
 
 **What was decided.** Whether the five nylon presets move to fluorocarbon.

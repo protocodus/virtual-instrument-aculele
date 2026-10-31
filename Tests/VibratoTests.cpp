@@ -7,11 +7,11 @@
 // - The wheel at zero sends the samples of a note with no wheel at all.
 // - The full wheel swings a stopped note both ways about its own pitch, as
 //   an axial vibrato does (Rodrigues 2014), 60 cents from top to bottom at
-//   5.07 Hz from the 6th fret up and 16 cents at the 1st. F#4 on the C
+//   5.07 Hz from the 6th fret up and 16 cents at the 1st. C#5 on the G
 //   string's 6th fret and F4 on the E string's 1st are tracked over
 //   0.6-2.6 s with a 60 ms Hann window every 5 ms: each one's mean lies
 //   within 3 cents of the same note's without the wheel (the one-sided swing
-//   before 0.4.30 raised it 11 cents), F#4 swings 50-62 cents between its 2nd
+//   before 0.4.30 raised it 11 cents), C#5 swings 50-62 cents between its 2nd
 //   and 98th percentiles (the window smooths the sine's 60 to about 56) and
 //   F4 12-17, and each crosses its mean upward at 4.8-5.4 Hz.
 // - With the wheel up, a hand stops what it can: C4 to A4 legato sounds no
@@ -165,14 +165,17 @@ int main()
         check(none == zero, "the wheel at zero changed the note", 0.0);
     }
 
-    // F4 on the E string's 1st fret, where the swing is 16 cents, and F#4 on
-    // the C string's 6th, where it is all 60 (vibratoSemitones). The window
-    // smooths both by about 7%. Notes beside the top's main resonance
-    // (466-485 Hz on the concert) swing wider or narrower, as the body pulls
-    // their normal plane (README, Known gaps), so neither is near it.
+    // F4 on the E string's 1st fret, where the swing is 16 cents, and C#5 on
+    // the G string's 6th, where it is all 60 (vibratoSemitones). The window
+    // smooths both by about 7%. Notes beside a body mode swing wider or
+    // narrower, as the body pulls their normal plane (README, Known gaps), so
+    // neither is near one. F#4 on the C string was the 6th-fret note until
+    // 0.4.36: graduated tops moved Concert Mahogany's modes 3% down
+    // (T1 466 -> 453 Hz) and its swing read 74 cents at 6.4 Hz; C#5, at
+    // 554 Hz between T1 and the 684 Hz mode, swings 57.6 cents at 5.07 Hz.
     struct Swing { int note; int string; double low; double high; const char* what; };
     for (const Swing& test : { Swing { 65, 2, 12.0, 17.0, "the full wheel's swing at the 1st fret is not 16 cents" },
-                               Swing { 66, 1, 50.0, 62.0, "the full wheel's swing at the 6th fret is not 60 cents" } })
+                               Swing { 73, 0, 50.0, 62.0, "the full wheel's swing at the 6th fret is not 60 cents" } })
     {
         const int note = test.note;
         const double nominal = 440.0 * std::exp2((note - 69) / 12.0);

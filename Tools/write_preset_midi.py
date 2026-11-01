@@ -14,12 +14,20 @@ keyswitches C0 (down) and C#0 (up) before each stroke, as a player's hand
 keeps its down-up motion through the skipped strokes. The picked melody
 plays on one channel and lets the fretting hand choose its strings.
 
+Docs/audio/midi/songs/ holds longer public-domain pieces played with a
+person's timing (Performance, below). They are not preset demos: render one
+through the preset SONGS names, by its index in the bank, with
+
+    build-dsp/AculeleProbe 3 Docs/audio/midi/songs/minuet-in-g.mid minuet-in-g.wav
+
     python3 Tools/write_preset_midi.py           # write the sources, remove stale ones
     python3 Tools/write_preset_midi.py --check   # fail unless the committed files match
 """
 
 import argparse
+import math
 import pathlib
+import random
 import re
 import struct
 import sys
@@ -27,6 +35,7 @@ import sys
 PPQ = 480
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 MIDI_DIR = ROOT / "Docs/audio/midi"
+SONG_DIR = MIDI_DIR / "songs"
 
 DOWN, UP = 24, 25  # Performer::keyswitchDownstroke, keyswitchUpstroke
 # What a phrase may play: the stroke keyswitches C0-D0, and the strings from
@@ -227,6 +236,247 @@ def concert_piezo_stage():
     return p
 
 
+# ---- Songs ---------------------------------------------------------------
+#
+# Longer public-domain pieces, played as a person plays them rather than as
+# a sequencer does. The score is written in beats; Performance plays it:
+# the tempo breathes along a curve of (beat, bpm) points, every onset lands
+# a few milliseconds off the grid, a chord's notes are struck as one gesture
+# and velocities wander a little around the line the score shapes. A fixed
+# seed makes every run write the same bytes.
+
+
+LEAD_IN = 0.3  # seconds
+
+
+class Performance:
+    def __init__(self, tempo, seed, timing=0.007, dynamics=4.0):
+        self.tempo = sorted(tempo)  # [(beat, bpm)], linear between, held past the ends
+        self.random = random.Random(seed)
+        self.timing = timing        # seconds, the onset scatter's standard deviation
+        self.dynamics = dynamics    # velocity steps, likewise
+        self.events = []            # (seconds, order, bytes); note-offs sort first
+
+    def bpm(self, beat):
+        points = self.tempo
+        if beat <= points[0][0]:
+            return points[0][1]
+        for (b0, t0), (b1, t1) in zip(points, points[1:]):
+            if beat <= b1:
+                return t0 + (t1 - t0) * (beat - b0) / (b1 - b0)
+        return points[-1][1]
+
+    def seconds(self, beat):
+        """Clock time of a written beat: the integral of 60 / bpm, after a
+        moment's silence before the first note."""
+        total, previous = LEAD_IN, 0.0
+        for b, _ in self.tempo[1:] + [(math.inf, 0)]:
+            end = min(beat, b)
+            if end > previous:
+                t0, t1 = self.bpm(previous), self.bpm(end)
+                slope = (t1 - t0) / (end - previous)
+                total += (60.0 * (end - previous) / t0 if abs(slope) < 1e-9
+                          else 60.0 / slope * math.log(t1 / t0))
+                previous = end
+            if beat <= b:
+                break
+        return total
+
+    def scatter(self, scale=1.0):
+        deviation = self.timing * scale
+        return max(-2.5 * deviation, min(2.5 * deviation, self.random.gauss(0.0, deviation)))
+
+    def velocity(self, value):
+        return max(1, min(127, round(value + self.random.gauss(0.0, self.dynamics))))
+
+    def at(self, beat, lean=0.0, scale=1.0):
+        """A played onset: the written beat on the breathing clock, plus a
+        deliberate lean in seconds and the hand's scatter."""
+        return max(0.0, self.seconds(beat) + lean + self.scatter(scale))
+
+    def message(self, seconds, data, order=1):
+        self.events.append((seconds, order, bytes(data)))
+
+    def play(self, onset, beats_held, beat, note, velocity, channel=0):
+        """One note struck at `onset` seconds and let go `beats_held` written
+        beats after `beat`, with the release scattered too."""
+        release = max(onset + 0.04, self.seconds(beat + beats_held) + self.scatter(0.6))
+        self.message(onset, (0x90 | channel, note, self.velocity(velocity)))
+        self.message(release, (0x80 | channel, note, 0), 0)
+
+    def smf(self):
+        """A format 0 file at the piece's opening tempo, so it sits roughly on
+        a DAW's bars; the performance's own time is in the ticks."""
+        bpm = self.tempo[0][1]
+        events = sorted(self.events, key=lambda e: (e[0], e[1]))
+        # A key struck again before its last release lets go just before.
+        struck = {}
+        trimmed = []
+        for index in range(len(events) - 1, -1, -1):
+            seconds, order, data = events[index]
+            key = (data[0] & 0x0F, data[1])
+            if data[0] & 0xF0 == 0x90:
+                struck[key] = seconds
+            elif data[0] & 0xF0 == 0x80 and key in struck and seconds >= struck[key]:
+                seconds = struck[key] - 0.004
+            trimmed.append((seconds, order, data))
+        events = sorted(trimmed, key=lambda e: (e[0], e[1]))
+        ticks_per_second = PPQ * bpm / 60.0
+        tempo = round(60_000_000 / bpm)
+        track = bytearray(b"\x00\xff\x51\x03" + tempo.to_bytes(3, "big"))
+        last = 0
+        for seconds, _, data in events:
+            tick = max(last, round(seconds * ticks_per_second))
+            track += vlq(tick - last) + data
+            last = tick
+        track += b"\x00\xff\x2f\x00"
+        return (b"MThd" + struct.pack(">IHHH", 6, 0, 1, PPQ)
+                + b"MTrk" + struct.pack(">I", len(track)) + bytes(track))
+
+
+def breathe(bpm, phrases, swell=0.03, settle=0.07, last=0.22):
+    """A tempo curve over phrases of (first beat, length in beats): each
+    pushes on a little towards its middle and settles at its end; the last
+    one broadens into the close."""
+    points = []
+    for index, (start, length) in enumerate(phrases):
+        final = index == len(phrases) - 1
+        # After a breath the hand takes the tempo up again within a beat.
+        points += [(start if index == 0 else start + 0.75, bpm), (start + 0.55 * length, bpm * (1 + swell)),
+                   (start + 0.85 * length, bpm), (start + length, bpm * (1 - (last if final else settle)))]
+    return points
+
+
+def ode_to_joy():
+    """Beethoven's Ode to Joy (Symphony No. 9, 1824) as a chord melody on
+    the concert ukulele, tab-written: the tune on the top string the hand is
+    at, the chord on the strings below it. The first time through the
+    fingers pick the tune and brush the chord on the half bars; the second
+    time every note is a strum, with light upstrokes between them, a little
+    faster and louder, before the last phrase broadens into a slow C."""
+    bars = [
+        [(0, 76, 1), (1, 76, 1), (2, 77, 1), (3, 79, 1)], [(0, 79, 1), (1, 77, 1), (2, 76, 1), (3, 74, 1)],
+        [(0, 72, 1), (1, 72, 1), (2, 74, 1), (3, 76, 1)], [(0, 76, 1.5), (1.5, 74, 0.5), (2, 74, 2)],
+        [(0, 76, 1), (1, 76, 1), (2, 77, 1), (3, 79, 1)], [(0, 79, 1), (1, 77, 1), (2, 76, 1), (3, 74, 1)],
+        [(0, 72, 1), (1, 72, 1), (2, 74, 1), (3, 76, 1)], [(0, 74, 1.5), (1.5, 72, 0.5), (2, 72, 2)],
+        [(0, 74, 1), (1, 74, 1), (2, 76, 1), (3, 72, 1)], [(0, 74, 1), (1, 76, 0.5), (1.5, 77, 0.5), (2, 76, 1), (3, 72, 1)],
+        [(0, 74, 1), (1, 76, 0.5), (1.5, 77, 0.5), (2, 76, 1), (3, 74, 1)], [(0, 72, 1), (1, 74, 1), (2, 67, 2)],
+        [(0, 76, 1), (1, 76, 1), (2, 77, 1), (3, 79, 1)], [(0, 79, 1), (1, 77, 1), (2, 76, 1), (3, 74, 1)],
+        [(0, 72, 1), (1, 72, 1), (2, 74, 1), (3, 76, 1)], [(0, 74, 1.5), (1.5, 72, 0.5), (2, 72, 2)],
+    ]
+    # The chord under each half bar.
+    harmony = [("C", "C"), ("G", "G"), ("C", "C"), ("G", "G"), ("C", "C"), ("G", "G"), ("C", "C"), ("G", "C"),
+               ("G", "C"), ("G", "C"), ("G", "Am"), ("D7", "G"), ("C", "C"), ("G", "G"), ("C", "C"), ("G", "C")]
+    tones = {"C": (0, 4, 7), "G": (7, 11, 2), "Am": (9, 0, 4), "D7": (2, 6, 9, 0)}
+
+    def voicing(melody, chord):
+        """{string: note}: the tune on the A string from A4 up, else on the E
+        string with the A string left out; each string below it takes the
+        chord tone under the tune nearest the hand, open where the hand is low."""
+        top = 3 if melody >= STANDARD[3] else 2
+        fret = melody - STANDARD[top]
+        notes = {top: melody}
+        for string in range(top):
+            options = [f for f in range(8) if (STANDARD[string] + f) % 12 in tones[chord]
+                       and STANDARD[string] + f < melody]
+            if options:  # the re-entrant G string sits above a low tune: left out
+                notes[string] = STANDARD[string] + min(
+                    options, key=lambda f: 0 if f == 0 and fret <= 5 else abs(f - fret) + 0.5)
+        return notes
+
+    passes = [(0, 96, 74, False), (64, 108, 92, True)]
+    tempo = breathe(96, [(0, 16), (16, 16), (32, 16), (48, 16)]) + breathe(
+        108, [(64, 16), (80, 16), (96, 16), (112, 16)], last=0.35)
+    p = Performance(tempo, seed=1824, timing=0.008)
+    p.message(0.0, (0xB0, 126, 4), 0)
+    for start, _, loud, strummed in passes:
+        for bar, notes in enumerate(bars):
+            phrase_rise = 6 * math.sin(math.pi * ((bar % 4) + 0.5) / 4)
+            for index, (beat, melody, length) in enumerate(notes):
+                at = start + 4 * bar + beat
+                chord = harmony[bar][int(beat >= 2)]
+                accent = 8 if beat in (0, 2) else 0
+                velocity = loud + accent + phrase_rise
+                last = start == 64 and bar == 15 and index == len(notes) - 1
+                if strummed or beat in (0, 2):
+                    notes_of = voicing(melody, chord)
+                    onset = p.at(at)
+                    p.message(onset - 0.002, (0x90, DOWN, 100))
+                    p.message(onset + 0.01, (0x80, DOWN, 0), 0)
+                    held = 3.5 if last else length - 0.05
+                    for string, note in notes_of.items():
+                        p.play(onset, held, at, note, velocity - (0 if string == max(notes_of) else 10), string)
+                    # A light upstroke on the off-beat of a held note keeps
+                    # the hand moving.
+                    if strummed and length >= 1 and not last:
+                        up = p.at(at + 0.5, scale=1.3)
+                        p.message(up - 0.002, (0x90, UP, 100))
+                        p.message(up + 0.01, (0x80, UP, 0), 0)
+                        for string, note in notes_of.items():
+                            if string != max(notes_of):
+                                p.play(up, length - 0.55, at + 0.5, note, velocity - 30, string)
+                        p.play(up, length - 0.55, at + 0.5, melody, velocity - 22, max(notes_of))
+                else:
+                    top = 3 if melody >= STANDARD[3] else 2
+                    p.play(p.at(at), length - 0.05, at, melody, velocity - 4, top)
+    return p
+
+
+def minuet_in_g():
+    """The Minuet in G from the 1725 notebook for Anna Magdalena Bach, now
+    credited to Christian Petzold, fingerpicked on the low-G tenor: the
+    thumb takes the bass on the low G string and the fingers the tune, and
+    the hand chooses the strings (one channel). Played twice, the repeat
+    softer, as an echo, with the bass a touch ahead of the tune."""
+    first = [
+        [(0, 74, 1), (1, 67, 0.5), (1.5, 69, 0.5), (2, 71, 0.5), (2.5, 72, 0.5)],
+        [(0, 74, 1), (1, 67, 1), (2, 67, 1)],
+        [(0, 76, 1), (1, 72, 0.5), (1.5, 74, 0.5), (2, 76, 0.5), (2.5, 78, 0.5)],
+        [(0, 79, 1), (1, 67, 1), (2, 67, 1)],
+        [(0, 72, 1), (1, 74, 0.5), (1.5, 72, 0.5), (2, 71, 0.5), (2.5, 69, 0.5)],
+        [(0, 71, 1), (1, 72, 0.5), (1.5, 71, 0.5), (2, 69, 0.5), (2.5, 67, 0.5)],
+    ]
+    tune = first + [
+        [(0, 66, 1), (1, 67, 0.5), (1.5, 69, 0.5), (2, 71, 0.5), (2.5, 67, 0.5)],
+        [(0, 69, 3)],
+    ] + first + [
+        [(0, 69, 1), (1, 71, 0.5), (1.5, 69, 0.5), (2, 67, 0.5), (2.5, 66, 0.5)],
+        [(0, 67, 3)],
+    ]
+    bass = [
+        [(0, 55, 2), (2, 57, 1)], [(0, 59, 3)], [(0, 60, 3)], [(0, 59, 3)], [(0, 57, 3)], [(0, 55, 3)],
+        [(0, 62, 1), (1, 59, 1), (2, 55, 1)], [(0, 62, 3)],
+        [(0, 55, 2), (2, 57, 1)], [(0, 59, 3)], [(0, 60, 3)], [(0, 59, 3)], [(0, 57, 3)], [(0, 55, 3)],
+        [(0, 60, 1), (1, 62, 2)], [(0, 55, 3)],
+    ]
+    phrases = [(48 * time + 12 * n, 12) for time in range(2) for n in range(4)]
+    p = Performance(breathe(112, phrases, swell=0.025, settle=0.06, last=0.3), seed=1725, timing=0.006)
+    for time, loud in enumerate((84, 70)):
+        for bar in range(16):
+            start = 48 * time + 3 * bar
+            rise = 7 * math.sin(math.pi * ((bar % 4) + 0.5) / 4)
+            final = time == 1 and bar == 15
+            for beat, note, length in tune[bar]:
+                metric = 8 if beat == 0 else -6 if beat % 1 else 0
+                p.play(p.at(start + beat), 4.5 if final else length * 0.95, start + beat, note,
+                       loud + metric + rise)
+            for beat, note, length in bass[bar]:
+                p.play(p.at(start + beat, lean=-0.012), 4.5 if final else length * 0.9, start + beat, note,
+                       loud - 14 + (4 if beat == 0 else 0) + rise / 2)
+            if final:
+                # The last G, filled out under the tune: D4 and B4 with it.
+                for offset, note in enumerate((62, 71)):
+                    p.play(p.at(start, lean=0.012 * (offset + 1)), 4.5, start, note, loud - 16)
+    return p
+
+
+SONGS = {
+    # file in Docs/audio/midi/songs/: (phrase, the preset it is written for)
+    "minuet-in-g.mid": (minuet_in_g, "low-g-tenor"),
+    "ode-to-joy.mid": (ode_to_joy, "concert-strum"),
+}
+
+
 PHRASES = {
     "concert-strum": concert_strum,
     "soprano-d-tuning": soprano_d_tuning,
@@ -266,24 +516,35 @@ def files():
     return written
 
 
+def song_files():
+    slugs = preset_slugs()
+    written = {}
+    for name, (build, preset) in SONGS.items():
+        if preset not in slugs:
+            sys.exit(f"error: song {name} names {preset}, which is not in the bank")
+        written[name] = build().smf()
+    return written
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--check", action="store_true", help="fail unless the committed files match")
     args = parser.parse_args()
-    expected = files()
-    found = {path.name: path.read_bytes() for path in MIDI_DIR.glob("*.mid")}
-    if args.check:
-        stale = sorted(set(found) ^ set(expected) | {name for name in expected if found.get(name) != expected[name]})
-        if stale:
-            sys.exit(f"Docs/audio/midi differs from {pathlib.Path(__file__).name} in: {', '.join(stale)}")
-        return
-    MIDI_DIR.mkdir(parents=True, exist_ok=True)
-    for name in set(found) - set(expected):
-        (MIDI_DIR / name).unlink()
-    for name, data in expected.items():
-        (MIDI_DIR / name).write_bytes(data)
-        print(MIDI_DIR / name)
+    stale = []
+    for directory, expected in ((MIDI_DIR, files()), (SONG_DIR, song_files())):
+        found = {path.name: path.read_bytes() for path in directory.glob("*.mid")}
+        if args.check:
+            stale += sorted(set(found) ^ set(expected) | {name for name in expected if found.get(name) != expected[name]})
+            continue
+        directory.mkdir(parents=True, exist_ok=True)
+        for name in set(found) - set(expected):
+            (directory / name).unlink()
+        for name, data in expected.items():
+            (directory / name).write_bytes(data)
+            print(directory / name)
+    if stale:
+        sys.exit(f"Docs/audio/midi differs from {pathlib.Path(__file__).name} in: {', '.join(stale)}")
 
 
 if __name__ == "__main__":

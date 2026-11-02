@@ -363,8 +363,7 @@ constexpr float twoPi = 2.0f * pi;
 // or the fret's sideways hold, the string's own asymmetry) is not
 // identified, so this split is not derived. The owner chose it by ear: 2
 // cents, 2^(-2/1200), under the 3.5 and 7 cents that matched the recordings'
-// beating (Docs/decisions.md, 2026-10-29). The normal plane takes it, so the
-// parallel one, which lasts and which the tuning follows, keeps its pitch.
+// beating (Docs/decisions.md, 2026-10-29).
 constexpr float normalPlaneDelayRatio = 0.99884542f;
 constexpr float noteDetuneRangeCents = 20.0f;
 // No two contacts on a string sound at quite the same pitch. A fretting
@@ -970,7 +969,7 @@ constexpr bool studioSpatialObservation = false;
 // Re-pinned from 0.982 (0.485) when Wood took graduated tops (0.4.36):
 // Concert Mahogany's top is thinner than the reference spruce's, so its
 // bridge became 7% more mobile at the old ratio.
-constexpr float ukuleleTopMobilityRatio = 0.917f;
+constexpr float ukuleleTopMobilityRatio = 0.983f;
 constexpr bool ukuleleAirModeBoost = false;
 // Acustra's capture contour (CaptureVoicingData.h) corrects its close
 // microphones toward steel-string recordings in fixed hertz: -6 dB at 250
@@ -997,7 +996,7 @@ constexpr bool guitarCaptureContour = ACULELE_GUITAR_CAPTURE_CONTOUR;
 // is measured. Aculele.Radiation (Tools/AculeleRadiation.cpp) holds each
 // spruce body to the measured slope.
 constexpr std::array<float, 3> radiationTiltShelfHz { 1414.2f, 2828.4f, 5656.9f };
-constexpr std::array<float, 3> radiationTiltShelfDb { -2.30f, -1.25f, -0.91f };
+constexpr std::array<float, 3> radiationTiltShelfDb { -2.09f, -1.75f, -1.44f };
 
 std::array<std::complex<float>, 2> studioLowModeObservation(
     BodyShape shape, int sourceMode, float frequency, float q) noexcept
@@ -1502,18 +1501,18 @@ float piezoReferenceFor(const EngineParameters& parameters) noexcept
 }
 
 // A plate mode's bridge residues on a top of plateFrequency (1/A_p) times the
-// anchor's area. Its modal mass goes as A_p and its lengths as sqrt(A_p), so
-// the driving-point residue phi^2/m goes as 1/A_p, the moment residue
-// (dphi/dx)^2/m as 1/A_p^2 and the cross term as A_p^-1.5: one congruence,
-// diag(A_p^-1/2, A_p^-1), so the residue matrix stays positive semidefinite.
-// Each mode's peak mobility is then independent of size, as its peak
-// pressure is (bodyShapeMorph).
+// anchor's area. In saddleLeverArm's normalized bridge-span coordinates
+// u in [-1, 1], heave, cross and rock all have units of inverse modal mass
+// (1/m), because the physical derivative dphi/dy ~ A_p^-1/2 is multiplied by
+// the bridge half-span a ~ A_p^1/2. Scaling all three entries by 1/A_p
+// preserves the positive semidefinite residue matrix and matches the moment
+// radiation scaling in buildBodyConfiguration.
 void scalePlateBridgeResidues(detail::MeasuredBridgeMode& mode,
                               float plateFrequency) noexcept
 {
     mode.heave *= plateFrequency;
-    mode.cross *= plateFrequency * exact::sqrt(plateFrequency);
-    mode.rock *= plateFrequency * plateFrequency;
+    mode.cross *= plateFrequency;
+    mode.rock *= plateFrequency;
 }
 
 // The same coupled-model factors the radiation takes, applied to a bridge
@@ -4860,8 +4859,16 @@ void AculeleEngine::reset() noexcept
     captureMix_[static_cast<std::size_t>(parameters_.capture)] = 1.0f;
     bodyConfigured_ = false;
     bodyUpdatePending_ = false;
-    // Both banks follow the construction, which is only known here: prepare
-    // runs before the pending parameters are adopted.
+    // Both banks and the piezo saddle load follow the construction, which is
+    // only known here: prepare runs before the pending parameters are adopted.
+    {
+        double impedance = 0.0;
+        const auto standard = openNotes(Tuning::Standard);
+        for (int string = 0; string < stringCount; ++string)
+            impedance += static_cast<double>(stringImpedance(parameters_,
+                string, standard[static_cast<std::size_t>(string)]));
+        piezoSaddle_ = designPiezoSaddle(sampleRate_, impedance);
+    }
     configureBridge();
     bridgeUpdatePending_ = false;
     configureBody();
@@ -5209,6 +5216,10 @@ void AculeleEngine::applyDiscreteParameters(bool force) noexcept
             voice.attackSlopeEnergy = 0.0f;
             voice.observedSlopeEnergy = 0.0f;
         }
+        else if (tuningChanged || shapeChanged)
+        {
+            updateAttackPitch(voice, string);
+        }
         if (!voice.played && tuningChanged && (force || openChanged))
             // An idle string is still physically vibrating through the shared
             // bridge. A tuning change moves its pitch and port, preserving
@@ -5255,12 +5266,14 @@ void AculeleEngine::applyDiscreteParameters(bool force) noexcept
         }
 
     if (ageChanged || tuningChanged || shapeChanged)
-        for (int pass = 0; pass < 2; ++pass)
-            for (int string = 0; string < stringCount; ++string)
-                configureVoice(voices_[static_cast<std::size_t>(string)], string,
-                               voices_[static_cast<std::size_t>(string)].midiNote,
-                               false, false, tuningChanged && !force,
-                               ageChanged && !force, sectionSamples);
+    {
+        ++voiceConfigurationGeneration_;
+        for (int string = 0; string < stringCount; ++string)
+            configureVoice(voices_[static_cast<std::size_t>(string)], string,
+                           voices_[static_cast<std::size_t>(string)].midiNote,
+                           false, false, tuningChanged && !force,
+                           ageChanged && !force, sectionSamples);
+    }
 
     if (tuningChanged && !force)
         for (int string = 0; string < stringCount; ++string)
@@ -5963,15 +5976,16 @@ void AculeleEngine::buildBodyConfiguration(BodyConfiguration& configuration,
             const float hz = spread[static_cast<std::size_t>(item)].first;
             auto& source = configuration.modes[static_cast<std::size_t>(
                 spread[static_cast<std::size_t>(item)].second)];
-            float ratio = sixthOctave;
-            if (item > 0)
-                ratio = std::min(ratio, 2.0f * hz
-                    / (spread[static_cast<std::size_t>(item - 1)].first + hz));
-            if (item + 1 < spreadCount)
-                ratio = std::min(ratio, 0.5f
-                    * (hz + spread[static_cast<std::size_t>(item + 1)].first) / hz);
-            const float low = hz / ratio;
-            const float high = hz * ratio;
+            const float lowRatio = item > 0
+                ? std::min(sixthOctave, 2.0f * hz
+                    / (spread[static_cast<std::size_t>(item - 1)].first + hz))
+                : sixthOctave;
+            const float highRatio = item + 1 < spreadCount
+                ? std::min(sixthOctave, 0.5f
+                    * (hz + spread[static_cast<std::size_t>(item + 1)].first) / hz)
+                : sixthOctave;
+            const float low = hz / lowRatio;
+            const float high = hz * highRatio;
             const int members = std::clamp(static_cast<int>(
                 std::lround(modesPerHz * (high - low))), 1, plateClusterLimit);
             if (bandEnd + members > bodyModeCount)
@@ -6889,7 +6903,10 @@ float AculeleEngine::coupledPolarisationDetune(
     // used when its delay is configured below.
     const double ownPhase = std::arg(exact::divide(unbentAdmittance - Complex(port.normal),
                                              unbentAdmittance + Complex(port.normal)));
-    const Complex gainNormal = std::polar(static_cast<double>(normalGain), -ownPhase);
+    // The normal plane's 2-cent split (normalPlaneDelayRatio) is in its loop,
+    // so the coupled pair is solved with that phase offset in it.
+    const Complex gainNormal = std::polar(static_cast<double>(normalGain),
+        -ownPhase + 2.0 * piDouble * (1.0 - static_cast<double>(normalPlaneDelayRatio)));
     const Complex gainParallel = std::polar(static_cast<double>(parallelGain), -ownPhase);
     const Complex a00 = gainNormal * r00;
     const Complex a01 = gainNormal * r01;
@@ -7441,9 +7458,9 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
     for (int polarisation = 0; polarisation < 2; ++polarisation)
     {
         auto& loop = voice.loops[static_cast<std::size_t>(polarisation)];
-        const float planeDelay = polarisation == 0
-            ? rawDelay * normalPlaneDelayRatio : rawDelay;
-        const float planeBridgeDelay = measuredBridgeDelay;
+        const float planeScale = polarisation == 0 ? normalPlaneDelayRatio : 1.0f;
+        const float planeDelay = rawDelay * planeScale;
+        const float planeBridgeDelay = measuredBridgeDelay * planeScale;
         const float polarisationDelay = coupledDetune != 0.0f
             ? (planeDelay - planeBridgeDelay) * (1.0f + coupledDetune)
             : planeDelay - planeBridgeDelay;
@@ -7460,8 +7477,8 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
             const float referenceBridgeDelay = planeBridgeDelay
                 * static_cast<float>(48000.0 / sampleRate_);
             const float referenceDelay = coupledDetune != 0.0f
-                ? (referenceRawDelay - referenceBridgeDelay) * (1.0f + coupledDetune)
-                : referenceRawDelay - referenceBridgeDelay;
+                ? (referenceRawDelay * planeScale - referenceBridgeDelay) * (1.0f + coupledDetune)
+                : referenceRawDelay * planeScale - referenceBridgeDelay;
             voice.referencePickDelay[static_cast<std::size_t>(polarisation)] = clamp(
                 referenceDelay,
                 3.0f, static_cast<float>(activeDelaySamples() - 3));
@@ -8042,9 +8059,15 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
                 - sharedKnee * sharedKnee / travel, sharedOffset);
         takeOffset = takeSpread * (sharedOffset + 0.30f * positionDraw);
     }
+    constexpr float highRegisterFretPivot = 0.793700526f; // 2^(-4/12), 4th fret
+    const float highRegisterLength = highRegisterFretPivot * scaleLength;
+    const float effectivePluckLength = (parameters_.picking != PickingTechnique::Strum
+        && soundingLength < highRegisterLength)
+        ? highRegisterLength * std::pow(soundingLength / highRegisterLength, 0.35f)
+        : soundingLength;
     float basePosition = hasTimbre
         ? 0.05f + 0.41f * mpeTimbre_[channelIndex]
-        : distanceFromBridge / soundingLength;
+        : distanceFromBridge / effectivePluckLength;
     // A hand held at its distance from the bridge meets a short (stopped
     // high on the neck) string ever further toward its middle, and a Thumb
     // meets even the open strings there. No player lets a note sound from
@@ -8496,7 +8519,7 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
         const float frameScale = voice.contactPeriodSamples > 0.0f
             ? voice.contactPeriodSamples / static_cast<float>(length) : 1.0f;
         const float localPosition = clamp((position
-            + (polarisation == 0 ? -0.006f : 0.009f)) * frameScale, 0.05f, 0.60f);
+            + (polarisation == 0 ? -0.006f : 0.009f)) * frameScale, 0.05f, handLimit);
         voice.releaseShapePosition[static_cast<std::size_t>(polarisation)] = localPosition;
         const float polarisationGain = polarisation == 0
             ? exact::sqrt(voice.polarisationMix)
@@ -9937,10 +9960,22 @@ void slipFrame(const At& at, int length, int period, double slipPole,
             }
         }
     };
-    // b^sqrt(2) is the pole at tau/sqrt(2).
-    both(std::pow(slipPole, std::sqrt(2.0)), false);
+    // For H_b(z)=(1-b)/(1-b z^-1), two passes at q have magnitude |H_q|^2;
+    // setting that to 1/sqrt(2) at H_b's half-power corner w_c gives
+    // (1-q)^2/q = (1-b)^2/[b(sqrt(2)-1)], avoiding the high-frequency rate
+    // error of b^sqrt(2).
+    const auto padReleasePole = [] (double b) noexcept
+    {
+        if (!(b > 0.0))
+            return 0.0;
+        const double difference = 1.0 - b;
+        const double t = difference * difference
+            / (2.0 * b * (std::sqrt(2.0) - 1.0));
+        return 1.0 / (1.0 + t + std::sqrt(t) * std::sqrt(2.0 + t));
+    };
+    both(padReleasePole(slipPole), false);
     if (unslipPole > 0.0)
-        both(std::pow(unslipPole, std::sqrt(2.0)), true);
+        both(padReleasePole(unslipPole), true);
 }
 } // namespace
 

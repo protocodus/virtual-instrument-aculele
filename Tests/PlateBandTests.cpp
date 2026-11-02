@@ -93,9 +93,9 @@ void run(double rate)
     engine->prepare(rate, 256);
     const double sixthOctave = std::exp2(1.0 / 6.0);
     for (int shape = 0; shape < 3; ++shape)
-        for (int wood = 0; wood < 3; ++wood)
+        for (int wood = 0; wood < 4; ++wood)
         {
-            const auto& configuration = Access::body(*engine, 3 * shape + wood);
+            const auto& configuration = Access::body(*engine, 4 * shape + wood);
             int sounding = 0;
             for (int index = 0; index < configuration.count; ++index)
             {

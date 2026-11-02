@@ -672,8 +672,9 @@ void Performer::flushNoteGroup() noexcept
         && strokeMode_ == StrokeMode::Automatic
         && engine_.performanceRealism().fingerPairs;
     bool strum = soundingNotes >= 3 || fingerPair
-        || (soundingNotes == 2 && pickTechnique_
-            && engine_.performanceRealism().twoStringStrokes);
+        || (soundingNotes == 2 && (strokeMode_ != StrokeMode::Automatic
+            || (pickTechnique_
+                && engine_.performanceRealism().twoStringStrokes)));
     // The rest is measured between the strokes' own samples, so no block
     // size can move it. groupedSample_ is still this group's sample
     // wherever it is flushed (handleEvent, endBlock).

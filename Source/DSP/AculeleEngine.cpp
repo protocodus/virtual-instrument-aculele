@@ -9912,10 +9912,11 @@ double AculeleEngine::plectrumSlipPole(const Voice& voice,
 // with the one pass and 22-24 dB over it with either smoothing over the
 // period alone; the sections' share is what was missing.
 //
-// The slip runs forward and backward over the period at tau/sqrt(2): zero
-// phase, so nothing moves, with the gain 1/(1 + (omega tau)^2/2), the
-// one-pole's to second order in omega tau, falling at -12 dB an octave
-// above it rather than -6. The 2.5 kHz-up share of the 30-330 ms after
+// The slip runs forward and backward over the period, each pass at the pole
+// padReleasePole sets so the pair's half-power point is the one-pole's own
+// corner: zero phase, so nothing moves, falling at -12 dB an octave above it
+// rather than -6. (0.4.35 ran each pass at tau/sqrt(2), the one-pole's
+// gain to second order in omega tau.) The 2.5 kHz-up share of the 30-330 ms after
 // onset falls 0.29 dB per dB of level from the loud to the quiet layer of
 // the Kai pack (median of 25 notes; 0.43 over C5-C6, whose quiet layer
 // stands clearer of its noise). C4-A5 at velocity 127 against 12 now fall a

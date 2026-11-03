@@ -14742,15 +14742,19 @@ bool roomPrime(int value) noexcept
 // The eight lines' Hadamard mix, in place, normalised to stay lossless.
 void roomHadamard(std::array<float, roomLineTotal>& values) noexcept
 {
-    for (std::size_t span = 1; span < values.size(); span *= 2)
-        for (std::size_t start = 0; start < values.size(); start += 2 * span)
-            for (std::size_t index = start; index < start + span; ++index)
-            {
-                const float a = values[index];
-                const float b = values[index + span];
-                values[index] = a + b;
-                values[index + span] = a - b;
-            }
+    // The eight-point transform written out stage by stage (spans 1, 2, 4),
+    // each butterfly the same sum and difference as the loop it replaces.
+    static_assert(roomLineTotal == 8, "the transform below has eight points");
+    const auto butterfly = [&values] (std::size_t low, std::size_t high)
+    {
+        const float a = values[low];
+        const float b = values[high];
+        values[low] = a + b;
+        values[high] = a - b;
+    };
+    butterfly(0, 1); butterfly(2, 3); butterfly(4, 5); butterfly(6, 7);
+    butterfly(0, 2); butterfly(1, 3); butterfly(4, 6); butterfly(5, 7);
+    butterfly(0, 4); butterfly(1, 5); butterfly(2, 6); butterfly(3, 7);
     for (auto& value : values)
         value *= 0.35355339f;
 }
@@ -15029,27 +15033,28 @@ void AculeleEngine::RoomAmbience::reset() noexcept
 
 void AculeleEngine::RoomAmbience::step(float input) noexcept
 {
+    // The ring is stored twice, one capacity apart, so a read at any delay
+    // below the capacity is one contiguous address with no wrap.
     early[static_cast<std::size_t>(earlyHead)] = input;
-    const auto delayed = [this] (int delay)
-    {
-        // The power-of-two ring maps the same signed difference without a
-        // conditional wrap for each receiver interpolation tap.
-        static_assert((earlyCapacity & (earlyCapacity - 1)) == 0,
-                      "early reflection ring must be a power of two");
-        const auto index = static_cast<unsigned>(earlyHead - delay)
-            & static_cast<unsigned>(earlyCapacity - 1);
-        return early[static_cast<std::size_t>(index)];
-    };
+    early[static_cast<std::size_t>(earlyHead + earlyCapacity)] = input;
+    const float* const newest = early.data() + earlyHead + earlyCapacity;
+    const auto delayed = [newest] (int delay) { return newest[-delay]; };
     float reflectedLeft = 0.0f;
     float reflectedRight = 0.0f;
     if (directional)
     {
-        const auto arrivalValue = [&delayed] (const Arrival& arrival)
+        const auto arrivalValue = [newest] (const Arrival& arrival)
         {
+            // Weight i reads the sample firstDelay + i steps back.
+            const float* const first = newest - arrival.firstDelay;
+            static_assert(std::tuple_size<decltype(arrival.weights)>::value == 4,
+                          "the arrival is a four-point interpolation");
+            const auto& weight = arrival.weights;
             float value = 0.0f;
-            for (std::size_t index = 0; index < arrival.weights.size(); ++index)
-                value += arrival.weights[index]
-                    * delayed(arrival.firstDelay + static_cast<int>(index));
+            value += weight[0] * first[0];
+            value += weight[1] * first[-1];
+            value += weight[2] * first[-2];
+            value += weight[3] * first[-3];
             return value;
         };
         for (std::size_t tap = 0; tap < tapDelays.size(); ++tap)

@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.4.39 — 2026-11-03 — Loud nail and pick strokes no longer step in brightness from one velocity to the next
+
+At one velocity in each note's loud range (Finger E4 between 106 and 107, Pick A4 between 90 and 92) the attack's brightness jumped: the 2.5-3 kHz band of the first 20 ms stepped by up to 9 dB between neighbouring velocities, and the share above 2.5 kHz over the next 330 ms by up to 5 dB. The velocity part of the plectrum release flipped its polarity there, because the sign it followed is a rounding residue of the 48 kHz grid that the string hears but the continuum does not. It now keeps one polarity, so neighbouring velocities differ by 0.2 dB or less; the preset levels move by 0.2 dB VU at most. Which of the two polarities sounds like the right nail or pick is an open question for the ear, see `Docs/decisions.md`.
+
 ### 0.4.37 — 2026-10-31 — A reset plays as a fresh instance
 
 A reset (the host's audio reset, before a bounce) now restarts every random draw from the instrument's seeds, so the performance after it plays exactly as a fresh instance's does, at every Oversampling. Before, the strokes' and strings' small variations carried on from wherever the last performance left them.

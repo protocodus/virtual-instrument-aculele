@@ -5,6 +5,38 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-11-03 — the pick and nail release keeps one polarity, 0.4.39 (measured; adopted under the owner's standing rule, not yet heard)
+
+**What was decided.** The plectrum release's hump solves h^2 V + 2 h X = share D
+(`writePickRelease`), where V is the hump's own energy and X its cross term
+with the rest of the release. The solution took X's sign as its own, on the
+grounds that the string does not hear the hump's polarity because the two
+components are in quadrature. They are only in the continuum: on the 48 kHz
+grid X is a rounding residue near zero (a median 2% of sqrt(share D V) over
+the solves of a note at velocity 50-127), its sign changes at one velocity
+per note, and the string answers. Measured at 44.1, 48 and 96 kHz on Concert
+Strum, adjacent velocities differed by up to 9 dB in the 2.5-3 kHz band of the
+first 20 ms and up to 5 dB in the share above 2.5 kHz over 80-330 ms (Finger
+E4 between velocities 106 and 107, Finger A4 between 111 and 112, Pick E4 and
+A4 between 90 and 92). Keeping one polarity brings both to 0.2 dB or less.
+Which polarity is the open question: the model derives both.
+
+**The letters.** Concert Strum, 48 kHz, two phrases of single notes at
+velocities that straddle the flips (Finger E4 98-127, Pick A4 88-127), whole-file
+RMS-matched to A (trims in dB): A (0.00) 0.4.38 as shipping; B (+0.10) the
+hump keeps the polarity of X >= 0, which 7 in 10 of the demos' solves already
+had, so it equals A wherever X >= 0; C (-0.21) the mirror, the opposite
+polarity everywhere. B and C differ by up to 3.3 dB in that band's first 20 ms
+and by up to 4 dB in the share above 2.5 kHz over 80-330 ms. In the project's
+`aculele/listening/2026-11-03-pick-release-polarity/`, with its `key.md`.
+
+**What it licensed.** B, under the owner's standing rule that a candidate wins
+unless the owner says otherwise; B is the smallest change from what shipped,
+and C is one line away if the owner prefers it. Where X < 0 the cross term is
+taken as |X|, which adds the hump's energy 0.5 dB short at X/sqrt(share D V) =
+0.03 and is continuous in velocity. The preset levels move by 0.18 dB VU at
+most, inside `Aculele.Levels`' check, so `LevelMatchData.h` is unchanged.
+
 ## 2026-11-02 — bridge-rocking scaling, asymmetric plate-band cluster bounds, and high-fret pluck reach, 0.4.38 (measured; A/B demos rendered)
 
 **What was decided.** Five model fixes and physical improvements:

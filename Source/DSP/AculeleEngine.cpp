@@ -10289,13 +10289,19 @@ void AculeleEngine::writePickRelease(StringLoop& loop, int length, float height,
     // jump it samples at different offsets on the two halves, so the cross
     // term is kept and the hump solved for exactly: h^2 V + 2 h X = share D.
     // Of its two roots the one that vanishes with the share is taken, in
-    // the form that stays stable when X dominates; its sign follows X's,
-    // which the string does not hear (the components are in quadrature).
+    // the form that stays stable when X dominates. The hump keeps one
+    // polarity: the string does hear it. X is a grid residue near zero (a
+    // median 2% of sqrt(share D V) over a note's solves at velocity 50-127),
+    // so its sign followed discretisation noise, and flipping the hump with
+    // it stepped the attack's 2.5-3 kHz band by up to 9 dB between adjacent
+    // velocities (the components are in quadrature only in the continuum).
+    // A hump of the majority polarity, X >= 0, is the solve unchanged; with
+    // X < 0 the cross term is taken as |X|, which adds its energy a little
+    // short (0.5 dB of the hump's at X/sqrt(share D V) = 0.03) but continuous.
     const auto solvedHump = [] (double added, double cross, double velocity)
     {
-        const double magnitude = added
+        return added
             / (exact::abs(cross) + exact::sqrt(cross * cross + added * velocity));
-        return cross < 0.0 ? -magnitude : magnitude;
     };
     // The share is solved on the 48 kHz grid at every host rate. The waves
     // are continuous, so the hump's height over the rest's is a property of

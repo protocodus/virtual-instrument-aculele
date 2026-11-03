@@ -5,7 +5,7 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
-## 2026-11-03 — the pick and nail release keeps one polarity, 0.4.39 (measured; adopted under the owner's standing rule, not yet heard)
+## 2026-11-03 — the pick and nail release keeps one polarity, 0.4.39 (the polarity chosen by ear: B; the sweep measured)
 
 **What was decided.** The plectrum release's hump solves h^2 V + 2 h X = share D
 (`writePickRelease`), where V is the hump's own energy and X its cross term
@@ -30,9 +30,11 @@ polarity everywhere. B and C differ by up to 3.3 dB in that band's first 20 ms
 and by up to 4 dB in the share above 2.5 kHz over 80-330 ms. In the project's
 `aculele/listening/2026-11-03-pick-release-polarity/`, with its `key.md`.
 
-**What it licensed.** B, under the owner's standing rule that a candidate wins
-unless the owner says otherwise; B is the smallest change from what shipped,
-and C is one line away if the owner prefers it. Where X < 0 the cross term is
+**Chosen.** B, by the owner on 2026-11-03, from the lettered A, B, C set.
+The steps between neighbouring velocities are measured; the choice between
+the two polarities is not.
+
+**What it licensed.** B as shipped in 0.4.39. Where X < 0 the cross term is
 taken as |X|, which adds the hump's energy 0.5 dB short at X/sqrt(share D V) =
 0.03 and is continuous in velocity. The preset levels move by 0.18 dB VU at
 most, inside `Aculele.Levels`' check, so `LevelMatchData.h` is unchanged.

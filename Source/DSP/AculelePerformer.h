@@ -210,8 +210,7 @@ public:
     // One MIDI message at sampleOffset in this block (clamped to
     // [0, numSamples]). Offsets must not decrease within a block, as a
     // MidiBuffer's do; one earlier than an event already handled plays at
-    // that event's time. Messages longer than three bytes (SysEx) only mark
-    // their sample.
+    // that event's time. Messages longer than three bytes (SysEx) are ignored.
     void handleMidi(int sampleOffset, const std::uint8_t* data, int size) noexcept;
     void endBlock() noexcept;
     // Finish only this prefix when a front end splits for a control change.

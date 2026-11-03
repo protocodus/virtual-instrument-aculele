@@ -7191,13 +7191,13 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
     const float age = parameters_.stringAge;
     // Preserve the material/age law while allowing one shared fitted cutoff
     // scale to reduce excess upper-partial damping without changing the
-    // fundamental T60 target below. With the fitted 2.29 the scaled cutoff
-    // is past the 0.44 x 48 kHz clamp up to a String Age of about 0.24, so
-    // at the default age it does nothing.
+    // fundamental T60 target below. The fitted 1.30 puts the cutoff at
+    // 16.3 kHz at String Age 0 and under the 0.44 x 48 kHz clamp (a scale
+    // of 1.69) at every age, so the clamp below only bounds a calibration
+    // scaled past that.
     // The plain strings' age cutoff falls as exp(-0.9 age) (it was -1.25):
     // at age 1 the high E above the 12th fret lost its upper partials four
-    // times faster than the wound strings gained any loss at all. It sits
-    // past the clamp below at the default age either way.
+    // times faster than the wound strings gained any loss at all.
     const float cutoff = 12500.0f * std::exp(-0.9f * age)
         * physicalCalibration_.highLossCutoffScale;
     const float lowpassCoefficient = std::exp(

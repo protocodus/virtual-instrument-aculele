@@ -49,7 +49,7 @@ D_TUNING = (69, 62, 66, 71)
 SHAPES = {
     "C": (0, 0, 0, 3), "Am": (2, 0, 0, 0), "F": (2, 0, 1, 0), "G": (0, 2, 3, 2),
     "G7": (0, 2, 1, 2), "Em": (0, 4, 3, 2), "Dm": (2, 2, 1, 0), "D7": (2, 2, 2, 3),
-    "C7": (0, 0, 0, 1), "E7": (1, 2, 0, 2),
+    "C7": (0, 0, 0, 1), "E7": (1, 2, 0, 2), "B7": (2, 3, 2, 2),
 }
 
 
@@ -459,11 +459,313 @@ def minuet_in_g():
     return p
 
 
+def aloha_oe():
+    """Aloha ʻOe, Queen Liliʻuokalani's song (Maunawili, 1878), in C, a third
+    up from the A-flat of the 1913 Eclipse Publishing edition (Levy Sheet
+    Music Collection, box 151 item 019), whose vocal line gives the notes. A
+    low-G tenor plays it alone, fingerpicked as tab: the tune on the A and E
+    strings, the bass on the C and G strings, a chord tone on the E string
+    between. It opens with the refrain's last two bars, plays the verse,
+    then the refrain twice; a concert ukulele strums under the refrain,
+    softly the first time and with the island strum the second, and both
+    close on a slow C."""
+    # The tune as the edition writes it, a third higher: (beat, note, beats).
+    verse = [
+        [(0, 76, 1.5), (1.5, 74, 0.5), (2, 72, 0.75), (2.75, 71, 0.25), (3, 72, 0.5), (3.5, 69, 0.5)],
+        [(0, 67, 3), (3, 76, 1)],
+        [(0, 74, 1.5), (1.5, 73, 0.5), (2, 74, 0.5), (2.5, 74, 0.5), (3, 77, 0.5), (3.5, 76, 0.5)],
+        [(0, 74, 3), (3, 67, 0.5), (3.5, 72, 0.5)],
+        [(0, 76, 1.5), (1.5, 74, 0.5), (2, 72, 0.75), (2.75, 71, 0.25), (3, 72, 0.5), (3.5, 69, 0.5)],
+        [(0, 67, 2), (2, 67, 1), (3, 72, 0.5), (3.5, 71, 0.5)],
+        [(0, 69, 1), (1, 74, 0.5), (1.5, 72, 0.5), (2, 71, 0.5), (2.5, 71, 0.5), (3, 76, 0.5), (3.5, 74, 0.5)],
+        [(0, 72, 3), (3.5, 67, 0.5)],
+    ]
+    refrain = [
+        [(0, 69, 1), (1, 72, 1), (2, 77, 1.5), (3.5, 69, 0.5)],
+        [(0, 67, 1), (1, 72, 1), (2, 76, 1.5), (3.5, 72, 0.5)],
+        [(0, 71, 0.75), (0.75, 69, 0.25), (1, 71, 0.5), (1.5, 72, 0.5), (2, 74, 0.5), (2.5, 74, 0.5),
+         (3, 77, 0.5), (3.5, 77, 0.5)],
+        [(0, 76, 2), (2, 72, 1.5), (3.5, 67, 0.5)],
+        [(0, 69, 1), (1, 72, 1), (2, 77, 1.5), (3.5, 69, 0.5)],
+        [(0, 67, 0.5), (0.5, 67, 0.5), (1, 72, 0.5), (1.5, 72, 0.5), (2, 76, 1.5), (3.5, 72, 0.5)],
+        [(0, 71, 1.5), (1.5, 72, 0.5), (2, 76, 0.5), (2.5, 74, 1), (3.5, 71, 0.5)],
+        [(0, 72, 3.5), (3.5, 67, 0.5)],
+    ]
+    # The chord on each beat, from the edition's piano part.
+    verse_harmony = ["C" * 4, "C" * 4, "G" * 4, "G" * 4, "C" * 4, "CCCE", "FFGG", "C" * 4]
+    refrain_harmony = ["F" * 4, "C" * 4, "G" * 4, "C" * 4, "F" * 4, "C" * 4, "G" * 4, "C" * 4]
+    names = {"C": "C", "F": "F", "G": "G7", "E": "E7"}
+    # The intro is the refrain's last two bars, its C cut to three beats for
+    # the verse's two pick-up notes.
+    intro = refrain[6:7] + [[(0, 72, 3), (3, 67, 0.5), (3.5, 72, 0.5)]]
+    sections = [  # (tune, harmony, first beat, loudness, strum)
+        (intro, refrain_harmony[6:], 0, 70, None),
+        (verse, verse_harmony, 8, 72, None),
+        (refrain, refrain_harmony, 40, 82, "soft"),
+        (refrain[:-1] + [[(0, 72, 6)]], refrain_harmony, 72, 90, "island"),
+    ]
+    # Where the bass and the chord tone between sit on a low-G tenor (G3 C4
+    # E4 A4): the thumb's two strings and the E string's note per chord.
+    low = {"C": (60, 55), "F": (57, 60), "G7": (55, 62), "E7": (56, 56)}  # beats 1 and 3
+    inner = {"C": 64, "F": 65, "G7": 65, "E7": 64}
+
+    tempo = (breathe(78, [(0, 8)], settle=0.12) + breathe(86, [(8, 16), (24, 16)], settle=0.08)
+             + breathe(88, [(40, 16), (56, 16)]) + breathe(90, [(72, 16), (88, 16)], last=0.4))
+    p = Performance(tempo, seed=1878, timing=0.009)
+    plucks = []  # (beat, string, note, velocity, beats held, lean)
+
+    def string_of(note):
+        # The tune keeps to the A string, the G and G-sharp below it to the E string.
+        return 3 if note >= 69 else 2
+
+    for tune, harmony, start, loud, _ in sections:
+        for bar, notes in enumerate(tune):
+            rise = 5 * math.sin(math.pi * ((bar % 4) + 0.5) / 4)
+            at = start + 4 * bar
+            tune_on_e = [(at + b, at + b + length) for b, note, length in notes if string_of(note) == 2]
+            for beat, note, length in notes:
+                metric = 6 if beat in (0, 2) else -5 if beat % 1 else 0
+                plucks.append((at + beat, string_of(note), note, loud + rise + metric, length, 0.006))
+            if bar >= len(harmony) or at == 100:  # the last bar is the close's
+                continue
+            for beat in range(4):
+                chord = names[harmony[bar][beat]]
+                first = beat == 0 or harmony[bar][beat] != harmony[bar][beat - 1]
+                if beat in (0, 2) or first:
+                    bass = low[chord][0 if beat < 2 else 1]
+                    plucks.append((at + beat, 0 if bass < 60 else 1, bass, loud - 18 + (4 if beat == 0 else 0),
+                                   2.0, -0.01))
+                if beat in (1, 3) and not any(s - 0.25 <= at + beat < e for s, e in tune_on_e):
+                    plucks.append((at + beat, 2, inner[chord], loud - 30, 1.0, 0.004))
+    # The close: C from the low G up under the tune's held C.
+    for index, (string, note) in enumerate(((0, 55), (1, 60), (2, 64))):
+        plucks.append((100, string, note, 66 - 4 * index, 6.0, 0.03 * index))
+
+    # A string sounds one note at a time: each lets go before the next pluck on it.
+    p.voice = "tune"
+    p.message(0.0, (0xB0, 126, 4), 0)
+    for string in range(4):
+        mine = sorted(item for item in plucks if item[1] == string)
+        for index, (beat, _, note, velocity, held, lean) in enumerate(mine):
+            if index + 1 < len(mine):
+                held = min(held, mine[index + 1][0] - beat - 0.04)
+            p.play(p.at(beat, lean=lean), held, beat, note, velocity, string)
+
+    p.voice = "strum"
+    p.message(0.0, (0xB0, 126, 4), 0)
+
+    def stroke(beat, chord, direction, velocity, held):
+        onset = p.at(beat, scale=0.8)
+        p.message(onset - 0.002, (0x90, DOWN if direction == "D" else UP, 100))
+        p.message(onset + 0.01, (0x80, DOWN if direction == "D" else UP, 0), 0)
+        for string in range(4):
+            p.play(onset, held, beat, STANDARD[string] + SHAPES[chord][string], velocity, string)
+
+    soft = [(0, "D", 0), (4, "D", -4), (6, "U", -14)]
+    island = [(0, "D", 0), (2, "D", -8), (3, "U", -26), (5, "U", -22), (6, "D", -10), (7, "U", -26)]
+    for tune, harmony, start, loud, strum in sections:
+        if strum is None:
+            continue
+        for bar in range(8):
+            at = start + 4 * bar
+            last = strum == "island" and bar == 7
+            pattern = [(0, "D", 0)] if last else soft if strum == "soft" else island
+            for index, (eighth, direction, accent) in enumerate(pattern):
+                following = pattern[index + 1][0] if index + 1 < len(pattern) else 8
+                held = 6.0 if last else 0.5 * (following - eighth) - 0.05
+                chord = names[harmony[bar][int(eighth // 2)]]
+                stroke(at + 0.5 * eighth, chord, direction, loud - 26 + accent + (6 if strum == "island" else 0), held)
+    return p
+
+
+def tarantella():
+    """Tarantella napoletana: the tarantella that closes Luigi Ricci's comic
+    opera La festa di Piedigrotta (Naples, 1852), in E minor as the 1859
+    piano transcription in La ricreazione per tutti prints it (its page 1, on
+    Wikimedia Commons as "Tarantella di Piedigrotta.jpg", public domain).
+    Two of the print's strains give the notes: the song that falls two
+    octaves (systems 4-5, V) and the riff the tune is known by (systems 5-6,
+    R), each with its pick-up. The scan is 540 pixels wide; where a pitch
+    was not certain from the scan alone, the strain's own sequence decided
+    it. The chords are this arrangement's.
+
+    The seven factory ukuleles play it as a band, in 6/8 with the dotted
+    quarter as the beat: a concert strums and a low-G tenor plucks the bass
+    from the start; the song passes from the soprano in D tuning to the
+    picked tenor; the riff goes to the picked tenor, then up an octave to
+    the soprano with a soprano thumb a third below and the tenor an octave
+    under; the song returns with the fluorocarbon tenor answering and no
+    strum; the riff comes back three times, the piezo concert chopping the
+    off-beats, the band pushing the tempo up, and B7 and E minor close it."""
+    # Each strain is eight bars of (eighth, note, eighths); its pick-up sits
+    # before the strain's first bar. Notes are at the print's pitch.
+    song = [
+        [(0, 86, 3), (3, 84, 1), (4, 86, 1), (5, 84, 1)],
+        [(0, 83, 2), (2, 76, 1), (3, 83, 2), (5, 76, 1)],
+        [(0, 79, 3), (3, 78, 1), (4, 79, 1), (5, 78, 1)],
+        [(0, 76, 3), (3, 76, 3)],
+        [(0, 74, 3), (3, 72, 1), (4, 74, 1), (5, 72, 1)],
+        [(0, 71, 2), (2, 64, 1), (3, 71, 2), (5, 64, 1)],
+        [(0, 67, 3), (3, 66, 1), (4, 67, 1), (5, 66, 1)],
+        [(0, 64, 2)],
+    ]
+    song_pickup = [(-2, 88, 2)]
+    riff = [
+        [(0, 83, 2), (2, 83, 1), (3, 88, 2), (5, 88, 1)],
+        [(0, 83, 2), (2, 83, 1), (3, 83, 2), (5, 83, 1)],
+        [(0, 84, 2), (2, 84, 1), (3, 84, 1), (4, 86, 1), (5, 84, 1)],
+        [(0, 83, 2), (3, 83, 2), (5, 83, 1)],
+        [(0, 84, 2), (2, 83, 1), (3, 83, 2), (5, 83, 1)],
+        [(0, 83, 2), (2, 81, 1), (3, 81, 2), (5, 81, 1)],
+        [(0, 81, 2), (2, 79, 1), (3, 79, 2), (5, 79, 1)],
+        [(0, 76, 2)],
+    ]
+    riff_pickup = [(-3, 88, 2), (-1, 88, 1)]
+    # The chord on each half bar.
+    song_chords = [("D7", "D7"), ("G", "G"), ("B7", "B7"), ("Em", "Em")] * 2
+    riff_chords = [("Em", "Em"), ("Em", "Em"), ("Am", "Am"), ("Em", "Em"),
+                   ("Am", "Em"), ("B7", "B7"), ("B7", "Em"), ("Em", "Em")]
+    tones = {"Em": (4, 7, 11), "Am": (9, 0, 4), "B7": (11, 3, 6, 9), "D7": (2, 6, 9, 0), "G": (7, 11, 2)}
+
+    # (first beat, tune, pick-up, chords, who plays which bars at what
+    # transposition and how much softer, harmony a third below or not, strum,
+    # loudness). A bar is two beats.
+    sections = [
+        (8, song, song_pickup, song_chords, [("high", 0, 0, 4, 0), ("lead", 0, 4, 8, 0)], None, "soft", 76),
+        (24, riff, riff_pickup, riff_chords, [("lead", -12, 0, 8, 0)], None, "full", 84),
+        (40, riff, riff_pickup, riff_chords, [("high", 0, 0, 8, 0), ("lead", -12, 0, 8, -16)], 0, "full", 90),
+        (56, song, song_pickup, song_chords, [("high", 0, 0, 4, 0), ("fingers", 0, 4, 8, 0)], None, None, 72),
+        (72, riff, riff_pickup, riff_chords, [("lead", -12, 0, 8, 0)], -12, "full", 88),
+        (88, riff, riff_pickup, riff_chords, [("lead", -12, 0, 8, 0)], -12, "full", 94),
+        (104, riff, riff_pickup, riff_chords, [("high", 0, 0, 8, 0), ("lead", -12, 0, 8, -16)], 0, "full", 100),
+    ]
+    intro = [("Em", "Em"), ("B7", "B7"), ("Em", "Em"), ("B7", "B7")]
+    close = 120  # B7 on the bar's first beat, E minor on its second
+
+    tempo = [(0, 128), (7, 128), (8, 125), (23, 128), (24, 131), (40, 134), (55, 134), (56, 126),
+             (71, 128), (72, 135), (88, 139), (104, 143), (118, 150), (120, 136), (121.5, 112)]
+    p = Performance(tempo, seed=1852, timing=0.006)
+
+    def beat_of(start, bar, eighth):
+        return start + 2 * bar + eighth / 3
+
+    def accent(eighth):
+        return 6 if eighth == 0 else 3 if eighth == 3 else -4
+
+    # The tune, and the harmony a third (or a sixth's inversion) below it.
+    lines = {}  # part -> [(beat, note, beats, velocity)]
+    for start, tune, pickup, chords, players, harmony, _, loud in sections:
+        for part, shift, first, last, softer in players:
+            for bar in range(first, last):
+                notes = (pickup if bar == 0 else []) + tune[bar]
+                for eighth, note, length in notes:
+                    lines.setdefault(part, []).append(
+                        (beat_of(start, bar, eighth), note + shift, length / 3,
+                         loud + softer + accent(eighth % 6) + 2 * math.sin(math.pi * (bar % 4 + 0.5) / 4)))
+        if harmony is None:
+            continue
+        for bar in range(8):
+            for eighth, note, length in tune[bar]:
+                note += harmony
+                chord = chords[bar][0 if eighth < 3 else 1]
+                below = [n for n in range(note - 9, note - 2) if n % 12 in tones[chord] and n >= 60]
+                above = [n for n in range(note + 3, note + 10) if n % 12 in tones[chord]]
+                lines.setdefault("thumb", []).append(
+                    (beat_of(start, bar, eighth), below[-1] if below else above[0], length / 3,
+                     loud - 8 + accent(eighth)))
+    for part, notes in lines.items():
+        p.voice = part
+        for beat, note, beats, velocity in notes:
+            p.play(p.at(beat, lean=0.004), beats - 0.12, beat, note, velocity)
+
+    # The close: every voice on B7, then on E minor, held.
+    ending = {"lead": (75, 76), "high": (83, 88), "thumb": (78, 79)}
+    for part, (b7, em) in ending.items():
+        p.voice = part
+        p.play(p.at(close), 0.55, close, b7, 100)
+        p.play(p.at(close + 1), 2.6, close + 1, em, 106)
+
+    # The strumming hand: down and up on every eighth, accented on each
+    # half bar; "soft" keeps only the lilt of the tune's quarter and eighth.
+    full = [(0, "D", 0), (1, "U", -24), (2, "D", -14), (3, "U", -6), (4, "D", -22), (5, "U", -14)]
+    soft = [(0, "D", 0), (2, "U", -16), (3, "D", -6), (5, "U", -18)]
+    chop = [(1, "D", 0), (2, "U", -10), (4, "D", 0), (5, "U", -10)]  # the piezo's off-beats
+    chopped = {40, 72, 88, 104}
+
+    def strum(part, beat, chord, direction, velocity, held, chuck=False):
+        onset = p.at(beat, scale=0.7)
+        key = DOWN if direction == "D" else UP
+        p.voice = part
+        if part == "piezo":
+            p.message(onset - 0.003, (0xB0, 2, 110 if chuck else 0))
+        p.message(onset - 0.002, (0x90, key, 100))
+        p.message(onset + 0.01, (0x80, key, 0), 0)
+        for string in range(4):
+            p.play(onset, held, beat, STANDARD[string] + SHAPES[chord][string], velocity, string)
+
+    def strum_strain(part, start, chords, pattern, loud):
+        for bar, halves in enumerate(chords):
+            for index, (eighth, direction, accent_) in enumerate(pattern):
+                following = pattern[index + 1][0] if index + 1 < len(pattern) else 6
+                strum(part, beat_of(start, bar, eighth), halves[0 if eighth < 3 else 1], direction,
+                      loud + accent_, (following - eighth) / 3 - 0.06, chuck=part == "piezo" and direction == "D")
+
+    for part in ("strum", "piezo", "bass"):
+        p.voice = part
+        p.message(0.0, (0xB0, 126, 4), 0)
+    strum_strain("strum", 0, intro, full, 74)
+    for start, _, _, chords, _, harmony, style, loud in sections:
+        if style is not None:
+            strum_strain("strum", start, chords, full if style == "full" else soft, loud - 18)
+        if start in chopped:
+            strum_strain("piezo", start, chords, chop, loud - 22)
+    for part, velocity in (("strum", 96), ("piezo", 84)):
+        strum(part, close, "B7", "D", velocity, 0.55)
+        strum(part, close + 1, "Em", "D", velocity + 8, 2.6)
+
+    # The bass on the low-G tenor: the root on each bar's first eighth, the
+    # fifth on its fourth, each string sounding one note at a time.
+    roots = {"Em": (64, 59), "Am": (57, 64), "B7": (59, 66), "D7": (62, 57), "G": (55, 62)}
+    plucks = []
+    for start, chords, loud in [(0, intro, 78)] + [(s[0], s[3], s[7]) for s in sections]:
+        quiet = loud - (12 if start == 56 else 4)
+        for bar, halves in enumerate(chords):
+            plucks.append((beat_of(start, bar, 0), roots[halves[0]][0], quiet + 6))
+            plucks.append((beat_of(start, bar, 3), roots[halves[1]][1], quiet - 4))
+    plucks += [(close, 59, 96), (close + 1, 64, 104), (close + 1, 55, 98)]
+
+    def string_of(note):
+        return 0 if note < 60 else 1 if note < 64 else 2
+
+    p.voice = "bass"
+    for string in range(3):
+        mine = sorted((beat, note, velocity) for beat, note, velocity in plucks if string_of(note) == string)
+        for index, (beat, note, velocity) in enumerate(mine):
+            held = 2.6 if beat >= close else 0.9
+            if index + 1 < len(mine):
+                held = min(held, mine[index + 1][0] - beat - 0.04)
+            p.play(p.at(beat, lean=-0.006), held, beat, note, velocity, string)
+    return p
+
+
 # Each part of a song is its own file, songs/<song>-<part>.mid, played by
 # its own ukulele: a factory preset with the construction AculeleProbe's
 # options change, set in the mix by its pan (-1 left to 1 right) and trim
 # in dB. Tools/render_songs.py renders and mixes them.
 SONGS = {
+    "aloha-oe": (aloha_oe, {
+        "tune": ("low-g-tenor", [], 0.15, 0.0),
+        "strum": ("concert-strum", [], -0.35, -6.0),
+    }),
+    "tarantella": (tarantella, {
+        "lead": ("tenor-picked-melody", [], 0.12, 0.0),
+        "high": ("soprano-d-tuning", [], 0.35, -2.0),
+        "thumb": ("soprano-thumb", [], -0.3, -3.0),
+        "fingers": ("tenor-fluorocarbon-fingerstyle", [], -0.1, 0.0),
+        "strum": ("concert-strum", [], -0.5, -7.0),
+        "piezo": ("concert-piezo-stage", [], 0.55, -10.0),
+        "bass": ("low-g-tenor", [], -0.12, -1.0),
+    }),
     "minuet-in-g": (minuet_in_g, {
         "tune": ("tenor-fluorocarbon-fingerstyle", ["--shape", "0", "--wood", "2", "--strings", "0"], 0.3, 0.0),
         "bass": ("low-g-tenor", [], -0.3, -1.0),

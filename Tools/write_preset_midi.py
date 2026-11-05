@@ -250,7 +250,7 @@ LEAD_IN = 0.3  # seconds
 
 
 class Performance:
-    def __init__(self, tempo, seed, timing=0.007, dynamics=4.0, feel=None):
+    def __init__(self, tempo, seed, timing=0.007, dynamics=4.0, feel=None, touch=None):
         self.tempo = sorted(tempo)  # [(beat, bpm)], linear between, held past the ends
         self.random = random.Random(seed)
         self.seed = seed
@@ -263,22 +263,32 @@ class Performance:
         # (ahead when negative) and wanders around it slowly, so two parts
         # pull apart and come back together as players in one room do.
         self.feel = feel or {}
+        # Each player's touch, likewise: {voice: spread} in velocity steps.
+        # A player's hand digs in and eases off over a few beats, so no two
+        # bars are struck alike.
+        self.touch = touch or {}
         self.walks = {}
 
-    def drift(self, beat):
-        """The current voice's lean plus its wander at `beat`: a random walk
-        sampled once a beat, pulled back towards zero, whose spread settles
-        at `wander`. Each voice draws from its own seeded stream, so adding
-        or reordering a part leaves the others' timing alone."""
-        lean, wander = self.feel.get(self.voice, (0.0, 0.0))
-        if not wander:
-            return lean
-        stream, walk = self.walks.setdefault(self.voice, (random.Random(f"{self.seed}:{self.voice}"), [0.0]))
+    def wander(self, key, beat, spread):
+        """A random walk sampled once a beat, pulled back towards zero, whose
+        spread settles at `spread`. Each key draws from its own seeded
+        stream, so adding or reordering a part leaves the others alone."""
+        stream, walk = self.walks.setdefault(key, (random.Random(f"{self.seed}:{key}"), [0.0]))
         beat = max(0.0, beat)
         while len(walk) < beat + 2:
-            walk.append(0.8 * walk[-1] + stream.gauss(0.0, 0.6 * wander))
+            walk.append(0.8 * walk[-1] + stream.gauss(0.0, 0.6 * spread))
         index = int(beat)
-        return lean + walk[index] + (walk[index + 1] - walk[index]) * (beat - index)
+        return walk[index] + (walk[index + 1] - walk[index]) * (beat - index)
+
+    def drift(self, beat):
+        """The current voice's lean plus its wander at `beat`."""
+        lean, wander = self.feel.get(self.voice, (0.0, 0.0))
+        return lean + (self.wander(self.voice, beat, wander) if wander else 0.0)
+
+    def lift(self, beat):
+        """The current voice's touch at `beat`, in velocity steps."""
+        spread = self.touch.get(self.voice, 0.0)
+        return self.wander(f"{self.voice}:touch", beat, spread) if spread else 0.0
 
     def bpm(self, beat):
         return interpolate(self.tempo, beat)
@@ -319,7 +329,7 @@ class Performance:
         beats after `beat`, with the release scattered too."""
         release = max(onset + 0.04, self.seconds(beat + beats_held) + self.drift(beat + beats_held)
                       + self.scatter(0.6))
-        self.message(onset, (0x90 | channel, note, self.velocity(velocity)))
+        self.message(onset, (0x90 | channel, note, self.velocity(velocity + self.lift(beat))))
         self.message(release, (0x80 | channel, note, 0), 0)
 
     def smf(self, voice=None):
@@ -652,7 +662,13 @@ def tarantella():
     in softly and gathers the dance's speed, the second call answers louder
     and nearly in time, and the third pushes into the scale, which hurries
     down and broadens onto its last note. The hands are looser together
-    there and settle by the song."""
+    there and settle by the song.
+
+    The dynamics are wide, because a note's level moves little with
+    velocity between 70 and 110: each player's touch wanders
+    (Performance.touch), each section has its hairpins, a higher note is
+    played louder and a note struck again lighter, and the downbeat is the
+    strongest of each bar's six eighths."""
     # Each bar is a list of (eighth, note or (notes), eighths[, grace note]);
     # a bar is two beats, a beat a dotted quarter. Pitches are the print's.
     figure = [(3, 83, 1), (4, 84, 1), (5, 83, 1)]                 # B5 C6 B5
@@ -723,7 +739,12 @@ def tarantella():
                 (CLOSE, 112), (CLOSE + 2, 88)])
     feel = {"high": (0.002, 0.007), "lead": (0.0, 0.006), "thumb": (0.006, 0.007), "fingers": (0.003, 0.007),
             "strum": (0.004, 0.006), "piezo": (0.0, 0.005), "bass": (-0.004, 0.005)}
-    p = Performance(tempo, seed=1852, timing=0.005, dynamics=4.5, feel=feel)
+    # How far each player's touch wanders, in velocity steps. Between
+    # velocities 70 and 110 a note's level moves only about 0.1 dB a step
+    # (one note of each of four presets alone through AculeleProbe: -2.2 dB
+    # at 70, +1.7 at 110, against 90), so the dance's dynamics take wide steps.
+    touch = {"high": 8, "lead": 8, "fingers": 7, "thumb": 6, "strum": 7, "piezo": 8, "bass": 7}
+    p = Performance(tempo, seed=1852, timing=0.005, dynamics=4.5, feel=feel, touch=touch)
 
     def beat_of(start, bar, eighth):
         return start + 2 * bar + eighth / 3
@@ -735,15 +756,28 @@ def tarantella():
 
     # Each call swells to its held B5, the second answering louder; the drum
     # enters softly and builds under each call's held note.
-    call_shape = [(1, -6), (4, 2), (9, -3), (12, 5), (17, 3)]
-    drum_shape = [(4.6, -10), (8, -1), (12.6, -5), (16, 2)]
+    call_shape = [(1, -10), (4, 3), (9, -5), (12, 8), (17, 4)]
+    drum_shape = [(4.6, -14), (8, -1), (12.6, -7), (16, 3)]
+    # Each section's hairpins, in velocity steps by beat: the scale eases
+    # off as it falls and lands; the song swells, its second half answers
+    # softly and grows into the riff; the riff peaks on its E6s and falls
+    # away; the low riff and the strain in thirds grow from quiet; the last
+    # riff builds to the tag.
+    scale_shape = [(SCALE, 6), (SCALE + 12, -5), (SCALE + 14, 4)]
+    song_shape = [(SONG - 0.5, 0), (SONG + 3, 7), (SONG + 7.5, -3), (SONG + 8, -7), (SONG + 14, 2), (SONG + 16, 6)]
+    riff_shape = [(RIFF, 3), (RIFF + 3, 8), (RIFF + 8, 2), (RIFF + 15, -6)]
+    low_shape = [(LOW - 1, -6), (LOW + 8, 3), (LOW + 13, 6), (LOW + 16, 0)]
+    thirds_shape = [(THIRDS, -5), (THIRDS + 5, 5), (THIRDS + 8, -4), (THIRDS + 13, 6), (THIRDS + 15, 0)]
+    final_shape = [(THIRDS + 15, -4), (FINAL, -5), (FINAL + 8, 2), (FINAL + 16, 8), (TAG + 6, 12)]
 
     def lilt(eighth):
         # The first eighth of each three a little long, as the dance is played.
         return (0.0, 0.011, 0.006)[eighth % 3]
 
     def accent(eighth):
-        return 7 if eighth == 0 else 3 if eighth == 3 else -4
+        # The downbeat strongest, the second beat less, the eighths between
+        # light, and the last of each three leaning into the next beat.
+        return (10, -9, -5, 5, -9, -5)[eighth % 6]
 
     def grace(onset, note, velocity, channel=0):
         ahead = min(0.07, max(0.035, p.random.gauss(0.05, 0.008)))
@@ -752,15 +786,23 @@ def tarantella():
 
     def melody(part, start, bars, loud, shift=0, clip=0.68, shape=None):
         """Play {bar: notes} from `start`, `shift` semitones from the print,
-        `shape` adding velocity by beat."""
+        `shape` adding velocity by beat. A higher note is played louder, as a
+        line rises to its peak, and a note struck again is lighter."""
         p.voice = part
+        pitches = [max(n) if isinstance(n, tuple) else n for notes in bars.values() for _, n, *_ in notes]
+        middle = sum(pitches) / len(pitches)
+        previous = None
         for bar, notes in sorted(bars.items()):
             for item in notes:
                 eighth, notes_, length = item[:3]
                 chord = notes_ if isinstance(notes_, tuple) else (notes_,)
                 beat = beat_of(start, bar, eighth)
-                arch = 3.0 * math.sin(math.pi * ((bar % 4) + eighth / 6 + 0.5) / 4)
-                velocity = loud + accent(eighth % 6) + arch + (interpolate(shape, beat) if shape else 0)
+                arch = 5.0 * math.sin(math.pi * ((bar % 4) + eighth / 6 + 0.5) / 4)
+                rise = max(-8.0, min(8.0, 0.8 * (max(chord) - middle)))
+                again = -4 if max(chord) == previous else 0
+                previous = max(chord)
+                velocity = (loud + accent(eighth % 6) + arch + rise + again
+                            + (interpolate(shape, beat) if shape else 0))
                 onset = p.at(beat, lean=lilt(eighth), scale=loose(beat))
                 # A quarter rings nearly its length, an eighth is clipped,
                 # and no two the same.
@@ -796,13 +838,15 @@ def tarantella():
     soft = [(0, "D", 0), (2, "U", -16), (3, "D", -6), (5, "U", -18)]
     tambourine = [(0, "D", 8), (2, "U", -8), (3, "D", 1), (5, "U", -10)]
 
-    def strum_bars(part, start, chords, pattern, loud, chuck=False, bars=None):
+    def strum_bars(part, start, chords, pattern, loud, chuck=False, bars=None, shape=None):
         for bar in (range(len(chords)) if bars is None else bars):
             for index, (eighth, direction, lift) in enumerate(pattern):
                 following = pattern[index + 1][0] if index + 1 < len(pattern) else 6
                 held = 0.06 if chuck else (following - eighth) / 3 - 0.05
-                strum(part, beat_of(start, bar, eighth), chords[bar], direction,
-                      loud + lift + 2 * math.sin(math.pi * (bar % 4 + 0.5) / 4), held, chuck)
+                beat = beat_of(start, bar, eighth)
+                strum(part, beat, chords[bar], direction,
+                      loud + lift + 4 * math.sin(math.pi * (bar % 4 + 0.5) / 4)
+                      + (interpolate(shape, beat) if shape else 0), held, chuck)
 
     # ---- the tunes, by player
     melody("high", INTRO, call_rh, 78, shape=call_shape)
@@ -811,30 +855,31 @@ def tarantella():
     for h, top in enumerate(tops):
         scale.setdefault(9 + h // 2, []).extend(
             (3 * (h % 2) + k, note, 1) for k, note in enumerate((top, step_up[top], top)))
-    melody("high", INTRO, {bar: notes for bar, notes in scale.items() if bar <= 11}, 84)
-    melody("lead", INTRO, {bar: notes for bar, notes in scale.items() if bar >= 12}, 80)
-    melody("lead", INTRO, {16: [(0, 59, 2)]}, 86)
+    melody("high", INTRO, {bar: notes for bar, notes in scale.items() if bar <= 11}, 84, shape=scale_shape)
+    melody("lead", INTRO, {bar: notes for bar, notes in scale.items() if bar >= 12}, 80, shape=scale_shape)
+    melody("lead", INTRO, {16: [(0, 59, 2)]}, 86, shape=scale_shape)
     # The print doubles the scale an octave down from bar 12's second half:
     # the low-G tenor while it can reach, then the fingerstyle tenor an
     # octave up instead.
     lower = {bar: [n for n in notes if bar > 12 or n[0] >= 3] for bar, notes in scale.items() if 12 <= bar <= 13}
     upper = {bar: notes for bar, notes in scale.items() if bar >= 14}
-    melody("fingers", INTRO, upper, 66, shift=12)
-    melody("high", SONG, {-1: [(5, 88, 1)], **{bar: song[bar] for bar in range(4)}}, 82)
-    melody("fingers", SONG, {-1: [(5, 88, 1)], **{bar: song[bar] for bar in range(4)}}, 74, shift=-12)
-    melody("lead", SONG, {bar: song[bar] for bar in range(4, 8)}, 84)
-    melody("high", SONG, {7: riff_pickup}, 88)
-    melody("high", RIFF, dict(enumerate(riff)), 92)
-    melody("lead", RIFF, {7: riff_pickup}, 84, shift=-12)
-    melody("lead", LOW, dict(enumerate(riff)), 88, shift=-12)
-    melody("fingers", LOW, {7: [(3, GB, 2), (5, AC, 1)]}, 74)
-    melody("fingers", THIRDS, dict(enumerate(thirds)), 76, clip=0.62)
+    melody("fingers", INTRO, upper, 66, shift=12, shape=scale_shape)
+    melody("high", SONG, {-1: [(5, 88, 1)], **{bar: song[bar] for bar in range(4)}}, 82, shape=song_shape)
+    melody("fingers", SONG, {-1: [(5, 88, 1)], **{bar: song[bar] for bar in range(4)}}, 74, shift=-12,
+           shape=song_shape)
+    melody("lead", SONG, {bar: song[bar] for bar in range(4, 8)}, 84, shape=song_shape)
+    melody("high", SONG, {7: riff_pickup}, 88, shape=song_shape)
+    melody("high", RIFF, dict(enumerate(riff)), 92, shape=riff_shape)
+    melody("lead", RIFF, {7: riff_pickup}, 84, shift=-12, shape=low_shape)
+    melody("lead", LOW, dict(enumerate(riff)), 88, shift=-12, shape=low_shape)
+    melody("fingers", LOW, {7: [(3, GB, 2), (5, AC, 1)]}, 74, shape=low_shape)
+    melody("fingers", THIRDS, dict(enumerate(thirds)), 76, clip=0.62, shape=thirds_shape)
     final = dict(enumerate(riff))
     tag = dict(enumerate(riff[4:7] + [[(0, 76, 7)]]))
-    for part, shift, loud in (("high", 0, 100), ("lead", -12, 86)):
-        melody(part, THIRDS, {7: riff_pickup}, loud - 6, shift=shift)
-        melody(part, FINAL, final, loud, shift=shift)
-        melody(part, TAG, tag, loud + 4, shift=shift)
+    for part, shift, loud in (("high", 0, 96), ("lead", -12, 82)):
+        melody(part, THIRDS, {7: riff_pickup}, loud, shift=shift, shape=final_shape)
+        melody(part, FINAL, final, loud, shift=shift, shape=final_shape)
+        melody(part, TAG, tag, loud, shift=shift, shape=final_shape)
     # A soprano thumb a third (or a fourth) below the tune in the closing riff.
     p.voice = "thumb"
     for start, bars, chords in ((FINAL, final, riff_chords), (TAG, tag, riff_chords[4:7] + ["Em"])):
@@ -845,7 +890,7 @@ def tarantella():
                 beat = beat_of(start, bar, eighth)
                 held = length / 3 * min(0.95, (0.88 if length >= 2 else 0.66) + p.random.gauss(0.0, 0.06))
                 p.play(p.at(beat, lean=lilt(eighth)), held, beat, below[-1] if below else note - 3,
-                       84 + accent(eighth % 6))
+                       82 + accent(eighth % 6) + interpolate(final_shape, beat))
 
     # ---- the strumming hands
     for part in ("strum", "piezo", "bass"):
@@ -857,13 +902,13 @@ def tarantella():
     strum_bars("piezo", SONG, ["Em"] * 8, tambourine, 64, chuck=True)
     strum_bars("piezo", RIFF, riff_chords, tambourine, 70, chuck=True)
     strum_bars("piezo", LOW, riff_chords, tambourine, 64, chuck=True)
-    strum_bars("piezo", FINAL, riff_chords, tambourine, 76, chuck=True)
-    strum_bars("piezo", TAG, riff_chords[4:7], tambourine, 80, chuck=True)
+    strum_bars("piezo", FINAL, riff_chords, tambourine, 76, chuck=True, shape=final_shape)
+    strum_bars("piezo", TAG, riff_chords[4:7], tambourine, 76, chuck=True, shape=final_shape)
     strum_bars("strum", SONG, ["Em"] * 4 + song_chords, soft, 58, bars=range(4, 8))
-    strum_bars("strum", LOW, riff_chords, soft, 66)
-    strum_bars("strum", THIRDS, thirds_chords, soft, 52)
-    strum_bars("strum", FINAL, riff_chords, full, 78)
-    strum_bars("strum", TAG, riff_chords[4:7], full, 82)
+    strum_bars("strum", LOW, riff_chords, soft, 66, shape=low_shape)
+    strum_bars("strum", THIRDS, thirds_chords, soft, 52, shape=thirds_shape)
+    strum_bars("strum", FINAL, riff_chords, full, 78, shape=final_shape)
+    strum_bars("strum", TAG, riff_chords[4:7], full, 78, shape=final_shape)
     strum("strum", CLOSE, "Em", "D", 102, 2.6)
     # The tambourine's last hit is a dead stroke too: a full piezo stroke
     # here was the loudest peak of the piece by 2 dB.
@@ -886,20 +931,21 @@ def tarantella():
         plucks.append((beat_of(SONG, bar, 0), root_string, root, 74, 0.95, None))
         plucks.append((beat_of(SONG, bar, 3), fifth_string, fifth, 64, 0.95, None))
 
-    def broken(start, chords, loud, bars=None):
+    def broken(start, chords, loud, bars=None, shape=None):
         for bar in (range(len(chords)) if bars is None else bars):
             for half in (0, 1):
                 for k, (string, note) in enumerate(arps[chords[bar]]):
-                    lift = (6 if half == 0 else 2) if k == 0 else -3
-                    plucks.append((beat_of(start, bar, 3 * half + k), string, note, loud + lift, 1.0, None))
+                    beat = beat_of(start, bar, 3 * half + k)
+                    velocity = loud + accent(3 * half + k) + (interpolate(shape, beat) if shape else 0)
+                    plucks.append((beat, string, note, velocity, 1.0, None))
 
-    broken(SONG, ["Em"] * 8, 58, bars=[7])
-    broken(RIFF, riff_chords, 58)
-    broken(LOW, riff_chords, 56, bars=range(7))
+    broken(SONG, ["Em"] * 8, 58, bars=[7], shape=song_shape)
+    broken(RIFF, riff_chords, 58, shape=riff_shape)
+    broken(LOW, riff_chords, 56, bars=range(7), shape=low_shape)
     plucks.append((beat_of(LOW, 7, 0), 1, 64, 70, 0.9, None))  # the print's E under the riff's last E
-    broken(THIRDS, thirds_chords, 52)
-    broken(FINAL, riff_chords, 66)
-    broken(TAG, riff_chords[4:7], 70)
+    broken(THIRDS, thirds_chords, 52, shape=thirds_shape)
+    broken(FINAL, riff_chords, 66, shape=final_shape)
+    broken(TAG, riff_chords[4:7], 66, shape=final_shape)
     for k, (string, note) in enumerate(arps["Em"]):
         plucks.append((CLOSE + 0.04 * k, string, note, 96 - 4 * k, 2.6, None))
 

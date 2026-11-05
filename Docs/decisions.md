@@ -5,6 +5,46 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-11-05 — the nylon sets take the fluorocarbon C, 0.4.40 (measured; adopted under the owner's standing rule, not yet heard)
+
+**What was decided.** The owner asked for every Shape, Wood and Picking to be
+more consistent in level, tone and resonance, and for the strings to sound
+smoother and more even. `Tools/AculeleEvenness.cpp` measured all 48 cells
+([evenness](validation/evenness-2026-11-05.md)). Level across cells was
+already matched (`LevelMatchData.h`, every cell and Capture within 0.9 dB of
+-9 VU). The Pickings' and Woods' brightness differ by design. The one string
+out of line was D'Addario's unwound nylon C: in every cell its share above
+2.5 kHz sat 4.8-22 dB under the four strings' mean, and under Pick its level
+4.5 dB under. It is also the one nylon string outside the five sample packs'
+stiffness and top-end fall
+([benchmark](validation/sample-pack-benchmark-2026-10-29.md)). Two other
+levers were measured and not taken: plucking the Pick at the Finger's distance
+closes its C-string gap but takes away the pick's tone, and a per-note level
+table would fit a curve, which the A–Z limit forbids.
+
+**The letters.** One tab phrase (the open strings, a melody across all four, a
+climb up the C string to G4 answered by the open G, three chords) on Concert
+Strum, Concert Strum on Pick, Soprano Thumb and Low G Tenor, each as it loads.
+A 0.4.39 as shipping; B 0.4.40, the nylon sets with Worth's fluorocarbon C,
+levels and trims re-pinned. Whole-file RMS matched to A; trims on B +0.00,
+-0.07, -0.49 and -0.24 dB. In the project's
+`aculele/listening/2026-11-05-c-string/`, with its `key.md`.
+
+**Chosen.** B, under the owner's standing rule that a candidate wins unless
+the owner says otherwise; the owner has not heard it yet. It sits beside the
+owner's two choices by ear to keep nylon (2026-10-29, 2026-10-30): those
+compared whole sets, and this changes the C string alone. It waits on the
+owner's ear before it merges.
+
+**What it licensed.** `stringConstruction` gives the nylon sets the
+fluorocarbon set's C; the force law keeps EJ65C as sold for its reference
+tension, so no other string's force moves. Across the 48 cells the brightest
+string against the dullest went from 25.1 to 9.7 dB on average, the loudest
+against the quietest from 4.2 to 3.3 dB. `LevelMatchData.h` was re-pinned and
+four presets' Output moved 0.1-0.2 dB. The open C now rings on longer under
+other strings; its octave sits a semitone under C#5 on the G string, so
+`Aculele.Vibrato` tracks its full depth on D5 at the G string's 7th fret.
+
 ## 2026-11-03 — the pick and nail release keeps one polarity, 0.4.39 (the polarity chosen by ear: B; the sweep measured)
 
 **What was decided.** The plectrum release's hump solves h^2 V + 2 h X = share D

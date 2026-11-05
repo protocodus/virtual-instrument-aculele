@@ -1257,8 +1257,9 @@ struct StringConstruction
     StringMaterialSpec material;
 };
 
-StringConstruction stringConstruction(const EngineParameters& parameters,
-                                      int stringIndex) noexcept
+// A string of the set its maker sells for the Shape, as listed above.
+StringConstruction soldStringConstruction(const EngineParameters& parameters,
+                                          int stringIndex) noexcept
 {
     const auto index = static_cast<std::size_t>(std::clamp(stringIndex, 0, 3));
     if (index == 0 && parameters.tuning == Tuning::LowG)
@@ -1267,6 +1268,32 @@ StringConstruction stringConstruction(const EngineParameters& parameters,
     const auto set = static_cast<std::size_t>(parameters.strings);
     return { standardStringGauges[set][static_cast<std::size_t>(parameters.shape)][index],
              stringMaterialSpecs[set] };
+}
+
+// The string the instrument is strung with: the sold set, except that the
+// nylon sets take the fluorocarbon set's C, a hybrid set. EJ65's unwound
+// nylon C (0.86-1.04 mm) is the one string outside five sampled ukuleles'
+// range: over C4-D#4 its inharmonicity B is 5e-4 to 8e-4 against their
+// 1.3e-4 to 4.6e-4, and over C4-F#4 its power above 2.5 kHz falls 58-67 dB
+// from a note's first 20 ms to its 300-600 ms against their 10-30 dB, while
+// nylon's G, E and A lie inside their range on both
+// (Docs/validation/sample-pack-benchmark-2026-10-29.md). The bending loss,
+// eta_E B n^2 / (1 + B n^2), grows with that stiffness: in every Shape,
+// Wood and Picking the nylon C's share above 2.5 kHz sat 4.8-22 dB under
+// the four strings' mean, and under Pick its level 4.5 dB under
+// (Tools/AculeleEvenness.cpp, Docs/validation/evenness-2026-11-05.md).
+// Worth's fluorocarbon C (.0291 in on every Shape) reads B 2.6e-4 and falls
+// 33 dB. The fluorocarbon sets are unchanged.
+StringConstruction stringConstruction(const EngineParameters& parameters,
+                                      int stringIndex) noexcept
+{
+    if (stringIndex == 1 && parameters.strings == StringMaterial::Nylon)
+    {
+        auto fluorocarbon = parameters;
+        fluorocarbon.strings = StringMaterial::Fluorocarbon;
+        return soldStringConstruction(fluorocarbon, stringIndex);
+    }
+    return soldStringConstruction(parameters, stringIndex);
 }
 
 float stringSection(const StringConstruction& string) noexcept
@@ -1286,6 +1313,15 @@ float stringTension(const EngineParameters& parameters, int stringIndex,
 {
     const float waveSpeed = 2.0f * scaleLengthFor(parameters.shape) * frequency;
     return stringLinearMass(stringConstruction(parameters, stringIndex))
+        * waveSpeed * waveSpeed;
+}
+
+// The same for the set as its maker sells it (soldStringConstruction).
+float soldStringTension(const EngineParameters& parameters, int stringIndex,
+                        float frequency) noexcept
+{
+    const float waveSpeed = 2.0f * scaleLengthFor(parameters.shape) * frequency;
+    return stringLinearMass(soldStringConstruction(parameters, stringIndex))
         * waveSpeed * waveSpeed;
 }
 
@@ -8289,7 +8325,9 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
     // Shape at one hand position the displacement goes as 1/T. The stroke
     // was set on the concert nylon set, so it is the displacement that force
     // gives a string at that set's geometric-mean tension, about 37.7 N, and
-    // every string is displaced by T_ref / T_own about it. What this sets is
+    // every string is displaced by T_ref / T_own about it. The reference is
+    // EJ65C as sold, so the nylon sets' fluorocarbon C (stringConstruction)
+    // moves no other string's force. What this sets is
     // how hard each string is pulled against the others: a Shape's own
     // constant, its scale's L among them, is taken up by the Shapes' meter
     // levelling (LevelMatchData.h). Released at one displacement on every
@@ -8307,7 +8345,7 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
     const auto concertNotes = openNotes(Tuning::Standard);
     float concertTensionProduct = 1.0f;
     for (int string = 0; string < stringCount; ++string)
-        concertTensionProduct *= stringTension(concertSet, string,
+        concertTensionProduct *= soldStringTension(concertSet, string,
             midiFrequency(concertNotes[static_cast<std::size_t>(string)]));
     const float stringForceRatio = exact::sqrt(exact::sqrt(concertTensionProduct))
         / stringTension(parameters_, stringIndex, midiFrequency(voice.openMidi));

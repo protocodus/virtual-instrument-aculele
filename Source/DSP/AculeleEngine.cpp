@@ -1889,6 +1889,14 @@ constexpr float saddleLeverArm(int stringIndex) noexcept
     return (13.3f / 21.6f) * (static_cast<float>(stringIndex) - 1.5f);
 }
 
+// The strings break over the saddle at an authored 12 degrees, Acustra's,
+// with equal tension either side, so a change dT in their tension presses
+// the saddle down by sin(12 deg) dT (Kemp, PLoS ONE 2023,
+// doi:10.1371/journal.pone.0292515, on how the break angle resolves tension
+// into down-force). The angle is typical of a guitar; no ukulele's is
+// published, and none was measured here.
+constexpr float breakAngleProjection = 0.2079116908f;
+
 // The plate conductance floor is one over-damped positive-real section. An
 // over-damped s/(s^2+2ds+w0^2) has real poles at w0^2/(2d) and 2d, so its
 // conductance is flat between them; centre sqrt(f_low*f_high) with
@@ -4966,6 +4974,7 @@ void AculeleEngine::resetSoundState() noexcept
     for (auto& voice : voices_)
     {
         voice.axialContactArrivals.clear();
+        voice.stringAxialForce.clear();
         voice.releaseStepAge = -1;
         voice.releaseStepRise = voice.releaseStepForce
             = voice.releaseStepLevel = 0.0f;
@@ -7036,6 +7045,7 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
         voice.contactTravel.active = false;
         voice.legatoContactTravel.active = false;
         voice.legatoContactSamples = 0;
+        voice.stringAxialForce.lineRewritten();
     }
     const float scaleLength = scaleLengthFor(parameters_.shape);
     // A natural harmonic is the open string vibrating in its nth mode, so the
@@ -7230,6 +7240,11 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
     // it carries and the length it sounds.
     const auto ukuleleLoss = ukuleleStringLoss(parameters_, stringIndex,
         pitch.designTension, soundingLength, lossDesignFrequency);
+    // The longitudinal waves stretch the monofilament, so they lose by its
+    // Young's modulus loss factor, the one its bending loses by, String Age
+    // included: Woodhouse (Acta Acustica 103, 2017, doi:10.3813/aaa.919135)
+    // gives the axial and bending stiffness the same loss factor.
+    voice.axialLossFactor = ukuleleLoss.bendingFactor;
     const float inharmonicity = ukuleleLoss.inharmonicity;
     const float age = parameters_.stringAge;
     // Preserve the material/age law while allowing one shared fitted cutoff
@@ -11761,6 +11776,7 @@ void AculeleEngine::firePluck(Voice& voice, int stringIndex) noexcept
         configureVoice(voice, stringIndex, voice.midiNote, !merge, true);
     }
     initialisePluck(voice, stringIndex, voice.velocity, merge);
+    voice.stringAxialForce.lineRewritten();
     voice.attackFired = true;
     if (merge)
         bridgeDerivativesCrossConfigure_ = true;
@@ -13086,6 +13102,459 @@ ACULELE_NOINLINE void AculeleEngine::addReleaseNoise(
     }
 }
 
+namespace
+{
+// The interior cells [first, end) of the unheld slope sum in
+// renderStringAxialForce: cell k reads the outgoing wave's sample k strides
+// back and the returning wave at its own age, and adds the square of the two
+// waves' slopes over the cell. `outgoing`, `returning` and `sum` carry the
+// previous cell's reads and the running sum in and out. Four cells go at once
+// where the compiler has 4-wide float vectors; each cell's reads and slope are
+// the one-at-a-time arithmetic, and only the order the squares are added in
+// differs (four partial sums, joined last), a change in the sum's last bits.
+void sumAxialCells(const float* line, unsigned mask, unsigned newest,
+                   int stride, int first, int end, float period,
+                   float returningSpan, float outgoingScale,
+                   float returningScale, float& outgoing, float& returning,
+                   float& sum) noexcept
+{
+    const auto tap = [line, mask, newest] (float samplesAgo)
+    {
+        const int whole = static_cast<int>(samplesAgo);
+        const float part = samplesAgo - static_cast<float>(whole);
+        const unsigned at = newest - static_cast<unsigned>(whole);
+        const float a = line[at & mask];
+        const float b = line[(at - 1u) & mask];
+        return a + part * (b - a);
+    };
+    int cell = first;
+#if defined(__SSE2__) && defined(__x86_64__) && (defined(__clang__) || defined(__GNUC__))
+    typedef float Floats __attribute__((vector_size(16)));
+    typedef int Ints __attribute__((vector_size(16)));
+    if (end - cell >= 4)
+    {
+        const Floats periodV = { period, period, period, period };
+        const Floats spanV = { returningSpan, returningSpan, returningSpan,
+                               returningSpan };
+        const Floats outgoingScaleV = { outgoingScale, outgoingScale,
+                                        outgoingScale, outgoingScale };
+        const Floats returningScaleV = { returningScale, returningScale,
+                                         returningScale, returningScale };
+        const Floats four = { 4.0f, 4.0f, 4.0f, 4.0f };
+        Floats cells = { static_cast<float>(cell), static_cast<float>(cell + 1),
+                         static_cast<float>(cell + 2), static_cast<float>(cell + 3) };
+        Floats partial = { 0.0f, 0.0f, 0.0f, 0.0f };
+        for (; end - cell >= 4; cell += 4)
+        {
+            const Floats age = periodV - spanV * cells;
+            const Ints whole = __builtin_convertvector(age, Ints);
+            const Floats part = age - __builtin_convertvector(whole, Floats);
+            unsigned at[4];
+            for (int lane = 0; lane < 4; ++lane)
+                at[lane] = newest - static_cast<unsigned>(whole[lane]);
+            const Floats a = { line[at[0] & mask], line[at[1] & mask],
+                               line[at[2] & mask], line[at[3] & mask] };
+            const Floats b = { line[(at[0] - 1u) & mask], line[(at[1] - 1u) & mask],
+                               line[(at[2] - 1u) & mask], line[(at[3] - 1u) & mask] };
+            const Floats nextReturning = a + part * (b - a);
+            const auto out = [line, mask, newest, stride] (int k)
+            {
+                return line[(newest - static_cast<unsigned>(k * stride)) & mask];
+            };
+            const Floats nextOutgoing = { out(cell), out(cell + 1),
+                                          out(cell + 2), out(cell + 3) };
+            const Floats previousOutgoing = { outgoing, nextOutgoing[0],
+                                              nextOutgoing[1], nextOutgoing[2] };
+            const Floats previousReturning = { returning, nextReturning[0],
+                                               nextReturning[1], nextReturning[2] };
+            const Floats slope = (nextOutgoing - previousOutgoing) * outgoingScaleV
+                + (nextReturning - previousReturning) * returningScaleV;
+            partial += slope * slope;
+            outgoing = nextOutgoing[3];
+            returning = nextReturning[3];
+            cells += four;
+        }
+        sum += (partial[0] + partial[1]) + (partial[2] + partial[3]);
+    }
+#endif
+    for (; cell < end; ++cell)
+    {
+        const float nextOutgoing = line[(newest
+            - static_cast<unsigned>(cell * stride)) & mask];
+        const float nextReturning = tap(period
+            - returningSpan * static_cast<float>(cell));
+        const float slope = (nextOutgoing - outgoing) * outgoingScale
+            + (nextReturning - returning) * returningScale;
+        sum += slope * slope;
+        outgoing = nextOutgoing;
+        returning = nextReturning;
+    }
+}
+} // namespace
+
+// The string's own lengthwise force at the saddle. A string stretched by its
+// own vibration carries the tension
+//     tau = EA xi_x + beta y_x^2,   beta = (EA - T) / 2,
+// in its axial displacement xi (Bank and Sujbert, JASA 117 (2005) 2268-2278;
+// Bank, PhD thesis, BME Budapest 2006, Sec. 3.3). With mu xi_tt = tau_x, the
+// characteristic waves tau -/+ Z_l v travel at c_l = sqrt(EA / mu) and each
+// gathers the source beta d/dt(y_x^2) on its way, and at fixed ends v = 0, so
+// the force on the saddle is
+//     tau_b(t) = loss(tau_b(t - T_c)) + (beta / c_l) dF/dt,
+// T_c = 2L / c_l the longitudinal round trip, F the integral of y_x^2 over
+// the unfolded round trip at retarded times: each point's direct path to the
+// saddle (retarded x / c_l) and its path by way of the nut ((2L - x) / c_l).
+// In the slow limit tau_b = beta Q / L with Q the integral of y_x^2 over the
+// string, the Kirchhoff-Carrier tension. One way: the string's pitch keeps
+// its own attack surrogate (updateAttackPitch), and no axial energy returns
+// to it. On a harp's polymer and gut strings the angle at which they meet
+// the soundboard, which this force acts through, is audible (Woodhouse, JSV
+// 523 (2022) 116669, doi:10.1016/j.jsv.2021.116669). On these nylon and
+// fluorocarbon strings the first longitudinal mode lies at 2.0-4.3 kHz open
+// and rises with the fret, as the transverse pitch does.
+//
+// y_x comes from the line as displacementAt reads it, y(x) = s(D - x) - s(x)
+// with D = 2L, and at a retardation r the field is the line r samples older,
+// so on the direct path the outgoing wave is read at x (1 + e) and the
+// returning one at D - x (1 - e), e = T_c / D; by way of the nut at
+// e D + x (1 - e) and D (1 + e) - x (1 + e). Each wave's slope is averaged
+// over cells exactly - the difference of the line across a cell over the
+// cell's span of the line - so the slope sums never alias between cells.
+// A cell spans `stride` samples of the outgoing wave's line, and F is
+// evaluated every `stride` samples, four per period of a cut-off at the
+// first longitudinal mode or 5 kHz, whichever is lower; its change reaches
+// the ring spread across the next stride, a linear interpolation of F a
+// stride late, and the force leaves through a band of twice the cut-off
+// (designStringAxialForce). The 5 kHz cap follows
+// Ducceschi, Russo and Webb (DAFx-26), who leave a guitar string's
+// nonlinearity out above it with no audible loss by informal A/B; it is a
+// numerical convention, not a measurement.
+//
+// Units: the line's wave is the string's displacement over the calibration's
+// steelDisplacementScaleMetres, as updateAttackPitch reads it,
+// and a bridge force F_N newtons is F_N / (48000 d) in the junction's units
+// (its forces are wave-impedance products per 48 kHz sample). The force
+// reaches the measured body through the saddle's down-force
+// (breakAngleProjection), with positive normal displacement taken to point
+// away from the top, so a tension rise pushes the saddle into it. The
+// along-string push on the saddle top, which turns the bridge about its
+// long axis, has no measured path here and is left out.
+void AculeleEngine::designStringAxialForce(Voice& voice, int stringIndex) noexcept
+{
+    auto& axial = voice.stringAxialForce;
+    const float length = std::max(voice.speakingLengthMetres, 0.05f);
+    const float scaleLength = scaleLengthFor(parameters_.shape);
+    const float tension = voice.tensionNewtons > 0.0f ? voice.tensionNewtons
+        : voice.characteristicImpedance * 2.0f * scaleLength
+              * tunedMidiFrequency(voice.openMidi);
+    const float excursion = physicalCalibration_.steelDisplacementScaleMetres;
+    const float loss = voice.axialLossFactor;
+    const auto lengthBits = exact::bits(length);
+    const auto tensionBits = exact::bits(tension);
+    const auto scaleBits = exact::bits(excursion);
+    const auto lossBits = exact::bits(loss);
+    if (axial.designed && axial.lengthBits == lengthBits
+        && axial.tensionBits == tensionBits && axial.scaleBits == scaleBits
+        && axial.lossBits == lossBits)
+        return;
+    // A new fret or excursion scale rescales the whole stretch at once:
+    // count its changes from the new scale rather than step by all of it. A
+    // bend's tension moves beta by a percent or two, smoothly, and keeps
+    // counting.
+    if (axial.lengthBits != lengthBits || axial.scaleBits != scaleBits)
+        axial.rereference = true;
+    axial.designed = true;
+    axial.lengthBits = lengthBits;
+    axial.tensionBits = tensionBits;
+    axial.scaleBits = scaleBits;
+    axial.lossBits = lossBits;
+
+    // The string's mass and axial rigidity are the ones its waves, its bends
+    // and its attack pitch already use (stringImpedance, stringAxialRigidity).
+    const double linearMass = static_cast<double>(
+        stringLinearMass(stringConstruction(parameters_, stringIndex)));
+    const double rigidity = static_cast<double>(
+        stringAxialRigidity(parameters_, stringIndex, voice.openMidi));
+    const double speed = std::sqrt(rigidity / linearMass);
+    const double fundamental = speed / (2.0 * static_cast<double>(length));
+    const double beta = 0.5 * (rigidity - static_cast<double>(tension));
+    const double rate = sampleRate_;
+    const double cutoff = std::min(fundamental, 5000.0);
+    axial.stride = std::max(1, static_cast<int>(std::floor(rate / (4.0 * cutoff))));
+    // Read every stride, F's changes carry images about each multiple of
+    // fs / stride, four times the cut-off and up, where the ring's own modes
+    // would ring them on (on Acustra's E3 the top band at 0.2 s stood 30 dB
+    // over the string's own). The force leaves through twice the cut-off - the sums of
+    // two partials under it, at most the read's own Nyquist - in an
+    // eighth-order Butterworth, so the images of its slow swing and its 2 f0,
+    // the strongest, fall an octave above it and 48 dB down. A stride of one
+    // has none. What F holds above the read's Nyquist folds under it before
+    // any filter can see it (README, Known gaps).
+    axial.banded = axial.stride > 1;
+    if (axial.banded)
+    {
+        const double omega = 2.0 * piDouble * 2.0 * cutoff / rate;
+        const double cosine = std::cos(omega);
+        constexpr double quality[] { 0.50979557910415918, 0.60134488693504529,
+                                     0.89997622313641570, 2.5629154477415059 };
+        for (std::size_t section = 0; section < axial.band.size(); ++section)
+        {
+            const double alpha = std::sin(omega) / (2.0 * quality[section]);
+            const double norm = 1.0 / (1.0 + alpha);
+            const double edge = 0.5 * (1.0 - cosine) * norm;
+            axial.band[section] = { static_cast<float>(edge),
+                                    static_cast<float>(2.0 * edge),
+                                    static_cast<float>(edge),
+                                    static_cast<float>(-2.0 * cosine * norm),
+                                    static_cast<float>((1.0 - alpha) * norm) };
+        }
+    }
+    const double roundTrip = rate / fundamental;
+    axial.roundTrip = static_cast<float>(roundTrip);
+    const double displacement = static_cast<double>(excursion);
+    axial.forceScale = static_cast<float>(-static_cast<double>(breakAngleProjection)
+        / (48000.0 * std::max(displacement, 1.0e-6)));
+    // The source per unit of D times the line's sum of squared cell slopes:
+    // F in square metres per metre is d^2 (D / 2L) times that sum.
+    const double perStretch = displacement * displacement
+        / (2.0 * static_cast<double>(length));
+    // Mode m loses pi m eta per round trip, a constant loss angle.
+    const double eta = std::max(static_cast<double>(loss), 0.0);
+    if (!performanceRealism_.axialWaves)
+    {
+        // The whole string at once: tau = beta F / 2L, F twice Q, with its
+        // slow drift taken out at the first mode's decay rate.
+        axial.stretchScale = static_cast<float>(beta / (2.0 * static_cast<double>(length))
+            * perStretch);
+        axial.lossPole = static_cast<float>(std::exp(-piDouble * eta * fundamental / rate));
+        axial.lossGain = 0.0f;
+        return;
+    }
+    axial.stretchScale = static_cast<float>(beta * rate / speed * perStretch);
+    // The loss as one pole b / (1 - a z^-1) meeting the first two modes'
+    // loss exactly: (r1 - r2) a^2 - 2 (r1 c1 - r2 c2) a + (r1 - r2) = 0 for
+    // |H|^2 = r_m at omega_m = 2 pi m f1 / fs. Its roots are reciprocal, so
+    // the smaller is inside the unit circle.
+    const double omega = 2.0 * piDouble * fundamental / rate;
+    const double r1 = std::exp(-2.0 * piDouble * eta);
+    const double r2 = std::exp(-4.0 * piDouble * eta);
+    double pole = 0.0;
+    if (2.0 * omega < piDouble && r1 > r2)
+    {
+        const double c1 = std::cos(omega);
+        const double c2 = std::cos(2.0 * omega);
+        const double p = r1 * c1 - r2 * c2;
+        const double q = r1 - r2;
+        const double discriminant = p * p - q * q;
+        if (discriminant > 0.0)
+            pole = (p - std::sqrt(discriminant)) / q;
+        if (!(exact::abs(pole) < 1.0))
+            pole = 0.0;
+    }
+    const double gain = std::sqrt(r1 * (1.0 - 2.0 * pole * std::cos(omega) + pole * pole));
+    axial.lossPole = static_cast<float>(pole);
+    axial.lossGain = static_cast<float>(gain);
+    // The ring's whole delay, the Thiran allpass and the loss together give
+    // the round trip at the first mode. Thiran's phase delay drifts from its
+    // design value as the mode nears Nyquist, so the fraction is refined on
+    // the exact phase there.
+    const auto phaseDelay = [omega] (double real, double imaginary)
+    {
+        return -std::atan2(imaginary, real) / omega;
+    };
+    const double lossDelay = -phaseDelay(1.0 - pole * std::cos(omega),
+                                         pole * std::sin(omega));
+    const double target = std::clamp(roundTrip - lossDelay, 1.5,
+        static_cast<double>(Voice::StringAxialForce::ringSize - 3));
+    const int whole = std::max(1, static_cast<int>(std::floor(target - 0.5)));
+    double fraction = target - static_cast<double>(whole);
+    for (int iteration = 0; iteration < 4; ++iteration)
+    {
+        const double a = (1.0 - fraction) / (1.0 + fraction);
+        // A(e^jw) = (a + e^-jw) / (1 + a e^-jw).
+        const double numeratorPhase = std::atan2(-std::sin(omega), a + std::cos(omega));
+        const double denominatorPhase = std::atan2(-a * std::sin(omega),
+                                                   1.0 + a * std::cos(omega));
+        const double allpassDelay = -(numeratorPhase - denominatorPhase) / omega;
+        fraction = std::clamp(fraction + (target - static_cast<double>(whole)
+                                          - allpassDelay), 0.25, 1.75);
+    }
+    axial.ringDelay = whole;
+    axial.thiran = static_cast<float>((1.0 - fraction) / (1.0 + fraction));
+}
+
+float AculeleEngine::renderStringAxialForce(Voice& voice, int stringIndex) noexcept
+{
+    auto& axial = voice.stringAxialForce;
+    const bool driven = voice.played;
+    if (!driven && !axial.ringing)
+        return 0.0f;
+    if (driven)
+    {
+        if (axial.countdown <= 0)
+        {
+            designStringAxialForce(voice, stringIndex);
+            double stretch = 0.0;
+            for (const auto& loop : voice.loops)
+            {
+                // displacementAt's read, age 0 the newest sample, on the
+                // line's own power-of-two ring.
+                const float* line = loop.delay.data();
+                const auto mask = static_cast<unsigned>(loop.delay.size()) - 1u;
+                const auto newest = static_cast<unsigned>(loop.writeIndex - 1);
+                const auto sample = [line, mask, newest] (int samplesAgo)
+                {
+                    return line[(newest - static_cast<unsigned>(samplesAgo)) & mask];
+                };
+                const auto tap = [line, mask, newest] (float samplesAgo)
+                {
+                    const int whole = static_cast<int>(samplesAgo);
+                    const float part = samplesAgo - static_cast<float>(whole);
+                    const unsigned at = newest - static_cast<unsigned>(whole);
+                    const float a = line[at & mask];
+                    const float b = line[(at - 1u) & mask];
+                    return a + part * (b - a);
+                };
+                const float period = loop.currentDelay;
+                // The axial round trip is a seventh to a twelfth of the
+                // transverse one on these strings; the bound only keeps a
+                // cell's span of the line from closing up.
+                const float shear = performanceRealism_.axialWaves
+                    ? std::min(axial.roundTrip / period, 0.5f) : 0.0f;
+                // Before its own release a new shape was held still, so a
+                // retardation reaching past it reads the shape as released.
+                // At the longest period the line allows the room left is a
+                // sample short; a negative reach would read the line's far
+                // end.
+                const float reach = std::max(0.0f, std::min({ shear * period,
+                    static_cast<float>(axial.validAge),
+                    static_cast<float>(activeDelaySamples() - 4) - period }));
+                // The direct path and the one by way of the nut join into one
+                // loop over u in [0, D], u = x on the first and D - x on the
+                // second: there the waves are read at u + r and D - u + r,
+                // r = min(e u, reach). Unheld, the first read moves (1 + e)
+                // per unit of u, so cells of a stride over (1 + e) put it on
+                // whole samples and only the second is interpolated. The
+                // last cell runs on to u = D, one to two cells wide.
+                const int stride = axial.stride;
+                const float outgoingStep = 1.0f + shear;
+                const float returningStep = 1.0f - shear;
+                const float width = static_cast<float>(stride) / outgoingStep;
+                const int cells = std::max(1, static_cast<int>(
+                    outgoingStep * period / static_cast<float>(stride)));
+                const float lastWidth = period - width * static_cast<float>(cells - 1);
+                // y_x = -s'(outgoing) - s'(returning), each the mean over the
+                // cell's span of its own line.
+                float outgoing = sample(0);
+                float returning = tap(period);
+                float sum = 0.0f;
+                if (reach >= shear * period)
+                {
+                    const float returningSpan = width * returningStep;
+                    const float outgoingScale = -1.0f / static_cast<float>(stride);
+                    const float returningScale = 1.0f / returningSpan;
+                    sumAxialCells(line, mask, newest, stride, 1, cells, period,
+                                  returningSpan, outgoingScale, returningScale,
+                                  outgoing, returning, sum);
+                    sum *= width;
+                    const float slope = (tap(outgoingStep * period) - outgoing)
+                            / (-lastWidth * outgoingStep)
+                        + (tap(shear * period) - returning) / (lastWidth * returningStep);
+                    sum += lastWidth * slope * slope;
+                }
+                else
+                {
+                    float outgoingAge = 0.0f;
+                    float returningAge = period;
+                    for (int cell = 1; cell <= cells; ++cell)
+                    {
+                        const bool last = cell == cells;
+                        const float u = last ? period : width * static_cast<float>(cell);
+                        const float delay = std::min(shear * u, reach);
+                        const float nextOutgoingAge = u + delay;
+                        const float nextReturningAge = period - u + delay;
+                        const float nextOutgoing = tap(nextOutgoingAge);
+                        const float nextReturning = tap(nextReturningAge);
+                        const float slope = (nextOutgoing - outgoing)
+                                / (outgoingAge - nextOutgoingAge)
+                            + (nextReturning - returning)
+                                / (returningAge - nextReturningAge);
+                        sum += (last ? lastWidth : width) * slope * slope;
+                        outgoingAge = nextOutgoingAge;
+                        returningAge = nextReturningAge;
+                        outgoing = nextOutgoing;
+                        returning = nextReturning;
+                    }
+                }
+                stretch += static_cast<double>(period) * static_cast<double>(sum);
+            }
+            stretch *= static_cast<double>(axial.stretchScale);
+            if (axial.rereference || !exact::isfinite(stretch))
+            {
+                axial.lastStretch = exact::isfinite(stretch) ? stretch : 0.0;
+                axial.rereference = false;
+            }
+            axial.increment = static_cast<float>((stretch - axial.lastStretch)
+                                                 / static_cast<double>(axial.stride));
+            axial.lastStretch = stretch;
+            axial.countdown = axial.stride;
+        }
+        if (axial.validAge < (1 << 30))
+            ++axial.validAge;
+    }
+    float input = 0.0f;
+    if (axial.countdown > 0)
+    {
+        input = axial.increment;
+        --axial.countdown;
+    }
+    if (performanceRealism_.axialWaves)
+    {
+        constexpr int mask = Voice::StringAxialForce::ringSize - 1;
+        const float delayed = axial.ring[static_cast<std::size_t>(
+            (axial.writeIndex - axial.ringDelay) & mask)];
+        const float earlier = axial.ring[static_cast<std::size_t>(
+            (axial.writeIndex - axial.ringDelay - 1) & mask)];
+        const float allpass = axial.thiran * (delayed - axial.thiranY1) + earlier;
+        axial.thiranY1 = allpass;
+        axial.lossY1 = axial.lossGain * allpass + axial.lossPole * axial.lossY1;
+        axial.force = input + axial.lossY1;
+        axial.ring[static_cast<std::size_t>(axial.writeIndex)] = axial.force;
+        axial.writeIndex = (axial.writeIndex + 1) & mask;
+    }
+    else
+        axial.force = input + axial.lossPole * axial.force;
+    // The band on the way out, so that a redesign's step in the ring's
+    // delay is held to it as well.
+    float output = axial.force;
+    if (axial.banded)
+        for (std::size_t section = 0; section < axial.band.size(); ++section)
+        {
+            const auto& c = axial.band[section];
+            auto& z = axial.bandState[section];
+            const float filtered = c[0] * output + z[0];
+            z[0] = c[1] * output - c[3] * filtered + z[1];
+            z[1] = c[2] * output - c[4] * filtered;
+            output = filtered;
+        }
+    axial.ringing = true;
+    if (!driven)
+    {
+        // Rung out once the force stays under a nanonewton for a whole
+        // round trip, about 190 dB under a played note's.
+        if (!(exact::abs(axial.force) < 1.0e-9f))
+            axial.quietSamples = 0;
+        else if (++axial.quietSamples > axial.ringDelay + 2)
+        {
+            axial.clear();
+            return 0.0f;
+        }
+    }
+    else
+        axial.quietSamples = 0;
+    return axial.forceScale * output;
+}
+
 float AculeleEngine::renderExcitation(Voice& voice) noexcept
 {
     float excitation = 0.0f;
@@ -14223,6 +14692,16 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
             if (voice.releaseNoiseSamples > 0 || voice.releaseNoiseTravel.active)
                 addReleaseNoise(voice);
             renderFretMotion(voice, string);
+            if (performanceRealism_.stringAxialForce)
+            {
+                const float force = renderStringAxialForce(voice, string);
+                if (force != 0.0f)
+                {
+                    axialBodyForce += force;
+                    axialBodyMoment += saddleLeverArm(string) * force;
+                    axialPiezoForce += piezoStringWeights_[static_cast<std::size_t>(string)] * force;
+                }
+            }
             if (voice.axialContactArrivals.remaining > 0)
             {
                 // Reduced external-force observation, with an authored
@@ -14234,7 +14713,6 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
                 // Only this vertical component and its across-saddle moment
                 // have measured capture paths. No unmeasured neck-axis
                 // rocking, axial feedback or extra acoustic gain is claimed.
-                constexpr float breakAngleProjection = 0.2079116908f;
                 const float force = breakAngleProjection * voice.axialContactArrivals.process();
                 axialBodyForce += force;
                 axialBodyMoment += saddleLeverArm(string) * force;
@@ -15310,6 +15788,7 @@ void AculeleEngine::processIdleFlush(float samplePeak) noexcept
             && voice.repluckArrivals.remaining == 0
             && voice.tailRepluckArrivals.remaining == 0
             && voice.axialContactArrivals.remaining == 0
+            && !voice.stringAxialForce.ringing
             && !voice.legatoContactTravel.active && voice.legatoContactSamples == 0
             && !voice.tailLegatoContactTravel.active && voice.tailLegatoContactSamples == 0;
     if (!idle)

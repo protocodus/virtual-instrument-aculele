@@ -5,6 +5,50 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-11-05 — a string's own stretch presses on the saddle, 0.4.41 (measured; adopted under the owner's standing rule, not yet heard)
+
+**What was decided.** The owner asked for subtle, meaningful physical
+phenomena and random artefacts that make Aculele sound more real. The random
+side is already there: each pluck draws its own force, release angle and
+landing point, each contact its own pitch, and each strum its own timing and
+speed. What a real string does and Aculele did not is stretch: a swinging
+string is longer than a straight one, so its tension rises and falls twice a
+cycle, and the longitudinal waves that carry that change press the saddle
+into the top through the break angle. Bank and Sujbert's axial force
+(JASA 117, 2005) does this, and Acustra has carried it since 1.9.14. On a
+harp's polymer and gut strings it is audible (Woodhouse, JSV 523 (2022)
+116669). It needs no new constant: the strings' axial stiffness, mass and
+loss factor are those their bends and bending already use, and the
+12-degree break angle is the one the engine already had. That angle is
+Acustra's authored value; no ukulele's is published (README, Known gaps).
+Other candidates were set aside for want of a source for their size: an
+open string's tuning error, fret buzz, a microphone noise floor, and a
+louder release noise.
+
+**The letters.** One tab phrase (loud notes high on each string, a fast run
+up the A string to the 14th fret and back, hard C and F strums) on Concert
+Strum, Tenor Picked Melody and Low G Tenor, each as it loads. A 0.4.40 as
+shipping; B 0.4.41 with the force, which renders bit-identical to A with it
+switched off. Whole-file RMS matched to A; trims on B -0.03, +0.03 and
+-0.02 dB. In the project's `aculele/listening/2026-11-05-realism/`, with its
+`key.md`.
+
+**Measured.** The difference B - A stands 21-39 dB under each of the seven
+demos and 26-30 dB under the three listening files. It is largest in a loud
+note's first quarter second: 16-17 dB under a picked fluorocarbon note
+between 1.5 and 6 kHz, and on nylon mostly at twice the note's frequency.
+The demos' level moves under 0.05 dB and every preset still reads within
+0.1 dB of -9 VU (`AculeleLevels --report`), so `LevelMatchData.h` and the
+trims stay. CPU over the seven demos rises from 0.072-0.084x to
+0.080-0.107x realtime on the development machine. `Aculele.StringAxialForce`
+checks the force against independent arithmetic from the string table.
+
+**Chosen.** B, adopted under the owner's standing rule and not yet heard.
+
+**What it licensed.** `renderStringAxialForce` and its design, Acustra
+1.9.21's, with Aculele's strings; `PerformanceRealism::stringAxialForce` and
+`axialWaves` switch it.
+
 ## 2026-11-05 — the nylon sets take the fluorocarbon C, 0.4.40 (measured; the owner chose B)
 
 **What was decided.** The owner asked for every Shape, Wood and Picking to be

@@ -48,6 +48,10 @@
 // its size (the hot string-loop and bridge-derivative recurrences).
 #if defined(__clang__)
 #define ACULELE_ALWAYS_INLINE __attribute__((always_inline))
+#elif defined(__GNUC__)
+// GCC honours always_inline only on a function declared inline. These are
+// defined, and called, only in AculeleEngine.cpp.
+#define ACULELE_ALWAYS_INLINE inline __attribute__((always_inline))
 #elif defined(_MSC_VER)
 #define ACULELE_ALWAYS_INLINE __forceinline
 #else

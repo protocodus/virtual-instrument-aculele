@@ -15509,6 +15509,9 @@ void AculeleEngine::RoomAmbience::prepare(double hostRate,
                     static_cast<float>((1.0 + fraction) * fraction * (2.0 - fraction) / 2.0),
                     static_cast<float>(-(1.0 + fraction) * fraction * (1.0 - fraction) / 6.0)
                 };
+                for (std::size_t point = 0; point < arrival.weights.size(); ++point)
+                    arrivalWeights[static_cast<std::size_t>(channel)][tap / 4][point][tap % 4]
+                        = arrival.weights[point];
                 auto& gain = channel == 0 ? tapLeft[tap] : tapRight[tap];
                 gain = static_cast<float>(source.reflection * directDistance / distance
                     * (0.5 * (1.0 - dy / distance) / directivity));
@@ -15681,6 +15684,43 @@ void AculeleEngine::RoomAmbience::step(float input) noexcept
     float reflectedRight = 0.0f;
     if (directional)
     {
+#if defined(__clang__) || defined(__GNUC__)
+        // Four taps at once, each lane the one-tap sum's own products and
+        // additions in its order; the taps then join the sum one at a time
+        // in tap order, as ever.
+        typedef float Vector __attribute__((vector_size(16)));
+        const auto reflect = [newest] (const std::array<Arrival, tapCount>& arrivals,
+                                       const auto& weights,
+                                       const std::array<float, tapCount>& gains)
+        {
+            float reflected = 0.0f;
+            for (std::size_t group = 0; group < static_cast<std::size_t>(tapGroups); ++group)
+            {
+                const std::size_t tap = 4 * group;
+                // A lane past the last tap reads the last tap's points, at
+                // zero weight, and is not summed.
+                const float* first[4];
+                for (std::size_t lane = 0; lane < 4; ++lane)
+                    first[lane] = newest - arrivals[std::min(tap + lane,
+                        static_cast<std::size_t>(tapCount - 1))].firstDelay;
+                Vector value = { 0.0f, 0.0f, 0.0f, 0.0f };
+                for (int point = 0; point < 4; ++point)
+                {
+                    Vector weight;
+                    __builtin_memcpy(&weight, weights[group][static_cast<std::size_t>(point)].data(),
+                                     sizeof(weight));
+                    const Vector sample = { first[0][-point], first[1][-point],
+                                            first[2][-point], first[3][-point] };
+                    value += weight * sample;
+                }
+                for (std::size_t lane = 0; lane < 4 && tap + lane < tapCount; ++lane)
+                    reflected += gains[tap + lane] * value[lane];
+            }
+            return reflected;
+        };
+        reflectedLeft = reflect(arrivalsLeft, arrivalWeights[0], tapLeft);
+        reflectedRight = reflect(arrivalsRight, arrivalWeights[1], tapRight);
+#else
         const auto arrivalValue = [newest] (const Arrival& arrival)
         {
             // Weight i reads the sample firstDelay + i steps back.
@@ -15700,6 +15740,7 @@ void AculeleEngine::RoomAmbience::step(float input) noexcept
             reflectedLeft += tapLeft[tap] * arrivalValue(arrivalsLeft[tap]);
             reflectedRight += tapRight[tap] * arrivalValue(arrivalsRight[tap]);
         }
+#endif
     }
     else
         for (std::size_t tap = 0; tap < tapDelays.size(); ++tap)

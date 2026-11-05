@@ -2413,6 +2413,12 @@ private:
             std::array<float, 4> weights {};
         };
         std::array<Arrival, tapCount> arrivalsLeft {}, arrivalsRight {};
+        // The same weights four taps a row, point k of tap 4 g + t at
+        // [channel][g][k][t], so step forms four taps' arrivals at once;
+        // the taps past tapCount weigh zero.
+        static constexpr int tapGroups = (tapCount + 3) / 4;
+        alignas(16) std::array<std::array<std::array<std::array<float, 4>, 4>,
+                                          tapGroups>, 2> arrivalWeights {};
         bool directional { false };
         bool rateConversion { false };
         // Two 64-internal-sample Blackman-windowed sinc filters. The first

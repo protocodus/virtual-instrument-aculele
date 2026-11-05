@@ -13932,6 +13932,20 @@ void AculeleEngine::BodyBank::load(const std::array<BodyMode, bodyModeCount>& mo
     const int parallel = (ordered + lanes - 1) / lanes * lanes;
     while (count > parallel && !sounds(count - 1))
         --count;
+    for (int group = 0; group < capacity / lanes; ++group)
+    {
+        bool silent = true;
+        for (int index = group * lanes; index < (group + 1) * lanes; ++index)
+            silent = silent && (index >= count || !sounds(index));
+        silentGroup[static_cast<std::size_t>(group)] = silent;
+    }
+    for (int group = capacity / lanes - 1; group >= 0; --group)
+    {
+        const auto slot = static_cast<std::size_t>(group);
+        runEnd[slot] = static_cast<std::uint8_t>(group + 1 < capacity / lanes
+                && silentGroup[slot + 1] == silentGroup[slot]
+            ? runEnd[slot + 1] : group + 1);
+    }
     for (int index = 0; index < capacity; ++index)
     {
         const auto slot = static_cast<std::size_t>(index);
@@ -14012,6 +14026,20 @@ AculeleEngine::BodyOutput AculeleEngine::BodyBank::render(float force, float mom
         stereo += pair;
     };
     // One group of four lanes advanced; its contributions to the two sums.
+    // A silent group's states advanced, as advance does, without its sums.
+    const auto rest = [&] (int index)
+    {
+        const Vector pr = load(poleReal, index);
+        const Vector pim = load(poleImaginary, index);
+        const Vector re = load(real, index);
+        const Vector im = load(imaginary, index);
+        const Vector mr = load(momentReal, index);
+        const Vector mi = load(momentImaginary, index);
+        store(real, index, flush(forceLanes + pr * re - pim * im));
+        store(imaginary, index, flush(pim * re + pr * im));
+        store(momentReal, index, flush(momentLanes + pr * mr - pim * mi));
+        store(momentImaginary, index, flush(pim * mr + pr * mi));
+    };
     const auto advance = [&] (int index, Vector& leftPart, Vector& rightPart)
     {
         const Vector pr = load(poleReal, index);
@@ -14074,9 +14102,27 @@ AculeleEngine::BodyOutput AculeleEngine::BodyBank::render(float force, float mom
             }
         }
     };
+    // Runs of sounding and of silent groups, each in its own loop. A group
+    // index is its first mode's over lanes.
+    const auto run = [this] (int index, int limit, bool& silent)
+    {
+        const auto slot = static_cast<std::size_t>(index) / lanes;
+        silent = silentGroup[slot];
+        return std::min(static_cast<int>(runEnd[slot]) * lanes, limit);
+    };
+    const int fullOrdered = soundingOrdered / lanes * lanes;
     int index = 0;
-    for (; index + lanes <= soundingOrdered; index += lanes)
-        group(index, lanes);
+    while (index < fullOrdered)
+    {
+        bool silent = false;
+        const int end = run(index, fullOrdered, silent);
+        if (silent)
+            for (; index < end; index += lanes)
+                rest(index);
+        else
+            for (; index < end; index += lanes)
+                group(index, lanes);
+    }
     if (index < soundingOrdered)
         group(index, soundingOrdered - index);
     index = (ordered + lanes - 1) / lanes * lanes;
@@ -14084,17 +14130,31 @@ AculeleEngine::BodyOutput AculeleEngine::BodyBank::render(float force, float mom
     {
         Vector leftSum = { 0.0f, 0.0f, 0.0f, 0.0f };
         Vector rightSum = { 0.0f, 0.0f, 0.0f, 0.0f };
-        for (; index < count; index += lanes)
+        const int fullCount = count / lanes * lanes;
+        while (index < fullCount)
+        {
+            bool silent = false;
+            const int end = run(index, fullCount, silent);
+            if (silent)
+                for (; index < end; index += lanes)
+                    rest(index);
+            else
+                for (; index < end; index += lanes)
+                {
+                    Vector leftPart, rightPart;
+                    advance(index, leftPart, rightPart);
+                    leftSum += leftPart;
+                    rightSum += rightPart;
+                }
+        }
+        if (index < count)
         {
             Vector leftPart, rightPart;
             advance(index, leftPart, rightPart);
-            if (index + lanes > count)
-            {
-                const Mask lane = { 0, 1, 2, 3 };
-                const Mask summed = lane < (count - index);
-                leftPart = reinterpret_cast<Vector>(reinterpret_cast<Mask>(leftPart) & summed);
-                rightPart = reinterpret_cast<Vector>(reinterpret_cast<Mask>(rightPart) & summed);
-            }
+            const Mask lane = { 0, 1, 2, 3 };
+            const Mask summed = lane < (count - index);
+            leftPart = reinterpret_cast<Vector>(reinterpret_cast<Mask>(leftPart) & summed);
+            rightPart = reinterpret_cast<Vector>(reinterpret_cast<Mask>(rightPart) & summed);
             leftSum += leftPart;
             rightSum += rightPart;
         }

@@ -1820,6 +1820,13 @@ private:
         // Scaled down from a guitar, the soprano's bank puts 64 of 160 modes
         // there at 48 kHz.
         int soundingOrdered { 0 };
+        // A group of four rendered modes none of which has residues in this
+        // bank adds exactly zero to both sums, so render only advances its
+        // states: a later Shape or Wood may sound them (sameBodyBank).
+        std::array<bool, capacity / lanes> silentGroup {};
+        // The group after each one's run of equally silent or sounding
+        // groups, so render tests silence once a run, not once a group.
+        std::array<std::uint8_t, capacity / lanes> runEnd {};
         CaptureFilter captureFilter {};
 
         // The first modeCount modes' coefficients, their states kept. Slots

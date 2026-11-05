@@ -8227,28 +8227,35 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
                 * (static_cast<float>(stringIndex) - 2.5f)) / 20.0f);
         strumLevelGain *= voice.strokeEdgeGain;
     }
-    // No hand plucks twice with quite the same force. A guitarist's takes of
-    // one note - the CC0 Shinyguitar archtop's four round robins per note and
-    // layer - differ by a median 0.65 dB in level over 30-250 ms, and the
-    // Eastman same-pitch/style takes by 1.09 dB (Finger) and 1.47 dB (Pick).
-    // Their intended force is unknown, so +/-1 dB (0.58 dB SD) is a
-    // conservative authored residual, not a fitted law. Every pluck but a
-    // strum's, which has its own bounded variation, draws it: drawn only on a
+    // No hand plucks twice with quite the same force. A ukulele player's
+    // takes of one note, the Leolani pack's four round robins through a DI,
+    // differ by a median 1.56 dB in level over 30-330 ms, and Guffland's
+    // (capture unstated, perhaps trimmed one by one) by 2.45 dB
+    // (Docs/validation/sample-pack-benchmark-2026-10-29.md); a guitarist's,
+    // the Eastman same-pitch/style takes, by 1.09 dB with the finger and
+    // 1.47 dB with a pick over 30-250 ms. The same notes
+    // rendered (compare_sample_packs.py --takes, Concert Piezo Stage and
+    // Concert Strum's mono microphone, Finger) differ by 0.86-0.89 dB with a
+    // +/-1 dB residual, 1.12-1.14 dB with +/-1.6 dB and 1.50-1.59 dB with
+    // +/-2.5 dB, the DI's: the pluck point, angle and nail share supply the
+    // rest. The residual is that last width (1.44 dB SD), a fit of its size
+    // to the DI's takes, not a measured force. Every pluck but a strum's,
+    // which has its own bounded variation, draws it: drawn only on a
     // repeated note, a melody of different notes at one velocity varied by
     // 0.2 dB and was heard as the same pluck every time (every pluck chosen
     // by ear, Docs/decisions.md, 2026-10-28). An accent stays the player's:
     // within the hand's memory on this string the residual fades out as the
-    // commanded force changes, nominal beyond the residual's own two-dB span,
-    // so equal and nearly equal velocities are one continuing gesture rather
-    // than switching it on or off. This is an authored accent-preservation
-    // policy, not measured physiology.
+    // commanded force changes, nominal beyond the residual's own span (twice
+    // its half-width), so equal and nearly equal velocities are one
+    // continuing gesture rather than switching it on or off. This is an
+    // authored accent-preservation policy, not measured physiology.
     // The independent draw is linear-mean normalised: E[exp(a*U)] = sinh(a)/a;
     // blending it toward one preserves both that mean and its bounds.
     const float previousForceGain = voice.pluckForceGain;
     voice.pluckForceGain = 1.0f;
     if (!voice.strumming)
     {
-        constexpr double halfWidth = 0.1151292546497022842; // ln(10)/20: 1 dB
+        constexpr double halfWidth = 2.5 * 0.1151292546497022842; // ln(10)/20 per dB
         const bool remembered = voice.lastPluckMidiNote >= 0
             && sampleClock_ >= voice.lastPluckSample;
         double weight = 1.0;

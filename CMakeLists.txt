@@ -82,6 +82,10 @@ if(ACULELE_BUILD_TOOLS)
     # Writes LevelMatchData.h and reports each preset on Reason's channel meter.
     add_executable(AculeleLevels Tools/AculeleLevels.cpp)
     target_link_libraries(AculeleLevels PRIVATE AculeleDSP Threads::Threads)
+
+    # Each string's level and brightness in every shape, wood and Picking.
+    add_executable(AculeleEvenness Tools/AculeleEvenness.cpp)
+    target_link_libraries(AculeleEvenness PRIVATE AculeleDSP Threads::Threads)
 endif()
 
 if(BUILD_TESTING)

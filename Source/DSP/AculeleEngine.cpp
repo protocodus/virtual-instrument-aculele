@@ -13874,6 +13874,18 @@ void AculeleEngine::BodyBank::CaptureFilter::configure(double sampleRate,
             };
         }
     }
+    // A section made flat while its state still holds a past response
+    // keeps rendering, as it always did, until a later configure.
+    activeCount = 0;
+    for (int index = 0; index < sections; ++index)
+    {
+        const auto slot = static_cast<std::size_t>(index);
+        const bool flat = coefficients[slot] == std::array<double, 5> { 1.0, 0.0, 0.0, 0.0, 0.0 }
+            && stateLeft[slot] == std::array<double, 2> {}
+            && stateRight[slot] == std::array<double, 2> {};
+        if (!flat)
+            active[static_cast<std::size_t>(activeCount++)] = static_cast<std::uint8_t>(index);
+    }
 }
 
 void AculeleEngine::BodyBank::CaptureFilter::render(BodyOutput& output) noexcept
@@ -13891,9 +13903,9 @@ void AculeleEngine::BodyBank::CaptureFilter::render(BodyOutput& output) noexcept
         state[1] = exact::abs(second) < 1.0e-30 ? 0.0 : second;
         return static_cast<float>(result);
     };
-    for (int index = 0; index < sections; ++index)
+    for (int index = 0; index < activeCount; ++index)
     {
-        const auto slot = static_cast<std::size_t>(index);
+        const auto slot = static_cast<std::size_t>(active[static_cast<std::size_t>(index)]);
         output.left = filter(output.left, coefficients[slot], stateLeft[slot]);
         output.right = filter(output.right, coefficients[slot], stateRight[slot]);
     }

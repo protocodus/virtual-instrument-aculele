@@ -1775,6 +1775,11 @@ private:
             std::array<std::array<double, 5>, sections> coefficients {};
             std::array<std::array<double, 2>, sections> stateLeft {}, stateRight {};
             bool enabled { false };
+            // The sections render runs, in order: a flat section ({1, 0, 0,
+            // 0, 0}, here five of the eight) passes its input through
+            // exactly once its state is at rest, so it is left out.
+            std::array<std::uint8_t, sections> active {};
+            int activeCount { 0 };
             float gain { 1.0f };
             // The construction's frequencies the last two sections are
             // centred on; 0 leaves that section flat.

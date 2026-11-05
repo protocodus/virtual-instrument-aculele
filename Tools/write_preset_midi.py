@@ -735,8 +735,8 @@ def tarantella():
 
     # Each call swells to its held B5, the second answering louder; the drum
     # enters softly and builds under each call's held note.
-    call_shape = [(1, -9), (4, 1), (9, -5), (12, 4), (17, 2)]
-    drum_shape = [(4.6, -14), (8, -2), (12.6, -7), (16, 2)]
+    call_shape = [(1, -6), (4, 2), (9, -3), (12, 5), (17, 3)]
+    drum_shape = [(4.6, -10), (8, -1), (12.6, -5), (16, 2)]
 
     def lilt(eighth):
         # The first eighth of each three a little long, as the dance is played.
@@ -860,8 +860,10 @@ def tarantella():
     strum_bars("strum", THIRDS, thirds_chords, soft, 52)
     strum_bars("strum", FINAL, riff_chords, full, 78)
     strum_bars("strum", TAG, riff_chords[4:7], full, 82)
-    for part, velocity in (("strum", 102), ("piezo", 90)):
-        strum(part, CLOSE, "Em", "D", velocity, 2.6)
+    strum("strum", CLOSE, "Em", "D", 102, 2.6)
+    # The tambourine's last hit is a dead stroke too: a full piezo stroke
+    # here was the loudest peak of the piece by 2 dB.
+    strum("piezo", CLOSE, "Em", "D", 84, 0.06, chuck=True)
 
     # ---- the low-G tenor: the call's drum, its share of the scale, the
     # song's roots and the print's broken chords, each string sounding one

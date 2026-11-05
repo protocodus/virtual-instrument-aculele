@@ -5,7 +5,7 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
-## 2026-11-05 — the nylon sets take the fluorocarbon C, 0.4.40 (measured; adopted under the owner's standing rule, not yet heard)
+## 2026-11-05 — the nylon sets take the fluorocarbon C, 0.4.40 (measured; the owner chose B)
 
 **What was decided.** The owner asked for every Shape, Wood and Picking to be
 more consistent in level, tone and resonance, and for the strings to sound
@@ -30,11 +30,10 @@ levels and trims re-pinned. Whole-file RMS matched to A; trims on B +0.00,
 -0.07, -0.49 and -0.24 dB. In the project's
 `aculele/listening/2026-11-05-c-string/`, with its `key.md`.
 
-**Chosen.** B, under the owner's standing rule that a candidate wins unless
-the owner says otherwise; the owner has not heard it yet. It sits beside the
-owner's two choices by ear to keep nylon (2026-10-29, 2026-10-30): those
-compared whole sets, and this changes the C string alone. It waits on the
-owner's ear before it merges.
+**Chosen.** B, by the owner on 2026-11-05, asked whether to merge it with the
+lettered set in hand; whether the choice was made by ear is not recorded. It
+sits beside the owner's two choices by ear to keep nylon (2026-10-29,
+2026-10-30): those compared whole sets, and this changes the C string alone.
 
 **What it licensed.** `stringConstruction` gives the nylon sets the
 fluorocarbon set's C; the force law keeps EJ65C as sold for its reference

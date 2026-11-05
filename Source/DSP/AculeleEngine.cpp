@@ -13144,6 +13144,42 @@ void sumAxialCells(const float* line, unsigned mask, unsigned newest,
         Floats cells = { static_cast<float>(cell), static_cast<float>(cell + 1),
                          static_cast<float>(cell + 2), static_cast<float>(cell + 3) };
         Floats partial = { 0.0f, 0.0f, 0.0f, 0.0f };
+        // Most sums read a stretch of the ring that does not wrap: the
+        // newest sample sits at least a period and the outgoing wave's last
+        // read past its start. There the reads are plain offsets back from
+        // the newest sample, the same samples without a mask on each.
+        const unsigned oldest = std::max(static_cast<unsigned>(period) + 2u,
+                                         static_cast<unsigned>(end * stride));
+        if (newest <= mask && newest >= oldest)
+        {
+            const float* const now = line + newest;
+            for (; end - cell >= 4; cell += 4)
+            {
+                const Floats age = periodV - spanV * cells;
+                const Ints whole = __builtin_convertvector(age, Ints);
+                const Floats part = age - __builtin_convertvector(whole, Floats);
+                const float* const r0 = now - whole[0];
+                const float* const r1 = now - whole[1];
+                const float* const r2 = now - whole[2];
+                const float* const r3 = now - whole[3];
+                const Floats a = { r0[0], r1[0], r2[0], r3[0] };
+                const Floats b = { r0[-1], r1[-1], r2[-1], r3[-1] };
+                const Floats nextReturning = a + part * (b - a);
+                const float* const o = now - cell * stride;
+                const Floats nextOutgoing = { o[0], o[-stride], o[-2 * stride],
+                                              o[-3 * stride] };
+                const Floats previousOutgoing = { outgoing, nextOutgoing[0],
+                                                  nextOutgoing[1], nextOutgoing[2] };
+                const Floats previousReturning = { returning, nextReturning[0],
+                                                   nextReturning[1], nextReturning[2] };
+                const Floats slope = (nextOutgoing - previousOutgoing) * outgoingScaleV
+                    + (nextReturning - previousReturning) * returningScaleV;
+                partial += slope * slope;
+                outgoing = nextOutgoing[3];
+                returning = nextReturning[3];
+                cells += four;
+            }
+        }
         for (; end - cell >= 4; cell += 4)
         {
             const Floats age = periodV - spanV * cells;

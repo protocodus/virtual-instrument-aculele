@@ -783,12 +783,16 @@ def tarantella():
         if direction == "U":  # an up-stroke rarely reaches the G string, sometimes not the C string either
             roll = p.random.random()
             strings = (1, 2, 3) if roll < 0.55 else (2, 3) if roll < 0.85 else range(4)
+            if abs(beat - round(beat)) < 1e-9:  # an up-stroke on the beat digs in for its accent
+                strings = (1, 2, 3) if roll < 0.5 else range(4)
         for string in strings:
             p.play(onset, held, beat, STANDARD[string] + SHAPES[chord][string], velocity, string)
 
-    # Down, a light down, up; the same on the second beat (the hand keeps
-    # moving through the light strokes). "soft" keeps the quarter-eighth lilt.
-    full = [(0, "D", 0), (1, "D", -24), (2, "U", -12), (3, "D", -5), (4, "D", -24), (5, "U", -12)]
+    # Every stroke alternates with the one before. "full" strikes every
+    # eighth, so the hand swings down-up on each, and the second beat's accent
+    # is an up-stroke; "soft" and the tambourine keep the quarter-eighth lilt,
+    # down on each beat and up on its last eighth.
+    full = [(0, "D", 0), (1, "U", -24), (2, "D", -12), (3, "U", -5), (4, "D", -24), (5, "U", -12)]
     soft = [(0, "D", 0), (2, "U", -16), (3, "D", -6), (5, "U", -18)]
     tambourine = [(0, "D", 8), (2, "U", -8), (3, "D", 1), (5, "U", -10)]
 

@@ -281,13 +281,7 @@ class Performance:
         return lean + walk[index] + (walk[index + 1] - walk[index]) * (beat - index)
 
     def bpm(self, beat):
-        points = self.tempo
-        if beat <= points[0][0]:
-            return points[0][1]
-        for (b0, t0), (b1, t1) in zip(points, points[1:]):
-            if beat <= b1:
-                return t0 + (t1 - t0) * (beat - b0) / (b1 - b0)
-        return points[-1][1]
+        return interpolate(self.tempo, beat)
 
     def seconds(self, beat):
         """Clock time of a written beat: the integral of 60 / bpm, after a
@@ -357,6 +351,16 @@ class Performance:
         track += b"\x00\xff\x2f\x00"
         return (b"MThd" + struct.pack(">IHHH", 6, 0, 1, PPQ)
                 + b"MTrk" + struct.pack(">I", len(track)) + bytes(track))
+
+
+def interpolate(points, x):
+    """Linear between sorted (x, y) points, held past the ends."""
+    if x <= points[0][0]:
+        return points[0][1]
+    for (x0, y0), (x1, y1) in zip(points, points[1:]):
+        if x <= x1:
+            return y0 + (y1 - y0) * (x - x0) / (x1 - x0)
+    return points[-1][1]
 
 
 def breathe(bpm, phrases, swell=0.03, settle=0.07, last=0.22):
@@ -641,7 +645,14 @@ def tarantella():
     (Performance.feel); the second and third eighths of every beat come a
     little late, the lilt of the dance; up-strokes catch two or three
     strings; quarters ring and eighths are clipped by varying amounts; the
-    grace notes fall just before their beat."""
+    grace notes fall just before their beat, never by the same amount.
+
+    The opening is played freely, as a call is: the first call starts under
+    tempo, pushes through its turn and leans on its held B5, the drum comes
+    in softly and gathers the dance's speed, the second call answers louder
+    and nearly in time, and the third pushes into the scale, which hurries
+    down and broadens onto its last note. The hands are looser together
+    there and settle by the song."""
     # Each bar is a list of (eighth, note or (notes), eighths[, grace note]);
     # a bar is two beats, a beat a dotted quarter. Pitches are the print's.
     figure = [(3, 83, 1), (4, 84, 1), (5, 83, 1)]                 # B5 C6 B5
@@ -700,8 +711,10 @@ def tarantella():
 
     # Where each section's first bar starts, in beats.
     INTRO, SCALE, SONG, RIFF, LOW, THIRDS, FINAL, TAG, CLOSE = 0, 18, 34, 50, 66, 82, 98, 114, 120
-    tempo = (breathe(122, [(0, 10), (10, 8)], swell=0.02, settle=0.02, last=0.03)
-             + breathe(126, [(SCALE, 8), (SCALE + 8, 8)], swell=0.02, last=0.07)
+    # The calls' held B5s are beats 4 and 12; the drum enters at 4.67.
+    tempo = ([(0, 100), (2.5, 112), (3.4, 110), (4.25, 90), (4.7, 104), (8, 118), (11.3, 122), (12.2, 110),
+              (12.7, 120), (16, 124), (17.9, 128)]
+             + breathe(127, [(SCALE, 8), (SCALE + 8, 8)], swell=0.035, last=0.09)
              + breathe(124, [(SONG, 8), (SONG + 8, 8)], swell=0.025, settle=0.03, last=0.01)
              + breathe(132, [(RIFF, 8), (RIFF + 8, 8), (LOW, 8), (LOW + 8, 8)], swell=0.02, settle=0.02,
                        last=0.04)
@@ -715,6 +728,16 @@ def tarantella():
     def beat_of(start, bar, eighth):
         return start + 2 * bar + eighth / 3
 
+    def loose(beat):
+        # How much wider each hand's scatter is than the dance's: the
+        # players have not settled in together until the song.
+        return interpolate([(INTRO, 2.2), (SCALE, 1.6), (SONG, 1.0)], beat)
+
+    # Each call swells to its held B5, the second answering louder; the drum
+    # enters softly and builds under each call's held note.
+    call_shape = [(1, -9), (4, 1), (9, -5), (12, 4), (17, 2)]
+    drum_shape = [(4.6, -14), (8, -2), (12.6, -7), (16, 2)]
+
     def lilt(eighth):
         # The first eighth of each three a little long, as the dance is played.
         return (0.0, 0.011, 0.006)[eighth % 3]
@@ -723,11 +746,13 @@ def tarantella():
         return 7 if eighth == 0 else 3 if eighth == 3 else -4
 
     def grace(onset, note, velocity, channel=0):
-        p.message(onset - 0.05, (0x90 | channel, note, p.velocity(velocity - 14)))
+        ahead = min(0.07, max(0.035, p.random.gauss(0.05, 0.008)))
+        p.message(onset - ahead, (0x90 | channel, note, p.velocity(velocity - 14)))
         p.message(onset - 0.012, (0x80 | channel, note, 0), 0)
 
-    def melody(part, start, bars, loud, shift=0, clip=0.68):
-        """Play {bar: notes} from `start`, `shift` semitones from the print."""
+    def melody(part, start, bars, loud, shift=0, clip=0.68, shape=None):
+        """Play {bar: notes} from `start`, `shift` semitones from the print,
+        `shape` adding velocity by beat."""
         p.voice = part
         for bar, notes in sorted(bars.items()):
             for item in notes:
@@ -735,8 +760,8 @@ def tarantella():
                 chord = notes_ if isinstance(notes_, tuple) else (notes_,)
                 beat = beat_of(start, bar, eighth)
                 arch = 3.0 * math.sin(math.pi * ((bar % 4) + eighth / 6 + 0.5) / 4)
-                velocity = loud + accent(eighth % 6) + arch
-                onset = p.at(beat, lean=lilt(eighth))
+                velocity = loud + accent(eighth % 6) + arch + (interpolate(shape, beat) if shape else 0)
+                onset = p.at(beat, lean=lilt(eighth), scale=loose(beat))
                 # A quarter rings nearly its length, an eighth is clipped,
                 # and no two the same.
                 held = length / 3 * min(0.95, (0.88 if length >= 2 else clip) + p.random.gauss(0.0, 0.06))
@@ -747,7 +772,7 @@ def tarantella():
 
     def strum(part, beat, chord, direction, velocity, held, chuck=False):
         p.voice = part
-        onset = p.at(beat, lean=lilt(round(3 * (beat % 1))), scale=0.8)
+        onset = p.at(beat, lean=lilt(round(3 * (beat % 1))), scale=0.8 * loose(beat))
         if chuck:
             p.message(onset - 0.004, (0x90, CHUCK, 100))
             p.message(onset + 0.04, (0x80, CHUCK, 0), 0)
@@ -776,8 +801,8 @@ def tarantella():
                       loud + lift + 2 * math.sin(math.pi * (bar % 4 + 0.5) / 4), held, chuck)
 
     # ---- the tunes, by player
-    melody("high", INTRO, call_rh, 78)
-    melody("fingers", INTRO, call_lh, 68, shift=-12)
+    melody("high", INTRO, call_rh, 78, shape=call_shape)
+    melody("fingers", INTRO, call_lh, 68, shift=-12, shape=call_shape)
     scale = {}
     for h, top in enumerate(tops):
         scale.setdefault(9 + h // 2, []).extend(
@@ -822,7 +847,8 @@ def tarantella():
     for part in ("strum", "piezo", "bass"):
         p.voice = part
         p.message(0.0, (0xB0, 126, 4), 0)
-    strum_bars("piezo", INTRO, ["Em"] * 9, tambourine, 54, chuck=True, bars=range(5, 9))
+    for bar in range(5, 9):  # the tambourine fades in under the second call
+        strum_bars("piezo", INTRO, ["Em"] * 9, tambourine, 44 + 4 * (bar - 5), chuck=True, bars=[bar])
     strum_bars("piezo", INTRO, ["Em"] * 17, tambourine, 58, chuck=True, bars=range(9, 17))
     strum_bars("piezo", SONG, ["Em"] * 8, tambourine, 64, chuck=True)
     strum_bars("piezo", RIFF, riff_chords, tambourine, 70, chuck=True)
@@ -843,7 +869,8 @@ def tarantella():
     plucks = []  # (beat, string, note, velocity, beats held, grace note)
     for bar, notes in drum.items():
         for eighth, note, length, *ornament in notes:
-            plucks.append((beat_of(INTRO, bar, eighth), 0, note, 84 + accent(eighth), length / 3 * 0.8,
+            beat = beat_of(INTRO, bar, eighth)
+            plucks.append((beat, 0, note, 84 + accent(eighth) + interpolate(drum_shape, beat), length / 3 * 0.8,
                            ornament[0] if ornament else None))
     for bar, notes in lower.items():
         for eighth, note, length in notes:
@@ -877,7 +904,7 @@ def tarantella():
             if index + 1 < len(mine):
                 # Let go before the next pluck on this string, or its grace note.
                 held = min(held, mine[index + 1][0] - beat - (0.16 if mine[index + 1][5] else 0.04))
-            onset = p.at(beat, lean=lilt(round(3 * (beat % 1))))
+            onset = p.at(beat, lean=lilt(round(3 * (beat % 1))), scale=loose(beat))
             if ornament is not None:
                 grace(onset, ornament, velocity, string)
             p.play(onset, held, beat, note, velocity, string)

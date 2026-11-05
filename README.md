@@ -13,7 +13,7 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ### 0.4.41 — 2026-11-05 — A string's own stretch presses on the saddle
 
-A plucked string lengthens as it swings, so its tension rises and falls twice a cycle, and it carries that change to the saddle as longitudinal waves. That pull now presses the saddle into the top through the strings' break angle, the axial force of Bank and Sujbert, ported from Acustra 1.9.21. It is strongest in the first quarter second of loud notes: there it stands 16-17 dB under a picked fluorocarbon note between 1.5 and 6 kHz, and on nylon it lies mostly at twice the note's frequency, on its second partial. Over the seven demos it stands 21-39 dB under the sound, and their level moves under 0.05 dB. CPU rises about 25%. Adopted under the owner's standing rule and not yet heard, see `Docs/decisions.md`.
+A plucked string lengthens as it swings, so its tension rises and falls twice a cycle, and it carries that change to the saddle as longitudinal waves. That pull now presses the saddle into the top through the strings' break angle, the axial force of Bank and Sujbert, ported from Acustra 1.9.21. It is strongest in the first quarter second of loud notes: there it stands 16-17 dB under a picked fluorocarbon note between 1.5 and 6 kHz, and on nylon it lies mostly at twice the note's frequency, on its second partial. Over the seven demos it stands 21-39 dB under the sound, and their level moves under 0.05 dB. CPU rises about 25%. The owner approved it from a lettered A/B set, see `Docs/decisions.md`.
 
 ### 0.4.40 — 2026-11-05 — The nylon sets' C string plays as bright as the other three
 

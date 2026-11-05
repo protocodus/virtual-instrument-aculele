@@ -5,7 +5,7 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
-## 2026-11-05 — a string's own stretch presses on the saddle, 0.4.41 (measured; adopted under the owner's standing rule, not yet heard)
+## 2026-11-05 — a string's own stretch presses on the saddle, 0.4.41 (measured; the owner chose B)
 
 **What was decided.** The owner asked for subtle, meaningful physical
 phenomena and random artefacts that make Aculele sound more real. The random
@@ -43,7 +43,8 @@ trims stay. CPU over the seven demos rises from 0.072-0.084x to
 0.080-0.107x realtime on the development machine. `Aculele.StringAxialForce`
 checks the force against independent arithmetic from the string table.
 
-**Chosen.** B, adopted under the owner's standing rule and not yet heard.
+**Chosen.** B, by the owner on 2026-11-05, asked whether to merge it with the
+lettered set in hand; whether the choice was made by ear is not recorded.
 
 **What it licensed.** `renderStringAxialForce` and its design, Acustra
 1.9.21's, with Aculele's strings; `PerformanceRealism::stringAxialForce` and

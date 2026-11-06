@@ -5,7 +5,7 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
-## 2026-11-05 — each pluck's force wanders within ±2.5 dB, 0.4.42 (sized to a measurement; adopted under the owner's standing rule, not yet heard)
+## 2026-11-05 — each pluck's force wanders within ±2.5 dB, 0.4.42 (sized to a measurement; the owner chose B)
 
 **What was decided.** The owner heard the start of every pluck as "the same
 every time, robotic", and of three measured differences against a real
@@ -40,8 +40,9 @@ Whole-file RMS matched to A; trims for B -0.45, -0.38 and +0.85 dB, for C
 -0.05, -0.15 and +0.39 dB. In the project's
 `aculele/listening/2026-11-05-pluck-force/`, with its `key.md`.
 
-**Chosen.** B, under the owner's standing rule to accept a candidate; the
-owner has not heard the set yet.
+**Chosen.** B, by the owner on 2026-11-06, asked which spread to merge with
+the lettered set in hand; whether the choice was made by ear is not
+recorded.
 
 **What it licensed.** The residual's half-width, 2.5 dB, fitted to one
 pack's takes. No ukulele player's force has been measured: it is the width

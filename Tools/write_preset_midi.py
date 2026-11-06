@@ -37,6 +37,7 @@ MIDI_DIR = ROOT / "Docs/audio/midi"
 SONG_DIR = MIDI_DIR / "songs"
 
 DOWN, UP = 24, 25  # Performer::keyswitchDownstroke, keyswitchUpstroke
+CHUCK = 29  # Performer::keyswitchChuck: held down, a swept stroke's strings take dead strokes
 # What a phrase may play: the stroke keyswitches C0-D0, and the strings from
 # the Low G string's G3 to the A string's 18th fret.
 KEYSWITCHES = range(24, 27)
@@ -49,7 +50,7 @@ D_TUNING = (69, 62, 66, 71)
 SHAPES = {
     "C": (0, 0, 0, 3), "Am": (2, 0, 0, 0), "F": (2, 0, 1, 0), "G": (0, 2, 3, 2),
     "G7": (0, 2, 1, 2), "Em": (0, 4, 3, 2), "Dm": (2, 2, 1, 0), "D7": (2, 2, 2, 3),
-    "C7": (0, 0, 0, 1), "E7": (1, 2, 0, 2),
+    "C7": (0, 0, 0, 1), "E7": (1, 2, 0, 2), "B7": (2, 3, 2, 2), "B": (4, 3, 2, 2),
 }
 
 
@@ -249,22 +250,48 @@ LEAD_IN = 0.3  # seconds
 
 
 class Performance:
-    def __init__(self, tempo, seed, timing=0.007, dynamics=4.0):
+    def __init__(self, tempo, seed, timing=0.007, dynamics=4.0, feel=None, touch=None):
         self.tempo = sorted(tempo)  # [(beat, bpm)], linear between, held past the ends
         self.random = random.Random(seed)
+        self.seed = seed
         self.timing = timing        # seconds, the onset scatter's standard deviation
         self.dynamics = dynamics    # velocity steps, likewise
         self.events = []            # (seconds, order, bytes, voice); note-offs sort first
         self.voice = None           # the part being written; each is its own file
+        # Each player's own clock, where a song gives one: {voice: (lean,
+        # wander)} in seconds. A player sits a fixed lean behind the beat
+        # (ahead when negative) and wanders around it slowly, so two parts
+        # pull apart and come back together as players in one room do.
+        self.feel = feel or {}
+        # Each player's touch, likewise: {voice: spread} in velocity steps.
+        # A player's hand digs in and eases off over a few beats, so no two
+        # bars are struck alike.
+        self.touch = touch or {}
+        self.walks = {}
+
+    def wander(self, key, beat, spread):
+        """A random walk sampled once a beat, pulled back towards zero, whose
+        spread settles at `spread`. Each key draws from its own seeded
+        stream, so adding or reordering a part leaves the others alone."""
+        stream, walk = self.walks.setdefault(key, (random.Random(f"{self.seed}:{key}"), [0.0]))
+        beat = max(0.0, beat)
+        while len(walk) < beat + 2:
+            walk.append(0.8 * walk[-1] + stream.gauss(0.0, 0.6 * spread))
+        index = int(beat)
+        return walk[index] + (walk[index + 1] - walk[index]) * (beat - index)
+
+    def drift(self, beat):
+        """The current voice's lean plus its wander at `beat`."""
+        lean, wander = self.feel.get(self.voice, (0.0, 0.0))
+        return lean + (self.wander(self.voice, beat, wander) if wander else 0.0)
+
+    def lift(self, beat):
+        """The current voice's touch at `beat`, in velocity steps."""
+        spread = self.touch.get(self.voice, 0.0)
+        return self.wander(f"{self.voice}:touch", beat, spread) if spread else 0.0
 
     def bpm(self, beat):
-        points = self.tempo
-        if beat <= points[0][0]:
-            return points[0][1]
-        for (b0, t0), (b1, t1) in zip(points, points[1:]):
-            if beat <= b1:
-                return t0 + (t1 - t0) * (beat - b0) / (b1 - b0)
-        return points[-1][1]
+        return interpolate(self.tempo, beat)
 
     def seconds(self, beat):
         """Clock time of a written beat: the integral of 60 / bpm, after a
@@ -292,7 +319,7 @@ class Performance:
     def at(self, beat, lean=0.0, scale=1.0):
         """A played onset: the written beat on the breathing clock, plus a
         deliberate lean in seconds and the hand's scatter."""
-        return max(0.0, self.seconds(beat) + lean + self.scatter(scale))
+        return max(0.0, self.seconds(beat) + lean + self.drift(beat) + self.scatter(scale))
 
     def message(self, seconds, data, order=1):
         self.events.append((seconds, order, bytes(data), self.voice))
@@ -300,8 +327,9 @@ class Performance:
     def play(self, onset, beats_held, beat, note, velocity, channel=0):
         """One note struck at `onset` seconds and let go `beats_held` written
         beats after `beat`, with the release scattered too."""
-        release = max(onset + 0.04, self.seconds(beat + beats_held) + self.scatter(0.6))
-        self.message(onset, (0x90 | channel, note, self.velocity(velocity)))
+        release = max(onset + 0.04, self.seconds(beat + beats_held) + self.drift(beat + beats_held)
+                      + self.scatter(0.6))
+        self.message(onset, (0x90 | channel, note, self.velocity(velocity + self.lift(beat))))
         self.message(release, (0x80 | channel, note, 0), 0)
 
     def smf(self, voice=None):
@@ -333,6 +361,16 @@ class Performance:
         track += b"\x00\xff\x2f\x00"
         return (b"MThd" + struct.pack(">IHHH", 6, 0, 1, PPQ)
                 + b"MTrk" + struct.pack(">I", len(track)) + bytes(track))
+
+
+def interpolate(points, x):
+    """Linear between sorted (x, y) points, held past the ends."""
+    if x <= points[0][0]:
+        return points[0][1]
+    for (x0, y0), (x1, y1) in zip(points, points[1:]):
+        if x <= x1:
+            return y0 + (y1 - y0) * (x - x0) / (x1 - x0)
+    return points[-1][1]
 
 
 def breathe(bpm, phrases, swell=0.03, settle=0.07, last=0.22):
@@ -459,11 +497,490 @@ def minuet_in_g():
     return p
 
 
+def aloha_oe():
+    """Aloha ʻOe, Queen Liliʻuokalani's song (Maunawili, 1878), in C, a third
+    up from the A-flat of the 1913 Eclipse Publishing edition (Levy Sheet
+    Music Collection, box 151 item 019), whose vocal line gives the notes. A
+    low-G tenor plays it alone, fingerpicked as tab: the tune on the A and E
+    strings, the bass on the C and G strings, a chord tone on the E string
+    between. It opens with the refrain's last two bars, plays the verse,
+    then the refrain twice; a concert ukulele strums under the refrain,
+    softly the first time and with the island strum the second, and both
+    close on a slow C. It moves at about 100 beats a minute, a walking
+    ballad rather than a hymn; each player keeps a clock of their own
+    (Performance.feel), and an up-stroke rarely reaches the G string."""
+    # The tune as the edition writes it, a third higher: (beat, note, beats).
+    verse = [
+        [(0, 76, 1.5), (1.5, 74, 0.5), (2, 72, 0.75), (2.75, 71, 0.25), (3, 72, 0.5), (3.5, 69, 0.5)],
+        [(0, 67, 3), (3, 76, 1)],
+        [(0, 74, 1.5), (1.5, 73, 0.5), (2, 74, 0.5), (2.5, 74, 0.5), (3, 77, 0.5), (3.5, 76, 0.5)],
+        [(0, 74, 3), (3, 67, 0.5), (3.5, 72, 0.5)],
+        [(0, 76, 1.5), (1.5, 74, 0.5), (2, 72, 0.75), (2.75, 71, 0.25), (3, 72, 0.5), (3.5, 69, 0.5)],
+        [(0, 67, 2), (2, 67, 1), (3, 72, 0.5), (3.5, 71, 0.5)],
+        [(0, 69, 1), (1, 74, 0.5), (1.5, 72, 0.5), (2, 71, 0.5), (2.5, 71, 0.5), (3, 76, 0.5), (3.5, 74, 0.5)],
+        [(0, 72, 3), (3.5, 67, 0.5)],
+    ]
+    refrain = [
+        [(0, 69, 1), (1, 72, 1), (2, 77, 1.5), (3.5, 69, 0.5)],
+        [(0, 67, 1), (1, 72, 1), (2, 76, 1.5), (3.5, 72, 0.5)],
+        [(0, 71, 0.75), (0.75, 69, 0.25), (1, 71, 0.5), (1.5, 72, 0.5), (2, 74, 0.5), (2.5, 74, 0.5),
+         (3, 77, 0.5), (3.5, 77, 0.5)],
+        [(0, 76, 2), (2, 72, 1.5), (3.5, 67, 0.5)],
+        [(0, 69, 1), (1, 72, 1), (2, 77, 1.5), (3.5, 69, 0.5)],
+        [(0, 67, 0.5), (0.5, 67, 0.5), (1, 72, 0.5), (1.5, 72, 0.5), (2, 76, 1.5), (3.5, 72, 0.5)],
+        [(0, 71, 1.5), (1.5, 72, 0.5), (2, 76, 0.5), (2.5, 74, 1), (3.5, 71, 0.5)],
+        [(0, 72, 3.5), (3.5, 67, 0.5)],
+    ]
+    # The chord on each beat, from the edition's piano part.
+    verse_harmony = ["C" * 4, "C" * 4, "G" * 4, "G" * 4, "C" * 4, "CCCE", "FFGG", "C" * 4]
+    refrain_harmony = ["F" * 4, "C" * 4, "G" * 4, "C" * 4, "F" * 4, "C" * 4, "G" * 4, "C" * 4]
+    names = {"C": "C", "F": "F", "G": "G7", "E": "E7"}
+    # The intro is the refrain's last two bars, its C cut to three beats for
+    # the verse's two pick-up notes.
+    intro = refrain[6:7] + [[(0, 72, 3), (3, 67, 0.5), (3.5, 72, 0.5)]]
+    sections = [  # (tune, harmony, first beat, loudness, strum)
+        (intro, refrain_harmony[6:], 0, 70, None),
+        (verse, verse_harmony, 8, 72, None),
+        (refrain, refrain_harmony, 40, 82, "soft"),
+        (refrain[:-1] + [[(0, 72, 6)]], refrain_harmony, 72, 90, "island"),
+    ]
+    # Where the bass and the chord tone between sit on a low-G tenor (G3 C4
+    # E4 A4): the thumb's two strings and the E string's note per chord.
+    low = {"C": (60, 55), "F": (57, 60), "G7": (55, 62), "E7": (56, 56)}  # beats 1 and 3
+    inner = {"C": 64, "F": 65, "G7": 65, "E7": 64}
+
+    tempo = (breathe(94, [(0, 8)], settle=0.12) + breathe(100, [(8, 16), (24, 16)], settle=0.08)
+             + breathe(102, [(40, 16), (56, 16)]) + breathe(104, [(72, 16), (88, 16)], last=0.4))
+    p = Performance(tempo, seed=1878, timing=0.008, dynamics=5.0,
+                    feel={"tune": (0.0, 0.008), "strum": (0.008, 0.009)})
+    plucks = []  # (beat, string, note, velocity, beats held, lean)
+
+    def string_of(note):
+        # The tune keeps to the A string, the G and G-sharp below it to the E string.
+        return 3 if note >= 69 else 2
+
+    for tune, harmony, start, loud, _ in sections:
+        for bar, notes in enumerate(tune):
+            rise = 5 * math.sin(math.pi * ((bar % 4) + 0.5) / 4)
+            at = start + 4 * bar
+            tune_on_e = [(at + b, at + b + length) for b, note, length in notes if string_of(note) == 2]
+            for beat, note, length in notes:
+                metric = 6 if beat in (0, 2) else -5 if beat % 1 else 0
+                plucks.append((at + beat, string_of(note), note, loud + rise + metric, length, 0.006))
+            if bar >= len(harmony) or at == 100:  # the last bar is the close's
+                continue
+            for beat in range(4):
+                chord = names[harmony[bar][beat]]
+                first = beat == 0 or harmony[bar][beat] != harmony[bar][beat - 1]
+                if beat in (0, 2) or first:
+                    bass = low[chord][0 if beat < 2 else 1]
+                    plucks.append((at + beat, 0 if bass < 60 else 1, bass, loud - 18 + (4 if beat == 0 else 0),
+                                   2.0, -0.01))
+                if beat in (1, 3) and not any(s - 0.25 <= at + beat < e for s, e in tune_on_e):
+                    plucks.append((at + beat, 2, inner[chord], loud - 30, 1.0, 0.004))
+    # The close: C from the low G up under the tune's held C.
+    for index, (string, note) in enumerate(((0, 55), (1, 60), (2, 64))):
+        plucks.append((100, string, note, 66 - 4 * index, 6.0, 0.03 * index))
+
+    # A string sounds one note at a time: each lets go before the next pluck on it.
+    p.voice = "tune"
+    p.message(0.0, (0xB0, 126, 4), 0)
+    for string in range(4):
+        mine = sorted(item for item in plucks if item[1] == string)
+        for index, (beat, _, note, velocity, held, lean) in enumerate(mine):
+            if index + 1 < len(mine):
+                held = min(held, mine[index + 1][0] - beat - 0.04)
+            p.play(p.at(beat, lean=lean), held, beat, note, velocity, string)
+
+    p.voice = "strum"
+    p.message(0.0, (0xB0, 126, 4), 0)
+
+    def stroke(beat, chord, direction, velocity, held):
+        onset = p.at(beat, scale=0.8)
+        p.message(onset - 0.002, (0x90, DOWN if direction == "D" else UP, 100))
+        p.message(onset + 0.01, (0x80, DOWN if direction == "D" else UP, 0), 0)
+        strings = range(4)
+        if direction == "U":
+            roll = p.random.random()
+            strings = (1, 2, 3) if roll < 0.55 else (2, 3) if roll < 0.85 else range(4)
+        for string in strings:
+            p.play(onset, held, beat, STANDARD[string] + SHAPES[chord][string], velocity, string)
+
+    soft = [(0, "D", 0), (4, "D", -4), (6, "U", -14)]
+    island = [(0, "D", 0), (2, "D", -8), (3, "U", -26), (5, "U", -22), (6, "D", -10), (7, "U", -26)]
+    for tune, harmony, start, loud, strum in sections:
+        if strum is None:
+            continue
+        for bar in range(8):
+            at = start + 4 * bar
+            last = strum == "island" and bar == 7
+            pattern = [(0, "D", 0)] if last else soft if strum == "soft" else island
+            for index, (eighth, direction, accent) in enumerate(pattern):
+                following = pattern[index + 1][0] if index + 1 < len(pattern) else 8
+                held = 6.0 if last else 0.5 * (following - eighth) - 0.05
+                chord = names[harmony[bar][int(eighth // 2)]]
+                stroke(at + 0.5 * eighth, chord, direction, loud - 26 + accent + (6 if strum == "island" else 0), held)
+    return p
+
+
+def tarantella():
+    """Tarantella napoletana: the tarantella that closes Luigi Ricci's comic
+    opera La festa di Piedigrotta (Naples, 1852), from the piano
+    transcription in La ricreazione per tutti (ed. Domenico Ghinassi, 1859),
+    whose two pages are leaves n180 and n181 of the Internet Archive's copy
+    (bub_gb_Fo65eQm5t9YC, Public Domain Mark; Wikimedia Commons' "Tarantella
+    di Piedigrotta.jpg" is a small scan of the first page). It is in E minor.
+
+    The arrangement plays the print's first page and the first two systems
+    of its second, abridged where the harmony joins: the call (B5 and C6
+    over drummed B3s with their grace notes), the scale of neighbour figures
+    falling three octaves to B3, the song the print doubles in octaves, the
+    riff the tune is known by and the same riff an octave down, both over
+    the print's broken chords, then the strain in thirds in G major over a
+    D pedal. The call's last fragments and the rest of page two are left
+    out. The riff comes back once more for the whole band, with its last
+    three bars as a tag.
+
+    Seven factory ukuleles share the print's two hands. Where a hand goes
+    below a ukulele's G3 the line moves up an octave: the broken chords are
+    voiced across the low-G tenor's strings, an octave or so above the
+    print. The small note before each C5-E5 third in the G-major strain is
+    read as F#5; the scan leaves its pitch uncertain. The song's second half, which the print doubles below a
+    ukulele's range, has a strum and chord roots instead (Am, Em, B7, Em),
+    and the closing riff a soprano thumb a third below the tune; those
+    chords, the strums and the piezo concert's dead strokes, played as a
+    tambourine, are this arrangement's, not the print's.
+
+    Each player keeps a clock of their own, a lean and a slow wander
+    (Performance.feel); the second and third eighths of every beat come a
+    little late, the lilt of the dance; up-strokes catch two or three
+    strings; quarters ring and eighths are clipped by varying amounts; the
+    grace notes fall just before their beat, never by the same amount.
+
+    The opening is played freely, as a call is: the first call starts under
+    tempo, pushes through its turn and leans on its held B5, the drum comes
+    in softly and gathers the dance's speed, the second call answers louder
+    and nearly in time, and the third pushes into the scale, which hurries
+    down and broadens onto its last note. The hands are looser together
+    there and settle by the song.
+
+    The dynamics are wide, because a note's level moves little with
+    velocity between 70 and 110: each player's touch wanders
+    (Performance.touch), each section has its hairpins, a higher note is
+    played louder and a note struck again lighter, and the downbeat is the
+    strongest of each bar's six eighths."""
+    # Each bar is a list of (eighth, note or (notes), eighths[, grace note]);
+    # a bar is two beats, a beat a dotted quarter. Pitches are the print's.
+    figure = [(3, 83, 1), (4, 84, 1), (5, 83, 1)]                 # B5 C6 B5
+    turn = [(0, 83, 1), (1, 84, 1), (2, 83, 1)] + figure
+    call_rh = {0: figure, 1: turn, 2: [(0, 83, 2)], 4: figure, 5: turn, 6: [(0, 83, 2)], 8: figure}
+    call_lh = {0: figure, 1: turn, 2: [(0, 83, 2)], 4: figure, 5: turn, 6: [(0, 83, 2)]}  # an octave down
+    drum_a = [(2, 59, 1), (3, 59, 2, 58), (5, 59, 1)]                # B3, A#3 grace notes
+    drum_b = [(0, 59, 2, 58), (2, 59, 1), (3, 59, 2, 58), (5, 59, 1)]
+    drum = {2: drum_a, 3: drum_b, 4: [(0, 59, 2, 58)], 6: drum_a, 7: drum_b, 8: [(0, 59, 2)]}
+    # The scale: a turn on each half bar from A5 down to C4, landing on B3.
+    tops = [81, 79, 78, 76, 74, 72, 71, 71, 69, 67, 66, 64, 62, 60]
+    step_up = {81: 83, 79: 81, 78: 79, 76: 78, 74: 76, 72: 74, 71: 72, 69: 71, 67: 69, 66: 67, 64: 66,
+               62: 64, 60: 62}
+    song = [
+        [(0, 86, 3), (3, 84, 1), (4, 86, 1), (5, 84, 1)],   # D6 . C6 D6 C6
+        [(0, 83, 2), (2, 76, 1), (3, 83, 2), (5, 76, 1)],   # B5 E5 B5 E5
+        [(0, 79, 3), (3, 78, 1), (4, 79, 1), (5, 78, 1)],   # G5 . F#5 G5 F#5
+        [(0, 76, 3), (3, 76, 3)],                           # E5 E5
+        [(0, 74, 3), (3, 72, 1), (4, 74, 1), (5, 72, 1)],   # the same an octave down
+        [(0, 71, 2), (2, 64, 1), (3, 71, 2), (5, 64, 1)],
+        [(0, 67, 3), (3, 66, 1), (4, 67, 1), (5, 66, 1)],
+        [(0, 64, 2)],
+    ]
+    riff = [
+        [(0, 83, 2), (2, 83, 1), (3, 88, 2), (5, 88, 1)],              # B5 B5 E6 E6
+        [(0, 83, 2), (2, 83, 1), (3, 83, 2), (5, 83, 1)],              # B5 B5 B5 B5
+        [(0, 84, 2), (2, 84, 1), (3, 84, 1), (4, 86, 1), (5, 84, 1)],  # C6 C6 C6 D6 C6
+        [(0, 83, 2), (3, 83, 2), (5, 83, 1)],                          # B5 - B5 B5
+        [(0, 83, 2), (2, 81, 1), (3, 81, 2), (5, 81, 1)],              # B5 A5 A5 A5
+        [(0, 81, 2), (2, 79, 1), (3, 79, 2), (5, 79, 1)],              # A5 G5 G5 G5
+        [(0, 79, 2), (2, 78, 1), (3, 78, 2), (5, 78, 1)],              # G5 F#5 F#5 F#5
+        [(0, 76, 2)],                                                  # E5
+    ]
+    riff_pickup = [(3, 88, 2), (5, 88, 1)]                             # E6 E6, in the bar before
+    BD, CE, AC, GB = (71, 74), (72, 76), (69, 72), (67, 71)            # the strain's thirds
+    thirds = [
+        [(0, BD, 2), (2, BD, 1), (3, CE, 2, 78), (5, BD, 1)],
+        [(0, AC, 2), (2, 62, 1), (3, AC, 2), (5, 62, 1)],              # over D4, the pedal
+        [(0, AC, 2), (2, 62, 1), (3, AC, 2), (5, 62, 1)],
+        [(0, GB, 2), (3, GB, 2), (5, AC, 1)],
+        [(0, BD, 2), (2, BD, 1), (3, CE, 2, 78), (5, BD, 1)],
+        [(0, AC, 2), (2, 62, 1), (3, AC, 2), (5, 62, 1)],
+        [(0, AC, 2), (2, 62, 1), (3, AC, 2), (5, 60, 1)],
+        [(0, GB, 2)],
+    ]
+    # The print's left hand under the riff and the strain, one chord a bar.
+    riff_chords = ["Em", "Em", "Am", "Em", "B", "Em", "B7", "Em"]
+    thirds_chords = ["G", "D7", "D7", "G", "G", "D7", "D7", "G"]
+    song_chords = ["Am", "Em", "B7", "Em"]  # this arrangement's, under the song's second half
+    song_roots = {"Am": ((0, 57), (2, 64)), "Em": ((1, 64), (0, 59)), "B7": ((0, 59), (2, 66))}  # root, fifth
+    # The broken chords on the low-G tenor's strings (G3 C4 E4 A4): (string, note), low to high.
+    arps = {"Em": ((0, 59), (1, 64), (2, 67)), "Am": ((0, 57), (1, 60), (2, 64)),
+            "B": ((0, 59), (1, 63), (2, 66)), "B7": ((0, 59), (1, 63), (2, 69)),
+            "G": ((0, 55), (1, 62), (2, 67)), "D7": ((1, 62), (2, 66), (3, 69))}
+    tones = {"Em": (4, 7, 11), "Am": (9, 0, 4), "B": (11, 3, 6), "B7": (11, 3, 6, 9)}
+
+    # Where each section's first bar starts, in beats.
+    INTRO, SCALE, SONG, RIFF, LOW, THIRDS, FINAL, TAG, CLOSE = 0, 18, 34, 50, 66, 82, 98, 114, 120
+    # The calls' held B5s are beats 4 and 12; the drum enters at 4.67.
+    tempo = ([(0, 100), (2.5, 112), (3.4, 110), (4.25, 90), (4.7, 104), (8, 118), (11.3, 122), (12.2, 110),
+              (12.7, 120), (16, 124), (17.9, 128)]
+             + breathe(127, [(SCALE, 8), (SCALE + 8, 8)], swell=0.035, last=0.09)
+             + breathe(124, [(SONG, 8), (SONG + 8, 8)], swell=0.025, settle=0.03, last=0.01)
+             + breathe(132, [(RIFF, 8), (RIFF + 8, 8), (LOW, 8), (LOW + 8, 8)], swell=0.02, settle=0.02,
+                       last=0.04)
+             + breathe(126, [(THIRDS, 8), (THIRDS + 8, 8)], swell=0.02, settle=0.03, last=0.06)
+             + [(97.3, 124), (FINAL, 134), (106, 138), (TAG, 142), (118.5, 145), (119.4, 132),
+                (CLOSE, 112), (CLOSE + 2, 88)])
+    feel = {"high": (0.002, 0.007), "lead": (0.0, 0.006), "thumb": (0.006, 0.007), "fingers": (0.003, 0.007),
+            "strum": (0.004, 0.006), "piezo": (0.0, 0.005), "bass": (-0.004, 0.005)}
+    # How far each player's touch wanders, in velocity steps. Between
+    # velocities 70 and 110 a note's level moves only about 0.1 dB a step
+    # (one note of each of four presets alone through AculeleProbe: -2.2 dB
+    # at 70, +1.7 at 110, against 90), so the dance's dynamics take wide steps.
+    touch = {"high": 8, "lead": 8, "fingers": 7, "thumb": 6, "strum": 7, "piezo": 8, "bass": 7}
+    p = Performance(tempo, seed=1852, timing=0.005, dynamics=4.5, feel=feel, touch=touch)
+
+    def beat_of(start, bar, eighth):
+        return start + 2 * bar + eighth / 3
+
+    def loose(beat):
+        # How much wider each hand's scatter is than the dance's: the
+        # players have not settled in together until the song.
+        return interpolate([(INTRO, 2.2), (SCALE, 1.6), (SONG, 1.0)], beat)
+
+    # Each call swells to its held B5, the second answering louder; the drum
+    # enters softly and builds under each call's held note.
+    call_shape = [(1, -10), (4, 3), (9, -5), (12, 8), (17, 4)]
+    drum_shape = [(4.6, -14), (8, -1), (12.6, -7), (16, 3)]
+    # Each section's hairpins, in velocity steps by beat: the scale eases
+    # off as it falls and lands; the song swells, its second half answers
+    # softly and grows into the riff; the riff peaks on its E6s and falls
+    # away; the low riff and the strain in thirds grow from quiet; the last
+    # riff builds to the tag.
+    scale_shape = [(SCALE, 6), (SCALE + 12, -5), (SCALE + 14, 4)]
+    song_shape = [(SONG - 0.5, 0), (SONG + 3, 7), (SONG + 7.5, -3), (SONG + 8, -7), (SONG + 14, 2), (SONG + 16, 6)]
+    riff_shape = [(RIFF, 3), (RIFF + 3, 8), (RIFF + 8, 2), (RIFF + 15, -6)]
+    low_shape = [(LOW - 1, -6), (LOW + 8, 3), (LOW + 13, 6), (LOW + 16, 0)]
+    thirds_shape = [(THIRDS, -5), (THIRDS + 5, 5), (THIRDS + 8, -4), (THIRDS + 13, 6), (THIRDS + 15, 0)]
+    final_shape = [(THIRDS + 15, -4), (FINAL, -5), (FINAL + 8, 2), (FINAL + 16, 8), (TAG + 6, 12)]
+
+    def lilt(eighth):
+        # The first eighth of each three a little long, as the dance is played.
+        return (0.0, 0.011, 0.006)[eighth % 3]
+
+    def accent(eighth):
+        # The downbeat strongest, the second beat less, the eighths between
+        # light, and the last of each three leaning into the next beat.
+        return (10, -9, -5, 5, -9, -5)[eighth % 6]
+
+    def grace(onset, note, velocity, channel=0):
+        ahead = min(0.07, max(0.035, p.random.gauss(0.05, 0.008)))
+        p.message(onset - ahead, (0x90 | channel, note, p.velocity(velocity - 14)))
+        p.message(onset - 0.012, (0x80 | channel, note, 0), 0)
+
+    def melody(part, start, bars, loud, shift=0, clip=0.68, shape=None):
+        """Play {bar: notes} from `start`, `shift` semitones from the print,
+        `shape` adding velocity by beat. A higher note is played louder, as a
+        line rises to its peak, and a note struck again is lighter."""
+        p.voice = part
+        pitches = [max(n) if isinstance(n, tuple) else n for notes in bars.values() for _, n, *_ in notes]
+        middle = sum(pitches) / len(pitches)
+        previous = None
+        for bar, notes in sorted(bars.items()):
+            for item in notes:
+                eighth, notes_, length = item[:3]
+                chord = notes_ if isinstance(notes_, tuple) else (notes_,)
+                beat = beat_of(start, bar, eighth)
+                arch = 5.0 * math.sin(math.pi * ((bar % 4) + eighth / 6 + 0.5) / 4)
+                rise = max(-8.0, min(8.0, 0.8 * (max(chord) - middle)))
+                again = -4 if max(chord) == previous else 0
+                previous = max(chord)
+                velocity = (loud + accent(eighth % 6) + arch + rise + again
+                            + (interpolate(shape, beat) if shape else 0))
+                onset = p.at(beat, lean=lilt(eighth), scale=loose(beat))
+                # A quarter rings nearly its length, an eighth is clipped,
+                # and no two the same.
+                held = length / 3 * min(0.95, (0.88 if length >= 2 else clip) + p.random.gauss(0.0, 0.06))
+                if len(item) > 3:
+                    grace(onset, item[3] + shift, velocity)
+                for index, note in enumerate(sorted(chord, reverse=True)):
+                    p.play(onset, held, beat, note + shift, velocity - 5 * index)
+
+    def strum(part, beat, chord, direction, velocity, held, chuck=False):
+        p.voice = part
+        onset = p.at(beat, lean=lilt(round(3 * (beat % 1))), scale=0.8 * loose(beat))
+        if chuck:
+            p.message(onset - 0.004, (0x90, CHUCK, 100))
+            p.message(onset + 0.04, (0x80, CHUCK, 0), 0)
+        key = DOWN if direction == "D" else UP
+        p.message(onset - 0.002, (0x90, key, 100))
+        p.message(onset + 0.01, (0x80, key, 0), 0)
+        strings = range(4)
+        if direction == "U":  # an up-stroke rarely reaches the G string, sometimes not the C string either
+            roll = p.random.random()
+            strings = (1, 2, 3) if roll < 0.55 else (2, 3) if roll < 0.85 else range(4)
+            if abs(beat - round(beat)) < 1e-9:  # an up-stroke on the beat digs in for its accent
+                strings = (1, 2, 3) if roll < 0.5 else range(4)
+        for string in strings:
+            p.play(onset, held, beat, STANDARD[string] + SHAPES[chord][string], velocity, string)
+
+    # Every stroke alternates with the one before. "full" strikes every
+    # eighth, so the hand swings down-up on each, and the second beat's accent
+    # is an up-stroke; "soft" and the tambourine keep the quarter-eighth lilt,
+    # down on each beat and up on its last eighth.
+    full = [(0, "D", 0), (1, "U", -24), (2, "D", -12), (3, "U", -5), (4, "D", -24), (5, "U", -12)]
+    soft = [(0, "D", 0), (2, "U", -16), (3, "D", -6), (5, "U", -18)]
+    tambourine = [(0, "D", 8), (2, "U", -8), (3, "D", 1), (5, "U", -10)]
+
+    def strum_bars(part, start, chords, pattern, loud, chuck=False, bars=None, shape=None):
+        for bar in (range(len(chords)) if bars is None else bars):
+            for index, (eighth, direction, lift) in enumerate(pattern):
+                following = pattern[index + 1][0] if index + 1 < len(pattern) else 6
+                held = 0.06 if chuck else (following - eighth) / 3 - 0.05
+                beat = beat_of(start, bar, eighth)
+                strum(part, beat, chords[bar], direction,
+                      loud + lift + 4 * math.sin(math.pi * (bar % 4 + 0.5) / 4)
+                      + (interpolate(shape, beat) if shape else 0), held, chuck)
+
+    # ---- the tunes, by player
+    melody("high", INTRO, call_rh, 78, shape=call_shape)
+    melody("fingers", INTRO, call_lh, 68, shift=-12, shape=call_shape)
+    scale = {}
+    for h, top in enumerate(tops):
+        scale.setdefault(9 + h // 2, []).extend(
+            (3 * (h % 2) + k, note, 1) for k, note in enumerate((top, step_up[top], top)))
+    melody("high", INTRO, {bar: notes for bar, notes in scale.items() if bar <= 11}, 84, shape=scale_shape)
+    melody("lead", INTRO, {bar: notes for bar, notes in scale.items() if bar >= 12}, 80, shape=scale_shape)
+    melody("lead", INTRO, {16: [(0, 59, 2)]}, 86, shape=scale_shape)
+    # The print doubles the scale an octave down from bar 12's second half:
+    # the low-G tenor while it can reach, then the fingerstyle tenor an
+    # octave up instead.
+    lower = {bar: [n for n in notes if bar > 12 or n[0] >= 3] for bar, notes in scale.items() if 12 <= bar <= 13}
+    upper = {bar: notes for bar, notes in scale.items() if bar >= 14}
+    melody("fingers", INTRO, upper, 66, shift=12, shape=scale_shape)
+    melody("high", SONG, {-1: [(5, 88, 1)], **{bar: song[bar] for bar in range(4)}}, 82, shape=song_shape)
+    melody("fingers", SONG, {-1: [(5, 88, 1)], **{bar: song[bar] for bar in range(4)}}, 74, shift=-12,
+           shape=song_shape)
+    melody("lead", SONG, {bar: song[bar] for bar in range(4, 8)}, 84, shape=song_shape)
+    melody("high", SONG, {7: riff_pickup}, 88, shape=song_shape)
+    melody("high", RIFF, dict(enumerate(riff)), 92, shape=riff_shape)
+    melody("lead", RIFF, {7: riff_pickup}, 84, shift=-12, shape=low_shape)
+    melody("lead", LOW, dict(enumerate(riff)), 88, shift=-12, shape=low_shape)
+    melody("fingers", LOW, {7: [(3, GB, 2), (5, AC, 1)]}, 74, shape=low_shape)
+    melody("fingers", THIRDS, dict(enumerate(thirds)), 76, clip=0.62, shape=thirds_shape)
+    final = dict(enumerate(riff))
+    tag = dict(enumerate(riff[4:7] + [[(0, 76, 7)]]))
+    for part, shift, loud in (("high", 0, 96), ("lead", -12, 82)):
+        melody(part, THIRDS, {7: riff_pickup}, loud, shift=shift, shape=final_shape)
+        melody(part, FINAL, final, loud, shift=shift, shape=final_shape)
+        melody(part, TAG, tag, loud, shift=shift, shape=final_shape)
+    # A soprano thumb a third (or a fourth) below the tune in the closing riff.
+    p.voice = "thumb"
+    for start, bars, chords in ((FINAL, final, riff_chords), (TAG, tag, riff_chords[4:7] + ["Em"])):
+        for bar, notes in bars.items():
+            for eighth, note, length in notes:
+                chord = chords[bar] if bar < len(chords) else "Em"
+                below = [n for n in range(note - 5, note - 2) if n % 12 in tones[chord]]
+                beat = beat_of(start, bar, eighth)
+                held = length / 3 * min(0.95, (0.88 if length >= 2 else 0.66) + p.random.gauss(0.0, 0.06))
+                p.play(p.at(beat, lean=lilt(eighth)), held, beat, below[-1] if below else note - 3,
+                       82 + accent(eighth % 6) + interpolate(final_shape, beat))
+
+    # ---- the strumming hands
+    for part in ("strum", "piezo", "bass"):
+        p.voice = part
+        p.message(0.0, (0xB0, 126, 4), 0)
+    for bar in range(5, 9):  # the tambourine fades in under the second call
+        strum_bars("piezo", INTRO, ["Em"] * 9, tambourine, 44 + 4 * (bar - 5), chuck=True, bars=[bar])
+    strum_bars("piezo", INTRO, ["Em"] * 17, tambourine, 58, chuck=True, bars=range(9, 17))
+    strum_bars("piezo", SONG, ["Em"] * 8, tambourine, 64, chuck=True)
+    strum_bars("piezo", RIFF, riff_chords, tambourine, 70, chuck=True)
+    strum_bars("piezo", LOW, riff_chords, tambourine, 64, chuck=True)
+    strum_bars("piezo", FINAL, riff_chords, tambourine, 76, chuck=True, shape=final_shape)
+    strum_bars("piezo", TAG, riff_chords[4:7], tambourine, 76, chuck=True, shape=final_shape)
+    strum_bars("strum", SONG, ["Em"] * 4 + song_chords, soft, 58, bars=range(4, 8))
+    strum_bars("strum", LOW, riff_chords, soft, 66, shape=low_shape)
+    strum_bars("strum", THIRDS, thirds_chords, soft, 52, shape=thirds_shape)
+    strum_bars("strum", FINAL, riff_chords, full, 78, shape=final_shape)
+    strum_bars("strum", TAG, riff_chords[4:7], full, 78, shape=final_shape)
+    strum("strum", CLOSE, "Em", "D", 102, 2.6)
+    # The tambourine's last hit is a dead stroke too: a full piezo stroke
+    # here was the loudest peak of the piece by 2 dB.
+    strum("piezo", CLOSE, "Em", "D", 84, 0.06, chuck=True)
+
+    # ---- the low-G tenor: the call's drum, its share of the scale, the
+    # song's roots and the print's broken chords, each string sounding one
+    # note at a time
+    plucks = []  # (beat, string, note, velocity, beats held, grace note)
+    for bar, notes in drum.items():
+        for eighth, note, length, *ornament in notes:
+            beat = beat_of(INTRO, bar, eighth)
+            plucks.append((beat, 0, note, 84 + accent(eighth) + interpolate(drum_shape, beat), length / 3 * 0.8,
+                           ornament[0] if ornament else None))
+    for bar, notes in lower.items():
+        for eighth, note, length in notes:
+            plucks.append((beat_of(INTRO, bar, eighth), 0, note - 12, 70 + accent(eighth), 0.3, None))
+    for bar, chord in enumerate(song_chords[:3], 4):
+        (root_string, root), (fifth_string, fifth) = song_roots[chord]
+        plucks.append((beat_of(SONG, bar, 0), root_string, root, 74, 0.95, None))
+        plucks.append((beat_of(SONG, bar, 3), fifth_string, fifth, 64, 0.95, None))
+
+    def broken(start, chords, loud, bars=None, shape=None):
+        for bar in (range(len(chords)) if bars is None else bars):
+            for half in (0, 1):
+                for k, (string, note) in enumerate(arps[chords[bar]]):
+                    beat = beat_of(start, bar, 3 * half + k)
+                    velocity = loud + accent(3 * half + k) + (interpolate(shape, beat) if shape else 0)
+                    plucks.append((beat, string, note, velocity, 1.0, None))
+
+    broken(SONG, ["Em"] * 8, 58, bars=[7], shape=song_shape)
+    broken(RIFF, riff_chords, 58, shape=riff_shape)
+    broken(LOW, riff_chords, 56, bars=range(7), shape=low_shape)
+    plucks.append((beat_of(LOW, 7, 0), 1, 64, 70, 0.9, None))  # the print's E under the riff's last E
+    broken(THIRDS, thirds_chords, 52, shape=thirds_shape)
+    broken(FINAL, riff_chords, 66, shape=final_shape)
+    broken(TAG, riff_chords[4:7], 66, shape=final_shape)
+    for k, (string, note) in enumerate(arps["Em"]):
+        plucks.append((CLOSE + 0.04 * k, string, note, 96 - 4 * k, 2.6, None))
+
+    p.voice = "bass"
+    for string in range(4):
+        mine = sorted(item for item in plucks if item[1] == string)
+        for index, (beat, _, note, velocity, held, ornament) in enumerate(mine):
+            if index + 1 < len(mine):
+                # Let go before the next pluck on this string, or its grace note.
+                held = min(held, mine[index + 1][0] - beat - (0.16 if mine[index + 1][5] else 0.04))
+            onset = p.at(beat, lean=lilt(round(3 * (beat % 1))), scale=loose(beat))
+            if ornament is not None:
+                grace(onset, ornament, velocity, string)
+            p.play(onset, held, beat, note, velocity, string)
+    return p
+
+
 # Each part of a song is its own file, songs/<song>-<part>.mid, played by
 # its own ukulele: a factory preset with the construction AculeleProbe's
 # options change, set in the mix by its pan (-1 left to 1 right) and trim
 # in dB. Tools/render_songs.py renders and mixes them.
 SONGS = {
+    "aloha-oe": (aloha_oe, {
+        "tune": ("low-g-tenor", [], 0.15, 0.0),
+        "strum": ("concert-strum", [], -0.35, -6.0),
+    }),
+    "tarantella": (tarantella, {
+        "lead": ("tenor-picked-melody", [], 0.12, -2.0),
+        "high": ("soprano-d-tuning", [], 0.35, -2.0),
+        "thumb": ("soprano-thumb", [], -0.3, -3.0),
+        "fingers": ("tenor-fluorocarbon-fingerstyle", [], -0.1, 0.0),
+        "strum": ("concert-strum", [], -0.5, -7.0),
+        "piezo": ("concert-piezo-stage", [], 0.55, 2.0),
+        "bass": ("low-g-tenor", [], -0.12, -4.0),
+    }),
     "minuet-in-g": (minuet_in_g, {
         "tune": ("tenor-fluorocarbon-fingerstyle", ["--shape", "0", "--wood", "2", "--strings", "0"], 0.3, 0.0),
         "bass": ("low-g-tenor", [], -0.3, -1.0),

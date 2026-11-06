@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.4.43 — 2026-11-06 — The soprano's top frets no longer go silent
+
+Since 0.4.41 a nylon string played from the soprano's 17th fret up, on any preset, burst to full scale and then went silent, and so did every later note. The string's stretch force rings through a loss fitted to its two lowest longitudinal modes, and there, with the lowest above 10.9 kHz, the fit gained a little on every round trip instead of losing. Where it would, it now takes the first mode's loss alone, as it already did once the second mode passed Nyquist. Every other note renders bit-identical, and the seven demos are unchanged.
+
 ### 0.4.42 — 2026-11-05 — Plucks at one velocity differ in level as a player's do
 
 No hand plucks twice with the same force. A note's takes on the Leolani ukulele, recorded through a DI, differ in level by 1.56 dB (SD) and on Guffland's by 2.45; Aculele's differed by 0.86-0.89, so repeated notes at one velocity came out nearly alike. Each single pluck's force now wanders within ±2.5 dB where it wandered within ±1, and the same takes differ by 1.50-1.59 dB. An accent stays the player's: within the hand's memory a changed velocity still plays exactly. Strummed chords keep their own spread. The levels were re-pinned; four presets' Output moved 0.1-0.3 dB, and the demos' level moves -0.3 to +0.4 dB. The owner chose it over a gentler ±1.6 dB from a lettered A/B/C set, see `Docs/decisions.md` ([benchmark](Docs/validation/sample-pack-benchmark-2026-10-29.md)).

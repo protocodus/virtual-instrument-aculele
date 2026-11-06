@@ -3605,6 +3605,10 @@ void AculeleEngine::restartRandomDraws() noexcept
             ^ (0x9e3779b9u * static_cast<std::uint32_t>(string + 1));
         voice.fretMotionNoiseState = 0x94d049bbu
             ^ (0x369dea0fu * static_cast<std::uint32_t>(string + 1));
+        voice.fretGestureState = 0x7f4a7c15u
+            ^ (0x2c1b3c6du * static_cast<std::uint32_t>(string + 1));
+        voice.fretWanderState = 0x1b873593u
+            ^ (0xcc9e2d51u * static_cast<std::uint32_t>(string + 1));
     }
 }
 
@@ -7840,6 +7844,38 @@ float xorshiftNoise(std::uint32_t& state) noexcept
     state = state == 0 ? 0x6d2b79f5u : state;
     return static_cast<float>(static_cast<std::int32_t>(state))
          / static_cast<float>(std::numeric_limits<std::int32_t>::max());
+}
+
+// A unit-variance draw bounded at +-3: three uniforms on [-1, 1] summed.
+float gestureNormal(std::uint32_t& state) noexcept
+{
+    return xorshiftNoise(state) + xorshiftNoise(state) + xorshiftNoise(state);
+}
+
+// No two shifts of a hand are alike, as in Acustra 1.9.24: a player presses
+// a sliding finger lightly or firmly, lets it barely brush or drag, and
+// moves faster or slower from one shift to the next; the friction also
+// wanders along one slide as the pad's pressure and the contact's stick and
+// slip change. Each shift draws its own pressure, a force gain with a 5 dB
+// spread about the authored level's power (bounded at +-15 dB), and the slide's
+// force wanders about it with a 3 dB spread below about 12 Hz. Both spreads
+// are authored, set by ear to keep repeated shifts from sounding alike; no
+// measurement of fretting-hand pressure during shifts is available here.
+constexpr float shiftPressureSpreadDb = 5.0f;
+constexpr float shiftWanderSpreadDb = 3.0f;
+constexpr float shiftWanderHz = 12.0f;
+
+// A log-normal force gain of the given spread whose mean power is one, so
+// the spread varies shifts about the authored level without raising it.
+float unitPowerGain(float spreadDb, float draw) noexcept
+{
+    const float k = spreadDb * 0.11512925f; // ln(10) / 20
+    return std::exp(k * draw - k * k);
+}
+
+float shiftPressureGain(std::uint32_t& state) noexcept
+{
+    return unitPowerGain(shiftPressureSpreadDb, gestureNormal(state));
 }
 } // namespace
 
@@ -12895,17 +12931,28 @@ void AculeleEngine::startShiftArrival(Voice& voice) noexcept
     auto& motion = voice.fretMotion;
     const double from = motion.arrivalFrom;
     motion.arrivalFrom = 0.0;
-    if (!(from > 0.0) || !(targetParameters_.releaseNoise > 0.0f))
+    if (!(from > 0.0))
+        return;
+    // This shift's own pressure, pace (half an octave either way) and
+    // settling time (shiftPressureSpreadDb), drawn even when Release Noise
+    // silences it, so the hand's later draws do not depend on that control.
+    auto& state = voice.fretGestureState;
+    motion.gesture = shiftPressureGain(state);
+    const double pace = std::exp2(0.5 * static_cast<double>(xorshiftNoise(state)));
+    const double settle = arrivalSeconds
+        * std::exp2(0.5 * static_cast<double>(xorshiftNoise(state)));
+    motion.wobble = 0.0f;
+    if (!(targetParameters_.releaseNoise > 0.0f))
         return;
     const double target = voice.speakingLengthMetres;
     const double distance = exact::abs(from - target);
-    const double speed = std::clamp(distance / shiftSeconds, 0.15, 1.2);
+    const double speed = std::clamp(pace * distance / shiftSeconds, 0.15, 1.2);
     // An exponential approach covers speed * time constant before it rests.
-    const double travel = std::min(distance, speed * arrivalSeconds);
+    const double travel = std::min(distance, speed * settle);
     motion.length = target + (from > target ? travel : -travel);
     motion.arriving = true;
     motion.arrivalCoefficient = static_cast<float>(
-        1.0 - std::exp(-1.0 / (arrivalSeconds * sampleRate_)));
+        1.0 - std::exp(-1.0 / (settle * sampleRate_)));
 }
 
 void AculeleEngine::anticipateNoteOn(int midiNote, int midiChannel, int samplesAhead,
@@ -13033,7 +13080,14 @@ void AculeleEngine::advanceAnticipation(Voice& voice, int stringIndex) noexcept
         const double to = scale * std::exp2(-static_cast<double>(anticipation.fret) / 12.0);
         const double available = static_cast<double>(
             anticipation.pluckSample - sampleClock_) / sampleRate_;
-        const double longest = std::min(shiftSeconds, available);
+        // This shift's own pressure and pace, and where along its path the
+        // finger starts to rub: some shifts brush the whole way, others
+        // touch down only near the fret (shiftPressureSpreadDb).
+        auto& state = voice.fretGestureState;
+        anticipation.gesture = shiftPressureGain(state);
+        const double pace = 0.775 + 0.225 * static_cast<double>(xorshiftNoise(state));
+        const double touch = 0.3 + 0.3 * static_cast<double>(xorshiftNoise(state));
+        const double longest = std::min(shiftSeconds, available) * pace;
         const double distance = exact::abs(from - to);
         const double speed = std::clamp(distance / longest, 0.15, 1.2);
         const double duration = std::min(longest, distance / speed);
@@ -13045,6 +13099,8 @@ void AculeleEngine::advanceAnticipation(Voice& voice, int stringIndex) noexcept
         anticipation.position = anticipation.from;
         anticipation.inverseDuration = 1.0 / static_cast<double>(samples);
         anticipation.moveStart = anticipation.pluckSample - samples;
+        anticipation.touchStart = anticipation.moveStart + static_cast<std::uint64_t>(
+            touch * static_cast<double>(samples));
     }
     if (sampleClock_ < anticipation.moveStart)
         return;
@@ -13058,6 +13114,8 @@ void AculeleEngine::advanceAnticipation(Voice& voice, int stringIndex) noexcept
         // The slide starts where the finger is, so its first step is a
         // finger at rest, not a jump from the old fret.
         voice.fretMotion.length = anticipation.from;
+        voice.fretMotion.gesture = anticipation.gesture;
+        voice.fretMotion.wobble = 0.0f;
     }
     // Minimum jerk, 10t^3 - 15t^4 + 6t^5: at rest at both ends, reaching
     // the fret on the move's last sample, the one before the note-on.
@@ -13084,8 +13142,10 @@ void AculeleEngine::renderFretMotion(Voice& voice, int stringIndex) noexcept
     const auto& anticipation = anticipations_[static_cast<std::size_t>(stringIndex)];
     const bool anticipated = anticipation.moving;
     const bool wound = woundStringCount > 0 && stringIndex < woundStringCount;
+    // It follows the path from the start, but rubs only once it touches.
     const bool touching = voice.harmonic == 1
-        && ((voice.played && voice.keyDown && voice.attackFired) || anticipated);
+        && ((voice.played && voice.keyDown && voice.attackFired)
+            || (anticipated && sampleClock_ >= anticipation.touchStart));
     const double target = voice.speakingLengthMetres;
     const double previous = motion.length;
     if (anticipated)
@@ -13172,15 +13232,28 @@ void AculeleEngine::renderFretMotion(Voice& voice, int stringIndex) noexcept
         // still scrape; peakLevel is the preceding stroke's bounded scale.
         const float speedLevel = 2.0f * speed / (speed + 0.25f);
         // A finger shifting to a new fret (startShiftArrival) takes Acustra
-        // 1.9.20's arrival share, an authored audibility choice for position
-        // changes, not a measured friction coefficient. On a smooth string
+        // 1.9.24's arrival share, an authored audibility choice for position
+        // changes (the owner chose it by ear, 2026-11-06), not a measured
+        // friction coefficient, about which each shift draws its own
+        // pressure and wander (shiftPressureSpreadDb). On a smooth string
         // both shares take a quarter (-12 dB): with no wraps to cross the
         // finger only rubs, and nothing measured gives nylon's level (Known
         // gaps), so this is authored too.
         constexpr float slideShare = 0.00004f;
-        constexpr float arrivalShare = 0.002f;
+        constexpr float arrivalShare = 0.004f;
         constexpr float smoothShare = 0.25f;
-        const float rms = (motion.arriving ? arrivalShare : slideShare)
+        float shift = 1.0f;
+        if (motion.arriving)
+        {
+            // One-pole lowpass of uniform noise, normalised to unit spread.
+            const float rate = twoPi * shiftWanderHz * inverseSampleRate_;
+            const float pole = rate / (1.0f + rate);
+            motion.wobble += pole * (xorshiftNoise(voice.fretWanderState) - motion.wobble);
+            const float spread = exact::sqrt(pole / (3.0f * (2.0f - pole)));
+            const float wander = clamp(motion.wobble / spread, -3.0f, 3.0f);
+            shift = motion.gesture * unitPowerGain(shiftWanderSpreadDb, wander);
+        }
+        const float rms = (motion.arriving ? arrivalShare * shift : slideShare)
             * (wound ? 1.0f : smoothShare)
             * voice.peakLevel * (amount / 0.5f)
             * contact * speedLevel;

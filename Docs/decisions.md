@@ -5,6 +5,32 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-11-06 — the finger's shifts: level by ear, and no two alike, 0.4.45 (level chosen by the owner on Acustra; the variation adopted under the owner's standing rule, not yet heard)
+
+**What was decided.** These are Acustra 1.9.24's changes, ported (see its
+`Docs/decisions.md`). The owner chose the slide's level by ear on Acustra,
+between +0 and +12 dB, so the arrival share goes from 0.002 to 0.004. Each
+shift draws its own:
+
+- pressure (5 dB spread about the chosen level's power);
+- pace;
+- settling time;
+- touch-down point.
+
+The friction also wanders along each slide (3 dB, below 12 Hz). All spreads
+are authored.
+
+**What it was tested with.** `listening-tests/aculele-2026-11-06-varied-slides/`:
+the earlier melody, and C#4-D#4 on the C string twelve times, Tenor
+Fluorocarbon Fingerstyle. A is 0.4.44 and B is 0.4.45, both with Finger
+Lookahead on, RMS matched within 0.04 dB. The slide alone, isolated by a
+render with its share at zero, reads -69.2 dBFS mean, SD 1.3 dB, in A. In B
+it reads -68.8 dBFS mean, SD 5.0 dB: the shorter and later touches take back
+most of the +6 dB on nylon's short shifts.
+
+**Verdict.** The level follows the owner's choice on Acustra. The variation
+is B, adopted under the standing rule and not yet heard.
+
 ## 2026-11-06 — fingers slide between frets, and Finger Lookahead, 0.4.44 (A–Z set; C adopted under the owner's standing rule, not yet heard)
 
 **What was decided.** The owner asked for fret noise and finger movement in

@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.4.45 — 2026-11-06 — No two finger shifts alike
+
+A finger's shift slides 6 dB louder, the level the owner chose by ear on Acustra. Each shift now draws its own finger pressure (5 dB spread), pace, settling time and, with Finger Lookahead, the point where the finger touches down. The friction also wanders along the slide (3 dB, below 12 Hz). Twelve repeated shifts on the C string used to land within 1.3 dB of each other; they now spread about 5 dB. Shorter and later touches cost the nylon slides about 4 dB, so on average they sit near 0.4.44's level. The spreads are authored.
+
 ### 0.4.44 — 2026-11-06 — Fingers slide between frets, and can move before the note
 
 A finger that leaves one fret for another on a string now slides there, and the slide sounds as the new note starts. This is Acustra's shift arrival: a 0.12 s shift at 0.15-1.2 m/s that decelerates into the fret. Ukulele strings have no winding, so the slide is a soft friction band set by the fingertip's ridges, about 0.45 mm apart (Scheibert et al., Science 323 (2009) 1503). That puts it near 1.1 kHz at 0.5 m/s, a quarter of a wound string's level. It scales with Release Noise. A new Finger Lookahead in the Performer (`Performer::setFingerLookahead`, off by default) holds every event back 50 ms. The finger then lets go of the old note and slides before the pluck, on a minimum-jerk path that lands as the string is plucked. It adds 50 ms of latency. Adopted under the owner's standing listening rule; not yet heard.
@@ -333,7 +337,7 @@ Levels are set on Reason's channel meter, a VU meter read with 0 VU at -12 dBFS 
 - The piezo's saddle and element are a guitar's: a 3.8 g bone saddle, its element resonance chosen at 6 kHz within a guitar pickup's documented 5-7 kHz. No ukulele undersaddle pickup has been measured.
 - **Wood changes only the top, by species averages.** Each wood is an equivalent plate of the species' mean density and elastic constants, graduated to one bending stiffness; a real top's bracing and grain, and a builder's own graduation, are not modelled, nor any difference in the woods' damping, which no species average measures, and the back and sides stay the scaled bank's. Koa's elastic ratios have never been published, so black walnut's stand in for them. There is no laminate top.
 - **The wheel's vibrato is measured only at the 1st, 6th and 11th frets.** Rodrigues measured 4-16 cents at the 1st fret against 20-60 at the 6th and 11th; Aculele takes the widest swing at each and draws a straight line between the 1st and the 6th. Its rate does not follow the wheel: his slower vibratos, 0.9-3.2 Hz, are not reachable.
-- **The fingers' slide is authored.** Its speeds and timing are Acustra's hand law, not measured shifts. The nylon friction band's centre follows from fingerprint ridge spacing, but its level, a quarter of the wound strings', is set by hand. No ukulele shift has been recorded against it. Finger Lookahead predicts a note's string 50 ms early. An event inside the window can change the choice, and the old note is then still let go up to 0.12 s early.
+- **The fingers' slide is authored.** Its speeds and timing are Acustra's hand law, not measured shifts, and its level and its spread from shift to shift were set by ear. The nylon friction band's centre follows from fingerprint ridge spacing, but its level, a quarter of the wound strings', is set by hand. No ukulele shift has been recorded against it. Finger Lookahead predicts a note's string 50 ms early. An event inside the window can change the choice, and the old note is then still let go up to 0.12 s early.
 - There are no rasgueado or triplet-roll strokes, and no palm chuck: a chuck is the fretting hand's.
 - There is no plug-in, editor, screenshot, main build or release yet.
 

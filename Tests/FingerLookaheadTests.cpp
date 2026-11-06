@@ -161,6 +161,7 @@ int main()
     const auto quiet = render(events, 2.4, true, 0.0f, 256);
     const auto plainNoisy = render(events, 2.4, false, 0.5f, 256);
     const auto plainQuiet = render(events, 2.4, false, 0.0f, 256);
+    double beforeEnergy = 0.0, plainEnergy = 0.0;
     for (std::size_t index = 0; index + 1 < notes.size(); ++index)
     {
         expect(noisy.probes[2 * index + 1] < 0,
@@ -181,13 +182,21 @@ int main()
         const double before = rms(slide, onset + window - lead, onset + window);
         const double plainBefore = rms(plainSlide, onset - lead, onset);
         const double note = rms(noisy.left, onset + window, onset + window + lead);
-        expect(before > 4.0 * plainBefore,
+        // Each shift draws its own pressure and touch-down (0.4.45), so a
+        // light, late touch can be faint: each shift must still sound before
+        // its note, and the shifts together 12 dB over the plain player's.
+        expect(before > plainBefore,
                "the slide sounds before shift " + std::to_string(index)
                    + " (" + std::to_string(20.0 * std::log10(before / plainBefore)) + " dB)");
+        beforeEnergy += before * before;
+        plainEnergy += plainBefore * plainBefore;
         expect(before < 0.1 * note,
                "the slide stays far under the note it leads to, shift " + std::to_string(index)
                    + " (" + std::to_string(20.0 * std::log10(before / note)) + " dB)");
     }
+    expect(beforeEnergy > 16.0 * plainEnergy,
+           "the slides sound before their notes (" + std::to_string(
+               10.0 * std::log10(beforeEnergy / plainEnergy)) + " dB)");
 
     // Without the lookahead the finger arrives with the new note. One shift
     // alone: an earlier arrival's noise rings on in the string.

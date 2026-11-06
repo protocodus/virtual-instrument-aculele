@@ -5,7 +5,7 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
-## 2026-11-06 — the finger's shifts: level by ear, and no two alike, 0.4.45 (level chosen by the owner on Acustra; the variation adopted under the owner's standing rule, not yet heard)
+## 2026-11-06 — the finger's shifts: level by ear, and no two alike, 0.4.45 (level chosen by the owner on Acustra; the variation chosen by the owner by ear)
 
 **What was decided.** These are Acustra 1.9.24's changes, ported (see its
 `Docs/decisions.md`). The owner chose the slide's level by ear on Acustra,
@@ -29,7 +29,7 @@ it reads -68.8 dBFS mean, SD 5.0 dB: the shorter and later touches take back
 most of the +6 dB on nylon's short shifts.
 
 **Verdict.** The level follows the owner's choice on Acustra. The variation
-is B, adopted under the standing rule and not yet heard.
+is B, chosen by the owner by ear on the A/B set above (2026-11-06).
 
 ## 2026-11-06 — fingers slide between frets, and Finger Lookahead, 0.4.44 (A–Z set; C adopted under the owner's standing rule, not yet heard)
 

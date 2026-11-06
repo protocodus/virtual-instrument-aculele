@@ -325,6 +325,89 @@ void ringsOutAndSwitchesOff()
         engine->process(left.data(), right.data(), 256);
     expect(!voice.stringAxialForce.ringing, "its ring runs out and clears");
 }
+
+// The ring loses on every round trip at every frequency, on every Shape,
+// string set, Tuning and String Age, at every fret: its loss b / (1 - a z^-1)
+// peaks at b / (1 - |a|). On the soprano's nylon from the 17th fret the
+// two-mode fit had peaked at 1.017, and the ring grew until the voice burst.
+void noRingGains()
+{
+    using aculele::BodyShape;
+    using aculele::StringMaterial;
+    using aculele::Tuning;
+    double worst = 0.0;
+    for (const auto shape : { BodyShape::Soprano, BodyShape::Concert, BodyShape::Tenor })
+        for (const auto strings : { StringMaterial::Nylon, StringMaterial::Fluorocarbon })
+            for (const auto tuning : { Tuning::Standard, Tuning::LowG, Tuning::DTuning })
+                for (const float age : { 0.0f, 1.0f })
+                {
+                    auto engine = std::make_unique<Engine>();
+                    aculele::EngineParameters parameters;
+                    parameters.shape = shape;
+                    parameters.strings = strings;
+                    parameters.tuning = tuning;
+                    parameters.stringAge = age;
+                    engine->setParameters(parameters);
+                    engine->prepare(rate, 64);
+                    engine->setStringPerChannelMode(true);
+                    for (int string = 0; string < 4; ++string)
+                    {
+                        const int open = Access::voice(*engine, string).openMidi;
+                        for (int fret = 0; fret <= Engine::fretCount; ++fret)
+                        {
+                            engine->noteOn(open + fret, 0.7f, string + 1);
+                            Access::design(*engine, string);
+                            const auto& axial = Access::voice(*engine, string).stringAxialForce;
+                            const double peak = axial.lossGain
+                                / (1.0 - std::abs(static_cast<double>(axial.lossPole)));
+                            worst = std::max(worst, peak);
+                            expect(peak < 1.0, "the ring loses at every frequency, string "
+                                + std::to_string(string) + " fret " + std::to_string(fret)
+                                + ": peak " + std::to_string(peak));
+                        }
+                    }
+                }
+    std::cout << "the ring's highest loop gain " << worst << '\n';
+}
+
+// Played there, the soprano's top string stays finite and the next note
+// sounds: the burst had left every later sample at zero.
+void topFretKeepsSounding()
+{
+    auto engine = std::make_unique<Engine>();
+    aculele::EngineParameters parameters;
+    parameters.shape = aculele::BodyShape::Soprano;
+    parameters.tuning = aculele::Tuning::DTuning;
+    engine->setParameters(parameters);
+    engine->prepare(rate, 64);
+    engine->setStringPerChannelMode(true);
+    const auto peakOver = [&engine] (double seconds)
+    {
+        std::array<float, 256> left {}, right {};
+        float peak = 0.0f;
+        bool finite = true;
+        for (int block = 0; block < static_cast<int>(seconds * rate / 256); ++block)
+        {
+            engine->process(left.data(), right.data(), 256);
+            for (std::size_t i = 0; i < left.size(); ++i)
+            {
+                finite = finite && std::isfinite(left[i]) && std::isfinite(right[i]);
+                peak = std::max({ peak, std::abs(left[i]), std::abs(right[i]) });
+            }
+        }
+        return finite ? peak : -1.0f;
+    };
+    const int top = Access::voice(*engine, 3).openMidi + Engine::fretCount - 1;
+    engine->noteOn(top, 0.72f, 4);
+    const float first = peakOver(1.5);
+    engine->noteOff(top, 4);
+    engine->noteOn(Access::voice(*engine, 1).openMidi, 0.72f, 2);
+    const float second = peakOver(1.5);
+    expect(first > 0.0f && first < 1.0f, "the 17th fret stays finite and under full scale: "
+        + std::to_string(first));
+    expect(second > 0.01f * first, "the next note sounds: " + std::to_string(second)
+        + " against " + std::to_string(first));
+}
 } // namespace
 
 int main()
@@ -333,6 +416,8 @@ int main()
     wavesKeepTheUniformTension();
     ringIsTheLongitudinalString();
     ringsOutAndSwitchesOff();
+    noRingGains();
+    topFretKeepsSounding();
     if (failures == 0)
         std::cout << "String axial force tests passed\n";
     return failures == 0 ? 0 : 1;

@@ -13394,7 +13394,18 @@ void AculeleEngine::designStringAxialForce(Voice& voice, int stringIndex) noexce
         if (!(exact::abs(pole) < 1.0))
             pole = 0.0;
     }
-    const double gain = std::sqrt(r1 * (1.0 - 2.0 * pole * std::cos(omega) + pole * pole));
+    double gain = std::sqrt(r1 * (1.0 - 2.0 * pole * std::cos(omega) + pole * pole));
+    // Its peak, b / (1 - |a|), must stay under one, or the ring gains on
+    // every round trip. With the polymers' loss angle (eta about 0.04) the
+    // two-mode fit passes one once the first mode is over about 10.9 kHz: a
+    // soprano's nylon from its 17th fret, which burst to full scale and
+    // silenced the voice. Such a fit takes the pole-free loss a second mode
+    // past Nyquist gets: the first mode's exactly, flat above it.
+    if (!(gain < 1.0 - exact::abs(pole)))
+    {
+        pole = 0.0;
+        gain = std::sqrt(r1);
+    }
     axial.lossPole = static_cast<float>(pole);
     axial.lossGain = static_cast<float>(gain);
     // The ring's whole delay, the Thiran allpass and the loss together give

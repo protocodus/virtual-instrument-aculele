@@ -5,6 +5,99 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-11-05 — each pluck's force wanders within ±2.5 dB, 0.4.42 (sized to a measurement; the owner chose B)
+
+**What was decided.** The owner heard the start of every pluck as "the same
+every time, robotic", and of three measured differences against a real
+tenor (FreePats, CC0) picked "too alike, too loud maybe". Too loud is not
+borne out: against its own ring, the tenor fluorocarbon's attack stands
+within 1-2 dB of the recording's, and only the nylon Concert's first 60 ms
+stand 1-2 dB further over theirs, against a fluorocarbon recording, so
+nothing changes for it. Too alike is: a note's takes differ in level by
+0.86-0.89 dB (SD) where the Leolani ukulele's, through a DI, differ by 1.56
+and Guffland's by 2.45, and in brightness by 1.5-2.6 dB where both packs'
+differ by 3.6-4.0. Nothing identified moves the brightness (see the
+benchmark's 0.4.32 section), so only the level is answered. The single
+pluck's force residual, an authored ±1 dB, is re-pinned to a measured
+spread, and two pinnings are defensible: the ukulele DI's takes (±2.5 dB
+gives 1.50-1.59 dB) or a guitarist's finger takes, the Eastman's 1.09 dB
+(±1.6 dB gives 1.12-1.14). On 0.4.32 ±2 and ±3 dB had failed
+`Aculele.Levels`; on 0.4.41 both widths pass with the table re-pinned and
+the trims moved
+(`Docs/validation/sample-pack-benchmark-2026-10-29.md`, 0.4.42).
+
+**The letters.** C5 six times, a line G4 A4 C5 E5 D5 C5 A4 G4 in eighths,
+E4 six times and a held C5, velocity 90 at 120 bpm, on Concert Strum,
+Tenor Fluorocarbon Fingerstyle and Tenor Picked Melody as each loads,
+through `AculeleProbe` at 48 kHz in 256-sample blocks. Each letter with its
+own re-pinned level table and trims:
+
+- A: the shipping engine (0.4.41), ±1 dB.
+- B: ±2.5 dB, the DI's spread.
+- C: ±1.6 dB, the guitarist's.
+
+Whole-file RMS matched to A; trims for B -0.45, -0.38 and +0.85 dB, for C
+-0.05, -0.15 and +0.39 dB. In the project's
+`aculele/listening/2026-11-05-pluck-force/`, with its `key.md`.
+
+**Chosen.** B, by the owner on 2026-11-06, asked which spread to merge with
+the lettered set in hand; whether the choice was made by ear is not
+recorded.
+
+**What it licensed.** The residual's half-width, 2.5 dB, fitted to one
+pack's takes. No ukulele player's force has been measured: it is the width
+that, with the pluck point, angle and nail share Aculele already draws,
+gives the DI's level spread. Strummed chords keep their authored ±1 dB.
+`LevelMatchData.h` was re-pinned; Soprano D Tuning's Output moved +1.7 to
++1.4 dB, Tenor Fluorocarbon Fingerstyle's -0.6 to -0.4, Tenor Picked
+Melody's -2.1 to -2.4 and Soprano Thumb's -0.2 to -0.1. The demos' level
+moves -0.3 to +0.4 dB.
+
+## 2026-11-05 — a string's own stretch presses on the saddle, 0.4.41 (measured; the owner chose B)
+
+**What was decided.** The owner asked for subtle, meaningful physical
+phenomena and random artefacts that make Aculele sound more real. The random
+side is already there: each pluck draws its own force, release angle and
+landing point, each contact its own pitch, and each strum its own timing and
+speed. What a real string does and Aculele did not is stretch: a swinging
+string is longer than a straight one, so its tension rises and falls twice a
+cycle, and the longitudinal waves that carry that change press the saddle
+into the top through the break angle. Bank and Sujbert's axial force
+(JASA 117, 2005) does this, and Acustra has carried it since 1.9.14. On a
+harp's polymer and gut strings it is audible (Woodhouse, JSV 523 (2022)
+116669). It needs no new constant: the strings' axial stiffness, mass and
+loss factor are those their bends and bending already use, and the
+12-degree break angle is the one the engine already had. That angle is
+Acustra's authored value; no ukulele's is published (README, Known gaps).
+Other candidates were set aside for want of a source for their size: an
+open string's tuning error, fret buzz, a microphone noise floor, and a
+louder release noise.
+
+**The letters.** One tab phrase (loud notes high on each string, a fast run
+up the A string to the 14th fret and back, hard C and F strums) on Concert
+Strum, Tenor Picked Melody and Low G Tenor, each as it loads. A 0.4.40 as
+shipping; B 0.4.41 with the force, which renders bit-identical to A with it
+switched off. Whole-file RMS matched to A; trims on B -0.03, +0.03 and
+-0.02 dB. In the project's `aculele/listening/2026-11-05-realism/`, with its
+`key.md`.
+
+**Measured.** The difference B - A stands 21-39 dB under each of the seven
+demos and 26-30 dB under the three listening files. It is largest in a loud
+note's first quarter second: 16-17 dB under a picked fluorocarbon note
+between 1.5 and 6 kHz, and on nylon mostly at twice the note's frequency.
+The demos' level moves under 0.05 dB and every preset still reads within
+0.1 dB of -9 VU (`AculeleLevels --report`), so `LevelMatchData.h` and the
+trims stay. CPU over the seven demos rises from 0.072-0.084x to
+0.080-0.107x realtime on the development machine. `Aculele.StringAxialForce`
+checks the force against independent arithmetic from the string table.
+
+**Chosen.** B, by the owner on 2026-11-05, asked whether to merge it with the
+lettered set in hand; whether the choice was made by ear is not recorded.
+
+**What it licensed.** `renderStringAxialForce` and its design, Acustra
+1.9.21's, with Aculele's strings; `PerformanceRealism::stringAxialForce` and
+`axialWaves` switch it.
+
 ## 2026-11-05 — the nylon sets take the fluorocarbon C, 0.4.40 (measured; the owner chose B)
 
 **What was decided.** The owner asked for every Shape, Wood and Picking to be

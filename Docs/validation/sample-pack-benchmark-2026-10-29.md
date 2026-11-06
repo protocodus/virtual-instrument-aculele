@@ -394,3 +394,31 @@ Concert Mahogany Finger render (velocity 90, `--write-midi notes.mid`):
   seven usable notes give no reliable figure.
 
 Nothing was changed: both sit inside the packs' range.
+
+## 0.4.42: the hand's force, take to take (2026-11-05)
+
+The takes measured again on 0.4.41 and on experimental builds that changed
+only the single pluck's force residual, each with its level table re-pinned
+(`AculeleLevels --write`), the same notes and captures as above:
+
+| | notes | takes | level SD (dB) | brightness SD (dB) | r | tilt SD (dB/oct) | comb scatter (dB) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0.4.41 piezo, ±1 dB | 24 | 85 | 0.86 | 1.53 | -0.24 | 0.74 | 2.53 |
+| 0.4.41 microphone, ±1 dB | 24 | 76 | 0.89 | 2.55 | -0.31 | 0.86 | 2.07 |
+| piezo, ±1.6 dB | 24 | 85 | 1.14 | 1.52 | -0.15 | 0.73 | 2.53 |
+| microphone, ±1.6 dB | 24 | 76 | 1.12 | 2.57 | -0.25 | 0.89 | 2.07 |
+| 0.4.42 piezo, ±2.5 dB | 24 | 85 | 1.50 | 1.57 | -0.04 | 0.71 | 2.50 |
+| 0.4.42 microphone, ±2.5 dB | 24 | 76 | 1.59 | 2.50 | -0.15 | 0.89 | 2.07 |
+
+- **Level**: ±2.5 dB gives the Leolani DI's 1.56 dB on both captures; ±1.6
+  the Eastman guitar's finger takes' 1.09. Brightness, tilt and comb scatter
+  stay where they were, and brightness still does not follow level.
+- **The level check now holds.** On 0.4.32 a ±2 or ±3 dB residual left
+  Tenor Picked Melody's and Low G Tenor's Pickings outside
+  `Aculele.Levels`' 1.5 dB. On 0.4.41, with the table re-pinned, both
+  widths pass once the presets are re-trimmed: at ±2.5 dB Soprano D Tuning
+  +1.7 to +1.4 dB, Tenor Fluorocarbon Fingerstyle -0.6 to -0.4, Tenor Picked
+  Melody -2.1 to -2.4 and Soprano Thumb -0.2 to -0.1; the furthest
+  Capture or Picking reading is Low G Tenor's piezo, 1.18 dB under -9 VU.
+
+0.4.42 takes ±2.5 dB (`Docs/decisions.md`).

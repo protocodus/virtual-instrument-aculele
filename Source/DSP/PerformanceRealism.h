@@ -115,6 +115,14 @@ struct PerformanceRealism
     // by stroke and restarting after a dotted eighth
     // (Performer::pendulumUpstroke).
     bool strumPendulum { true };
+    // The string's own lengthwise force: the stretch its vibration adds,
+    // reaching the saddle down-force through the break angle
+    // (AculeleEngine::renderStringAxialForce).
+    bool stringAxialForce { true };
+    // Carry that force along the string as longitudinal waves, with their
+    // resonances. Off, the stretch acts at once along the whole string, a
+    // uniform tension with no longitudinal resonance.
+    bool axialWaves { true };
 };
 
 } // namespace aculele

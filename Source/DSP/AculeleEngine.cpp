@@ -4889,6 +4889,7 @@ void AculeleEngine::reset() noexcept
     pickingGestureOriginSample_ = 0;
     pickingGestureSample_ = 0;
     hand_.fill({});
+    anticipations_.fill({});
     lastNoteOnSample_.fill(0);
     chordStartSample_.fill(0);
     noteOnSeen_.fill(false);
@@ -11266,6 +11267,8 @@ void AculeleEngine::startNote(int string, int harmonic, int midiNote,
         voice.legatoContactSamples = 0;
         voice.legatoContactAmplitude = 0.0f;
     }
+    const HandFinger previousFinger = hand_[static_cast<std::size_t>(string)];
+    const bool previousKeyDown = voice.played && voice.keyDown;
     voice.harmonic = harmonic;
     voice.played = true;
     voice.keyDown = true;
@@ -11287,6 +11290,30 @@ void AculeleEngine::startNote(int string, int harmonic, int midiNote,
     voice.chordFill = false;
     configureVoice(voice, string, midiNote, !continuing);
     voice.onsetSample = sampleClock_;
+    if (!continuing)
+    {
+        // A finger the lookahead already moved here (advanceAnticipation)
+        // has been heard arriving; one still on its way lands from where it
+        // is. Either way the string is taken, so its anticipation ends.
+        auto& anticipation = anticipations_[static_cast<std::size_t>(string)];
+        const bool landed = anticipation.arrivedFret == voice.fret && voice.fret >= 1
+            && static_cast<double>(sampleClock_ - anticipation.arrivedAt)
+                <= 0.005 * sampleRate_;
+        if (landed)
+            voice.fretMotion.arrivalFrom = 0.0;
+        else
+        {
+            planShiftArrival(voice, previousFinger, previousKeyDown);
+            if (anticipation.moving && anticipation.fret == voice.fret
+                && voice.fretMotion.arrivalFrom > 0.0)
+                voice.fretMotion.arrivalFrom = anticipation.position;
+        }
+    }
+    {
+        auto& anticipation = anticipations_[static_cast<std::size_t>(string)];
+        anticipation.pending = anticipation.moving = false;
+        anticipation.arrivedFret = -1;
+    }
     rememberFinger(string);
     voice.strumming = strumMember;
     // A forming chord may move an unfired string while another stroke has
@@ -11790,6 +11817,7 @@ void AculeleEngine::firePluck(Voice& voice, int stringIndex) noexcept
     else
         bridgeDerivativesCrossRelease_ = true;
     configureVoice(voice, stringIndex, voice.midiNote, false);
+    startShiftArrival(voice);
     if (voice.mutedStroke)
     {
         // The pluck's own release state is the finger's from the start.
@@ -12827,27 +12855,263 @@ float woundContactBand(float cyclesPerSample) noexcept
 
 void AculeleEngine::primeFretMotion(Voice& voice) noexcept
 {
+    // A planned shift survives the pluck's own re-priming (firePluck).
+    const double arrivalFrom = voice.fretMotion.arrivalFrom;
     voice.fretMotion = {};
     voice.fretMotion.length = voice.speakingLengthMetres;
+    voice.fretMotion.arrivalFrom = arrivalFrom;
 }
+
+// A position shift: the finger that held another fret on this string a
+// moment ago slides along it to the new one, as a player's does between
+// chords and positions, and its last stretch is heard with the new note
+// (renderFretMotion sounds it by the slide's contact law). It cannot come
+// before the note-on that says where the hand goes, and the pluck's contact
+// re-primes the string, so it begins there; Finger Lookahead hears it before
+// the note (advanceAnticipation). Acustra 1.9.13's shift, on smooth strings:
+// authored, not measured, are the shift's 0.12 s duration (so its speed,
+// held to 0.15-1.2 m/s), the finger's 15 ms deceleration into the fret, and
+// the 0.25 s after a key-up beyond which the finger has left the string.
+// Open strings and harmonics have no finger to slide.
+void AculeleEngine::planShiftArrival(Voice& voice, const HandFinger& previous,
+                                     bool previousKeyDown) noexcept
+{
+    constexpr double liftedSeconds = 0.25;
+    voice.fretMotion.arrivalFrom = 0.0;
+    if (voice.harmonic != 1 || voice.fret < 1 || !previous.valid
+        || previous.fret == voice.fret)
+        return;
+    if (!previousKeyDown
+        && static_cast<double>(sampleClock_ - previous.heldAt) > liftedSeconds * sampleRate_)
+        return;
+    voice.fretMotion.arrivalFrom = voice.speakingLengthMetres * std::exp2(
+        static_cast<double>(voice.fret - previous.fret) / 12.0);
+}
+
+void AculeleEngine::startShiftArrival(Voice& voice) noexcept
+{
+    constexpr double shiftSeconds = 0.12;
+    constexpr double arrivalSeconds = 0.015;
+    auto& motion = voice.fretMotion;
+    const double from = motion.arrivalFrom;
+    motion.arrivalFrom = 0.0;
+    if (!(from > 0.0) || !(targetParameters_.releaseNoise > 0.0f))
+        return;
+    const double target = voice.speakingLengthMetres;
+    const double distance = exact::abs(from - target);
+    const double speed = std::clamp(distance / shiftSeconds, 0.15, 1.2);
+    // An exponential approach covers speed * time constant before it rests.
+    const double travel = std::min(distance, speed * arrivalSeconds);
+    motion.length = target + (from > target ? travel : -travel);
+    motion.arriving = true;
+    motion.arrivalCoefficient = static_cast<float>(
+        1.0 - std::exp(-1.0 / (arrivalSeconds * sampleRate_)));
+}
+
+void AculeleEngine::anticipateNoteOn(int midiNote, int midiChannel, int samplesAhead,
+                                     const ReleasingKey* releasing,
+                                     int releasingCount) noexcept
+{
+    if (!prepared_ || midiNote < 0 || midiNote > 127 || samplesAhead <= 0
+        || midiChannel < 1 || midiChannel > midiChannelCount
+        || !canSound(midiNote, midiChannel))
+        return;
+    // The strings whose keys the player lets go before this note: free for
+    // the prediction, and the finger on them may leave for the new fret.
+    unsigned freed = 0u;
+    std::array<int, stringCount> liftNote {};
+    std::array<int, stringCount> liftChannel {};
+    liftNote.fill(-1);
+    for (int index = 0; releasing != nullptr && index < releasingCount; ++index)
+    {
+        int candidate = -1;
+        for (int string = 0; string < stringCount; ++string)
+        {
+            const auto& voice = voices_[static_cast<std::size_t>(string)];
+            if (voice.played && voice.keyDown && voice.midiNote == releasing[index].note
+                && voice.midiChannel == releasing[index].channel
+                && (candidate < 0 || voice.startOrder
+                    > voices_[static_cast<std::size_t>(candidate)].startOrder))
+                candidate = string;
+        }
+        if (candidate < 0)
+            continue;
+        freed |= 1u << candidate;
+        liftNote[static_cast<std::size_t>(candidate)] = releasing[index].note;
+        liftChannel[static_cast<std::size_t>(candidate)] = releasing[index].channel;
+    }
+    int string = -1;
+    if (stringPerChannelMode_ && midiChannel <= stringCount)
+        string = midiChannel - 1;
+    else
+    {
+        // noteOn's own allocator, as it will run with those keys up. A
+        // chord's plan is made only on its sample, so a chord's notes are
+        // predicted one by one; one that lands elsewhere loses nothing.
+        std::array<bool, stringCount> keyDown {};
+        for (int index = 0; index < stringCount; ++index)
+        {
+            auto& voice = voices_[static_cast<std::size_t>(index)];
+            keyDown[static_cast<std::size_t>(index)] = voice.keyDown;
+            if ((freed & (1u << index)) != 0u)
+                voice.keyDown = false;
+        }
+        string = isLowerZoneMember(midiChannel)
+            ? chooseStringWithoutHand(midiNote) : chooseString(midiNote);
+        for (int index = 0; index < stringCount; ++index)
+            voices_[static_cast<std::size_t>(index)].keyDown
+                = keyDown[static_cast<std::size_t>(index)];
+    }
+    if (string < 0)
+        return;
+    const auto index = static_cast<std::size_t>(string);
+    const int fret = midiNote - voices_[index].openMidi;
+    if (fret < 1 || fret > fretCount)
+        return;
+    auto& anticipation = anticipations_[index];
+    anticipation = {};
+    anticipation.pending = true;
+    anticipation.fret = fret;
+    anticipation.pluckSample = sampleClock_ + static_cast<std::uint64_t>(samplesAhead);
+    const auto window = static_cast<std::uint64_t>(
+        std::lround(fingerLookaheadSeconds * sampleRate_));
+    anticipation.decideSample = anticipation.pluckSample
+        - std::min(window, static_cast<std::uint64_t>(samplesAhead));
+    anticipation.liftNote = liftNote[index];
+    anticipation.liftChannel = liftChannel[index];
+}
+
+// The lookahead's finger on one string, once a sample while it is pending.
+// At the decision (the lookahead window before the note) it checks that a
+// finger is on this string at another fret, as planShiftArrival does: held
+// by a key the player lets go before the note, or let go under 0.25 s ago.
+// It then plans the shift by planShiftArrival's law (0.12 s, 0.15-1.2 m/s)
+// inside the window, so a long shift's earlier part is in the air and only
+// the last stretch slides. When the move begins the finger lifts: its key
+// comes up there with the hand's immediate damping (beginRelease), as the
+// pressure leaves the fret before the finger slides; the string falls to
+// the fingertip (releasePitchFall) and the rest of the old note dies under
+// it. The finger follows a minimum-jerk path (Flash and Hogan, J. Neurosci.
+// 5 (1985) 1688), the smoothest a hand's point-to-point move takes, so it
+// leaves and lands at rest; renderFretMotion sounds it by the shift
+// arrival's contact law, and it lands as the note-on comes.
+void AculeleEngine::advanceAnticipation(Voice& voice, int stringIndex) noexcept
+{
+    auto& anticipation = anticipations_[static_cast<std::size_t>(stringIndex)];
+    if (sampleClock_ >= anticipation.pluckSample)
+    {
+        anticipation.pending = anticipation.moving = false;
+        return;
+    }
+    if (!anticipation.decided)
+    {
+        if (sampleClock_ < anticipation.decideSample)
+            return;
+        anticipation.decided = true;
+        constexpr double liftedSeconds = 0.25;
+        constexpr double shiftSeconds = 0.12;
+        const auto& finger = hand_[static_cast<std::size_t>(stringIndex)];
+        const bool held = voice.played && voice.keyDown;
+        bool free = finger.valid && finger.fret != anticipation.fret
+            && voice.harmonic == 1 && voice.fret == finger.fret;
+        if (held)
+            free = free && voice.midiNote == anticipation.liftNote
+                && voice.midiChannel == anticipation.liftChannel
+                && voice.ownerCount == 1 && voice.pluckDelay == 0
+                && !sustainIsDown(voice);
+        else
+            free = free && static_cast<double>(sampleClock_ - finger.heldAt)
+                <= liftedSeconds * sampleRate_;
+        if (!free)
+        {
+            anticipation.pending = false;
+            return;
+        }
+        const double scale = voice.speakingLengthMetres
+            * std::exp2(static_cast<double>(voice.fret) / 12.0);
+        const double from = scale * std::exp2(-static_cast<double>(finger.fret) / 12.0);
+        const double to = scale * std::exp2(-static_cast<double>(anticipation.fret) / 12.0);
+        const double available = static_cast<double>(
+            anticipation.pluckSample - sampleClock_) / sampleRate_;
+        const double longest = std::min(shiftSeconds, available);
+        const double distance = exact::abs(from - to);
+        const double speed = std::clamp(distance / longest, 0.15, 1.2);
+        const double duration = std::min(longest, distance / speed);
+        const double travel = std::min(distance, speed * duration);
+        const auto samples = std::max<std::uint64_t>(1u, static_cast<std::uint64_t>(
+            std::lround(duration * sampleRate_)));
+        anticipation.from = to + (from > to ? travel : -travel);
+        anticipation.to = to;
+        anticipation.position = anticipation.from;
+        anticipation.inverseDuration = 1.0 / static_cast<double>(samples);
+        anticipation.moveStart = anticipation.pluckSample - samples;
+    }
+    if (sampleClock_ < anticipation.moveStart)
+        return;
+    if (!anticipation.moving)
+    {
+        anticipation.moving = true;
+        if (voice.played && voice.keyDown && voice.midiNote == anticipation.liftNote
+            && voice.midiChannel == anticipation.liftChannel)
+            releaseKey(anticipation.liftNote, anticipation.liftChannel,
+                       true, false, -1.0f, true);
+        // The slide starts where the finger is, so its first step is a
+        // finger at rest, not a jump from the old fret.
+        voice.fretMotion.length = anticipation.from;
+    }
+    // Minimum jerk, 10t^3 - 15t^4 + 6t^5: at rest at both ends, reaching
+    // the fret on the move's last sample, the one before the note-on.
+    const double t = std::min(1.0, static_cast<double>(
+        sampleClock_ - anticipation.moveStart + 1u) * anticipation.inverseDuration);
+    const double shape = t * t * t * (10.0 + t * (-15.0 + 6.0 * t));
+    anticipation.position = anticipation.from
+        + (anticipation.to - anticipation.from) * shape;
+    if (t >= 1.0)
+    {
+        anticipation.arrivedFret = anticipation.fret;
+        anticipation.arrivedAt = sampleClock_;
+        // It stays pending until the note-on's sample, which ends it
+        // (startNote) or, if the note went elsewhere, the check above.
+    }
+}
+
 
 void AculeleEngine::renderFretMotion(Voice& voice, int stringIndex) noexcept
 {
     auto& motion = voice.fretMotion;
-    const bool touching = woundStringCount > 0 && stringIndex < woundStringCount
-        && voice.played && voice.keyDown
-        && voice.attackFired && voice.harmonic == 1;
+    // A finger the lookahead moves (advanceAnticipation) touches the string
+    // on its way to the next note's fret, after its own note let go.
+    const auto& anticipation = anticipations_[static_cast<std::size_t>(stringIndex)];
+    const bool anticipated = anticipation.moving;
+    const bool wound = woundStringCount > 0 && stringIndex < woundStringCount;
+    const bool touching = voice.harmonic == 1
+        && ((voice.played && voice.keyDown && voice.attackFired) || anticipated);
     const double target = voice.speakingLengthMetres;
     const double previous = motion.length;
-    // Follow the physical stop at the same 6 ms time scale as string retuning.
-    // Never differentiate pitch: member bends, vibrato and attack tension
-    // change frequency while the finger stays at the same fret. The tiny
-    // terminal snap is a numerical rest condition, not a MIDI motion layer.
-    motion.length = touching
-        ? previous + static_cast<double>(delaySmoothing_) * (target - previous)
-        : (motion.remaining > 0 ? previous : target);
-    if (touching && exact::abs(target - motion.length) < 1.0e-10)
-        motion.length = target;
+    if (anticipated)
+    {
+        motion.length = anticipation.position;
+        motion.arriving = true;
+    }
+    else
+    {
+        // Follow the physical stop at the same 6 ms time scale as string
+        // retuning. Never differentiate pitch: member bends, vibrato and
+        // attack tension change frequency while the finger stays at the same
+        // fret. The tiny terminal snap is a numerical rest condition, not a
+        // MIDI motion layer.
+        const double glide = motion.arriving ? motion.arrivalCoefficient : delaySmoothing_;
+        motion.length = touching
+            ? previous + glide * (target - previous)
+            : (motion.remaining > 0 ? previous : target);
+        if (touching && exact::abs(target - motion.length) < 1.0e-10)
+        {
+            motion.length = target;
+            motion.arriving = false;
+        }
+        if (!touching)
+            motion.arriving = false;
+    }
     motion.speed = touching
         ? static_cast<float>((motion.length - previous) * sampleRate_) : 0.0f;
     motion.emittedForce = 0.0f;
@@ -12876,9 +13140,18 @@ void AculeleEngine::renderFretMotion(Voice& voice, int stringIndex) noexcept
         // string set's winding pitch or absolute noise level. Reuse the
         // release brush's representative spectral progression at an authored
         // 0.5 m/s reference; do not infer winding diameter from fitted EI.
+        //
+        // A smooth monofilament has no wraps to cross. A fingertip sliding
+        // on a smooth surface vibrates mostly at v/lambda, its fingerprint
+        // ridges' period lambda of about 0.45 mm passing over the contact
+        // (Scheibert, Leurent, Prevost and Debregeas, Science 323 (2009)
+        // 1503), so the same broad band is centred there: 1.1 kHz at
+        // 0.5 m/s, beside the wound centres' 2-3.5 kHz.
         constexpr std::array<float, 4> referenceCentres { 2000, 2400, 2900, 3500 };
-        const float centre = clamp(referenceCentres[static_cast<std::size_t>(stringIndex)]
-            * speed / 0.5f, 150.0f,
+        constexpr float fingerprintRidgesPerMetre = 1.0f / 0.45e-3f;
+        const float centre = clamp((wound
+                ? referenceCentres[static_cast<std::size_t>(stringIndex)] / 0.5f
+                : fingerprintRidgesPerMetre) * speed, 150.0f,
             std::min(6000.0f, 0.15f * static_cast<float>(sampleRate_)));
         // Two passive RC lowpasses form a broad roughness band. Exact
         // discrete impulse energy normalizes its white-noise RMS at each
@@ -12898,7 +13171,18 @@ void AculeleEngine::renderFretMotion(Voice& voice, int stringIndex) noexcept
         // Finger contact supplies energy, so a held but quiet string may
         // still scrape; peakLevel is the preceding stroke's bounded scale.
         const float speedLevel = 2.0f * speed / (speed + 0.25f);
-        const float rms = 0.00004f * voice.peakLevel * (amount / 0.5f)
+        // A finger shifting to a new fret (startShiftArrival) takes Acustra
+        // 1.9.20's arrival share, an authored audibility choice for position
+        // changes, not a measured friction coefficient. On a smooth string
+        // both shares take a quarter (-12 dB): with no wraps to cross the
+        // finger only rubs, and nothing measured gives nylon's level (Known
+        // gaps), so this is authored too.
+        constexpr float slideShare = 0.00004f;
+        constexpr float arrivalShare = 0.002f;
+        constexpr float smoothShare = 0.25f;
+        const float rms = (motion.arriving ? arrivalShare : slideShare)
+            * (wound ? 1.0f : smoothShare)
+            * voice.peakLevel * (amount / 0.5f)
             * contact * speedLevel;
         motion.forceGain = rms * static_cast<float>(exact::sqrt(3.0 / energy));
         motion.forceRms = rms;
@@ -12921,7 +13205,7 @@ void AculeleEngine::renderFretMotion(Voice& voice, int stringIndex) noexcept
     motion.low += motion.lowCoefficient * (input - motion.low);
     motion.high += motion.highCoefficient * (input - motion.high);
     motion.emittedForce = motion.forceGain * (motion.high - motion.low);
-    if (performanceRealism_.woundRidges || performanceRealism_.longitudinalSqueak)
+    if (wound && (performanceRealism_.woundRidges || performanceRealism_.longitudinalSqueak))
     {
         if (!motion.colourPrepared)
         {
@@ -14817,6 +15101,8 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
             }
             if (voice.releaseNoiseSamples > 0 || voice.releaseNoiseTravel.active)
                 addReleaseNoise(voice);
+            if (anticipations_[static_cast<std::size_t>(string)].pending)
+                advanceAnticipation(voice, string);
             renderFretMotion(voice, string);
             if (performanceRealism_.stringAxialForce)
             {

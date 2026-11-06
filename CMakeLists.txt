@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 # Aculele: a physically modelled ukulele built on Acustra's engine. The
 # JUCE-free engine and performer, the demo renderer and two analysis tools;
 # there is no plug-in or editor yet.
-project(Aculele VERSION 0.4.43 LANGUAGES CXX)
+project(Aculele VERSION 0.4.44 LANGUAGES CXX)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
@@ -142,6 +142,10 @@ if(BUILD_TESTING)
     add_executable(AculeleStringAxialForceTests Tests/StringAxialForceTests.cpp)
     target_link_libraries(AculeleStringAxialForceTests PRIVATE AculeleDSP)
     add_test(NAME Aculele.StringAxialForce COMMAND AculeleStringAxialForceTests)
+
+    add_executable(AculeleFingerLookaheadTests Tests/FingerLookaheadTests.cpp)
+    target_link_libraries(AculeleFingerLookaheadTests PRIVATE AculeleDSP)
+    add_test(NAME Aculele.FingerLookahead COMMAND AculeleFingerLookaheadTests)
 
     # U4 input fuzzing (Tests/DspFuzz.cpp). The replay build runs on every
     # platform: committed reproducers in Tests/Fixtures/fuzz, then seeded

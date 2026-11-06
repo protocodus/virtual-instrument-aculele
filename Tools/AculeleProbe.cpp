@@ -4,11 +4,14 @@
 //   AculeleProbe <preset-index> <in.mid> <out.wav> [seconds] [--float]
 //                [--shape N] [--wood N] [--strings N] [--picking N]
 //                [--position X] [--capture N] [--piezo-mix X] [--age X]
+//                [--release-noise X] [--lookahead 0|1]
 //
 // The --options replace one field of the preset (the enums' numbers in
 // AculeleEngine.h: Capture 0 stereo, 7 mono, 6 piezo; Pluck Position and
-// Piezo Mix and String Age 0-1), so one phrase can be compared across constructions and
-// captures without a preset for each.
+// Piezo Mix, String Age and Release Noise 0-1), so one phrase can be compared
+// across constructions and captures without a preset for each. --lookahead 1
+// turns Finger Lookahead on and drops its 50 ms from the start of the file,
+// so a render with it lines up with one without it.
 // The phrase plays through the Performer exactly as the demo renderer drives
 // it (48 kHz, 256-sample blocks, events at their sample). The output is
 // 48 kHz stereo, 24-bit PCM, or 32-bit float with --float, unnormalised.
@@ -75,6 +78,7 @@ int main(int argc, char** argv)
     const auto events = protocodus::demos::ReadMidi(argv[2]);
     double seconds = 0.0;
     bool asFloat = false;
+    bool lookahead = false;
     auto parameters = aculele::engineParameters(aculele::factoryPresets[preset]);
     for (int i = 4; i < argc; ++i)
     {
@@ -95,6 +99,10 @@ int main(int argc, char** argv)
             parameters.capture = static_cast<aculele::CaptureType>(std::atoi(argv[++i]));
         else if (valued && std::strcmp(argv[i], "--piezo-mix") == 0)
             parameters.piezoMix = static_cast<float>(std::atof(argv[++i]));
+        else if (valued && std::strcmp(argv[i], "--release-noise") == 0)
+            parameters.releaseNoise = static_cast<float>(std::atof(argv[++i]));
+        else if (valued && std::strcmp(argv[i], "--lookahead") == 0)
+            lookahead = std::atoi(argv[++i]) != 0;
         else if (valued && std::strcmp(argv[i], "--age") == 0)
             parameters.stringAge = static_cast<float>(std::atof(argv[++i]));
         else
@@ -109,8 +117,11 @@ int main(int argc, char** argv)
     performer->prepare(48000.0, block);
     performer->setParameters(parameters);
     performer->setTempoBpm(120.0);
+    performer->setFingerLookahead(lookahead);
+    const auto skip = static_cast<std::size_t>(
+        lookahead ? aculele::Performer::fingerLookaheadSamples(48000.0) : 0);
 
-    const auto total = static_cast<std::size_t>(seconds * 48000.0);
+    const auto total = static_cast<std::size_t>(seconds * 48000.0) + skip;
     std::vector<float> left(total), right(total);
     // As the shared demo renderer does: each event starts a sub-block, so it
     // is played at that sub-block's first sample.
@@ -133,6 +144,8 @@ int main(int argc, char** argv)
             done = until;
         }
     }
+    left.erase(left.begin(), left.begin() + static_cast<std::ptrdiff_t>(skip));
+    right.erase(right.begin(), right.begin() + static_cast<std::ptrdiff_t>(skip));
     writeWav(argv[3], left, right, asFloat);
     return 0;
 }

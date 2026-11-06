@@ -5,6 +5,39 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-11-06 — fingers slide between frets, and Finger Lookahead, 0.4.44 (A–Z set; C adopted under the owner's standing rule, not yet heard)
+
+**What was decided.** The owner asked for fret noise and finger movement in
+Acustra and Aculele, only where it is physically justified, and allowed a
+switch that costs 50 ms of latency for more of it. Aculele, forked from
+Acustra 1.9.0, had the sliding-finger contact but no shift arrival. The
+contact was also silent, because only wound strings rubbed. Three changes:
+
+- Acustra's 1.9.13 shift arrival is ported. A note that takes a string at a
+  different fret from a finger still down, or lifted under 0.25 s ago, starts
+  the finger short of its fret. The finger decelerates in at the speed of a
+  0.12 s shift. These figures are authored, as in Acustra.
+- A plain string rubs too. A fingertip on a smooth monofilament has no
+  winding to cross. Its own ridges, about 0.45 mm apart (Scheibert et al.,
+  Science 323 (2009) 1503), set the friction band's centre at the speed over
+  that spacing. The level, a quarter (-12 dB) of the wound strings' share, is
+  authored. Ridges and squeak stay with wound strings, which no ukulele preset
+  has.
+- Finger Lookahead, shared with Acustra 1.9.23, holds every event back 50 ms.
+  The finger lets go of the old note and slides on a minimum-jerk path (Flash
+  and Hogan 1985) that lands on the sample before the pluck.
+
+**What it was tested with.** A legato melody climbing the A and C strings,
+preset Tenor Fluorocarbon Fingerstyle, at its own Release Noise and at 50%
+(`listening-tests/aculele-2026-11-06-fret-noise-finger-lookahead/` in the
+project files). A is 0.4.43. B is 0.4.44 as shipped. C is 0.4.44 with Finger
+Lookahead on, aligned by dropping the first 50 ms. RMS matched (B -0.00 dB,
+C +0.06 dB). B differs from A by -52 dB re A over the phrase.
+
+**Verdict.** C (and with it B, the default), adopted under the owner's
+standing rule; not yet heard. Finger Lookahead is a Performer switch with
+no front end yet.
+
 ## 2026-11-05 — each pluck's force wanders within ±2.5 dB, 0.4.42 (sized to a measurement; the owner chose B)
 
 **What was decided.** The owner heard the start of every pluck as "the same

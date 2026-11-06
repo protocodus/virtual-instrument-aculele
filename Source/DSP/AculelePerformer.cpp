@@ -94,6 +94,11 @@ int Performer::gatherWindowSamples(double sampleRate) noexcept
     return static_cast<int>(std::lround(chordGatherSeconds * sampleRate));
 }
 
+int Performer::fingerLookaheadSamples(double sampleRate) noexcept
+{
+    return static_cast<int>(std::lround(AculeleEngine::fingerLookaheadSeconds * sampleRate));
+}
+
 Performer::Performer() noexcept
 {
     conventionalPitchBendRanges_.fill(2.0f);
@@ -125,6 +130,7 @@ void Performer::prepare(double sampleRate, int maximumBlockSize)
     heldCount_ = 0;
     droppedEvents_ = 0;
     gatherWindow_ = gatherWindowSamples(sampleRate_);
+    lookaheadWindow_ = fingerLookaheadSamples(sampleRate_);
     engine_.setLowerZoneMemberCount(lowerZoneMemberCount_);
     // The engine keeps host tuning but starts every playing wheel at zero.
     for (int channel = 1; channel <= 16; ++channel)
@@ -257,13 +263,15 @@ void Performer::beginBlock(float* left, float* right,
 
     // Without gathering, and nothing left held from when it was on, events
     // play as they arrive; otherwise they queue (see endBlock).
-    direct_ = ! gatherChords_ && heldCount_ == 0;
-    // Switched off with events still held: they are due now, in order,
-    // ahead of everything that arrives from here on.
-    if (! direct_ && ! gatherChords_)
+    direct_ = holdSamples() == 0 && heldCount_ == 0;
+    // Switched off (or one of two holds switched off) with events still
+    // held: they are due no later than what arrives from here on, in
+    // order, ahead of it.
+    const auto latestDue = processedSamples_ + holdSamples();
+    if (! direct_)
         for (int index = 0; index < heldCount_; ++index)
             held_[static_cast<std::size_t>(index)].due = std::min(
-                held_[static_cast<std::size_t>(index)].due, processedSamples_);
+                held_[static_cast<std::size_t>(index)].due, latestDue);
 }
 
 void Performer::handleMidi(int sampleOffset, const std::uint8_t* data,
@@ -295,11 +303,12 @@ void Performer::handleMidi(int sampleOffset, const std::uint8_t* data,
         return;
     }
     auto& held = held_[static_cast<std::size_t>(heldCount_++)];
-    held.due = processedSamples_ + sample
-        + (gatherChords_ ? gatherWindow_ : 0);
+    held.due = processedSamples_ + sample + holdSamples();
     held.size = size;
     std::copy_n(data, size, held.bytes.begin());
     held.gathered = false;
+    held.fresh = fingerLookahead_ && size >= 3
+        && (static_cast<unsigned>(data[0]) & 0xf0u) == 0x90u && (data[2] & 0x7fu) != 0u;
     held.tempo = false;
 }
 
@@ -330,6 +339,7 @@ void Performer::endBlock() noexcept
 {
     if (! direct_)
     {
+        anticipateHeldNotes();
         // Gather Chords: a hand's chord reaches the keys spread over the
         // gathering window (see chordGatherSeconds), in whatever order the
         // fingers land. The allocator can only fret it as a guitarist would
@@ -1121,6 +1131,55 @@ void Performer::updatePendingSustain(int controllerChannel) noexcept
         off.pedalReleased = off.pedalReleased
             || (off.sustained && !engine_.sustainHolds(off.channel));
         off.sustained = off.sustained && engine_.sustainHolds(off.channel);
+    }
+}
+
+// Finger Lookahead: every Note On queued this block is shown to the engine
+// once, before any of the block plays, with the key-ups that come due no
+// later than it on any channel, so the engine can tell a finger that will
+// be free. Keyswitches, a held chuck (where the hand lies across the strings)
+// and a connected articulation (CC65 on, or a CC84 queued ahead of it on its
+// channel) are left to play as they always do.
+void Performer::anticipateHeldNotes() noexcept
+{
+    for (int index = 0; index < heldCount_; ++index)
+    {
+        auto& held = held_[static_cast<std::size_t>(index)];
+        if (! held.fresh)
+            continue;
+        held.fresh = false;
+        const int note = static_cast<int>(held.bytes[1] & 0x7fu);
+        const int channel = static_cast<int>(held.bytes[0] & 0x0fu) + 1;
+        if (! fingerLookahead_ || isKeyswitch(note) || chuck_
+            || portamentoSwitches_[static_cast<std::size_t>(channel - 1)])
+            continue;
+        std::array<AculeleEngine::ReleasingKey, AculeleEngine::stringCount> releasing {};
+        int releasingCount = 0;
+        bool connected = false;
+        for (int other = 0; other < heldCount_; ++other)
+        {
+            const auto& event = held_[static_cast<std::size_t>(other)];
+            if (event.tempo || event.gathered || event.size < 3 || event.due > held.due
+                || other == index)
+                continue;
+            const auto status = static_cast<unsigned>(event.bytes[0]) & 0xf0u;
+            const int eventChannel = static_cast<int>(event.bytes[0] & 0x0fu) + 1;
+            const int data1 = static_cast<int>(event.bytes[1] & 0x7fu);
+            const int data2 = static_cast<int>(event.bytes[2] & 0x7fu);
+            if (status == 0xb0u && eventChannel == channel && other < index
+                && ((data1 == 65 && data2 >= 64) || data1 == 84))
+                connected = true;
+            // Only a string a key holds now can be freed.
+            if ((status == 0x80u || (status == 0x90u && data2 == 0))
+                && releasingCount < AculeleEngine::stringCount
+                && engine_.heldString(data1, eventChannel) >= 0)
+                releasing[static_cast<std::size_t>(releasingCount++)] = { data1, eventChannel };
+        }
+        if (connected)
+            continue;
+        engine_.anticipateNoteOn(note, channel,
+                                 static_cast<int>(held.due - processedSamples_),
+                                 releasing.data(), releasingCount);
     }
 }
 

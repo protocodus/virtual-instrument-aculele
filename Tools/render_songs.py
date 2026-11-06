@@ -5,9 +5,14 @@ Each part plays on the ukulele Tools/write_preset_midi.py's SONGS gives it,
 through AculeleProbe (the Performer as the demo renderer drives it), at the
 same length; the parts are panned and trimmed as SONGS says, summed, and the
 mix is scaled so its peak sits at -1 dBFS. Output is 48 kHz 24-bit stereo,
-<out-dir>/<song>.wav, never committed.
+<out-dir>/<song>.wav, never committed. With --parts, each part's panned,
+trimmed and scaled float stem and its strings' activity (AculeleProbe
+--activity) are kept as <out-dir>/<song>/<part>.wav and .csv, for the films.
 
-    python3 Tools/render_songs.py build-dsp <out-dir>
+Finger Lookahead is on: a rendered song has no latency to save, and with it
+a fretting finger lets go and slides to its next fret before the pluck.
+
+    python3 Tools/render_songs.py build-dsp <out-dir> [--parts]
 """
 
 import pathlib
@@ -41,6 +46,15 @@ def write_wav24(path, audio, rate=48000):
     pathlib.Path(path).write_bytes(header + frames)
 
 
+def write_float_wav(path, audio, rate=48000):
+    data = audio.astype("<f4").tobytes()
+    header = (b"RIFF" + (36 + len(data)).to_bytes(4, "little") + b"WAVEfmt "
+              + (16).to_bytes(4, "little") + (3).to_bytes(2, "little") + (2).to_bytes(2, "little")
+              + rate.to_bytes(4, "little") + (rate * 8).to_bytes(4, "little") + (8).to_bytes(2, "little")
+              + (32).to_bytes(2, "little") + b"data" + len(data).to_bytes(4, "little"))
+    pathlib.Path(path).write_bytes(header + data)
+
+
 def last_event_seconds(path):
     """The time of a format 0 file's last event, with its tempo map."""
     data = pathlib.Path(path).read_bytes()
@@ -70,7 +84,8 @@ def last_event_seconds(path):
 
 
 def main():
-    if len(sys.argv) != 3:
+    keep = sys.argv[3:] == ["--parts"]
+    if len(sys.argv) != 3 and not keep:
         sys.exit(__doc__)
     probe = pathlib.Path(sys.argv[1]) / "AculeleProbe"
     out = pathlib.Path(sys.argv[2])
@@ -78,17 +93,25 @@ def main():
     slugs = preset_slugs()
     for song, (_, parts) in SONGS.items():
         seconds = max(last_event_seconds(SONG_DIR / f"{song}-{part}.mid") for part in parts) + TAIL
-        mix = None
+        stems = {}
         with tempfile.TemporaryDirectory() as scratch:
+            folder = out / song if keep else pathlib.Path(scratch)
+            folder.mkdir(exist_ok=True)
             for part, (preset, options, pan, trim) in parts.items():
                 wav = pathlib.Path(scratch) / f"{part}.wav"
+                activity = ["--activity", str(folder / f"{part}.csv")] if keep else []
                 subprocess.run([str(probe), str(slugs.index(preset)), str(SONG_DIR / f"{song}-{part}.mid"),
-                                str(wav), f"{seconds:.3f}", "--float", *options], check=True)
+                                str(wav), f"{seconds:.3f}", "--float", "--lookahead", "1", *options,
+                                *activity], check=True)
                 audio = read_float_wav(wav) * 10 ** (trim / 20)
                 audio *= [min(1.0, 1.0 - pan), min(1.0, 1.0 + pan)]
-                mix = audio if mix is None else mix + audio
-        mix *= 10 ** (-1 / 20) / np.abs(mix).max()
-        write_wav24(out / f"{song}.wav", mix)
+                stems[part] = audio
+        mix = sum(stems.values())
+        scale = 10 ** (-1 / 20) / np.abs(mix).max()
+        write_wav24(out / f"{song}.wav", mix * scale)
+        if keep:
+            for part, audio in stems.items():
+                write_float_wav(out / song / f"{part}.wav", audio * scale)
         print(out / f"{song}.wav")
 
 

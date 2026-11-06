@@ -4,14 +4,17 @@
 //   AculeleProbe <preset-index> <in.mid> <out.wav> [seconds] [--float]
 //                [--shape N] [--wood N] [--strings N] [--picking N]
 //                [--position X] [--capture N] [--piezo-mix X] [--age X]
-//                [--release-noise X] [--lookahead 0|1]
+//                [--release-noise X] [--lookahead 0|1] [--activity out.csv]
 //
 // The --options replace one field of the preset (the enums' numbers in
 // AculeleEngine.h: Capture 0 stereo, 7 mono, 6 piezo; Pluck Position and
 // Piezo Mix, String Age and Release Noise 0-1), so one phrase can be compared
 // across constructions and captures without a preset for each. --lookahead 1
 // turns Finger Lookahead on and drops its 50 ms from the start of the file,
-// so a render with it lines up with one without it.
+// so a render with it lines up with one without it. --activity writes each
+// string's Engine::getStringActivity() about 60 times a second (after the
+// first sub-block to end past each 1/60 s), on the output's time origin, for
+// the song films' pictures; reading it does not change the audio.
 // The phrase plays through the Performer exactly as the demo renderer drives
 // it (48 kHz, 256-sample blocks, events at their sample). The output is
 // 48 kHz stereo, 24-bit PCM, or 32-bit float with --float, unnormalised.
@@ -79,6 +82,7 @@ int main(int argc, char** argv)
     double seconds = 0.0;
     bool asFloat = false;
     bool lookahead = false;
+    const char* activityPath = nullptr;
     auto parameters = aculele::engineParameters(aculele::factoryPresets[preset]);
     for (int i = 4; i < argc; ++i)
     {
@@ -103,6 +107,8 @@ int main(int argc, char** argv)
             parameters.releaseNoise = static_cast<float>(std::atof(argv[++i]));
         else if (valued && std::strcmp(argv[i], "--lookahead") == 0)
             lookahead = std::atoi(argv[++i]) != 0;
+        else if (valued && std::strcmp(argv[i], "--activity") == 0)
+            activityPath = argv[++i];
         else if (valued && std::strcmp(argv[i], "--age") == 0)
             parameters.stringAge = static_cast<float>(std::atof(argv[++i]));
         else
@@ -127,7 +133,10 @@ int main(int argc, char** argv)
     // is played at that sub-block's first sample.
     const auto due = [&](std::size_t i)
     { return static_cast<std::size_t>(std::llround(events[i].seconds * 48000.0)); };
-    std::size_t next = 0, done = 0;
+    std::size_t next = 0, done = 0, observe = skip;
+    std::ofstream activity;
+    if (activityPath != nullptr)
+        activity.open(activityPath), activity << "time,string,note,level,held,played,fret\n";
     while (done < total)
     {
         const std::size_t blockEnd = std::min(total, done + static_cast<std::size_t>(block));
@@ -142,6 +151,17 @@ int main(int argc, char** argv)
                 performer->handleMidi(0, events[i].bytes, events[i].size);
             performer->endBlock();
             done = until;
+            if (activity.is_open() && done >= observe)
+            {
+                const auto strings = performer->engine().getStringActivity();
+                for (std::size_t s = 0; s < strings.size(); ++s)
+                    activity << static_cast<double>(done - skip) / 48000.0 << ',' << s << ','
+                             << strings[s].midiNote << ',' << strings[s].level << ','
+                             << strings[s].keyDown << ',' << strings[s].played << ','
+                             << strings[s].fret << '\n';
+                while (observe <= done)
+                    observe += 800;
+            }
         }
     }
     left.erase(left.begin(), left.begin() + static_cast<std::ptrdiff_t>(skip));

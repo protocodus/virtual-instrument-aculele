@@ -51,9 +51,8 @@ re-trimmed.
 string chromatically to the 18th fret and back on Tenor Picked Melody and
 Concert Strum, RMS-matched, B trimmed +0.34 and -0.53 dB) was rendered to the
 project's files under `aculele/listening-tests/2026-11-07-plate-band/` with
-its `key.md`, not committed. Under the owner's standing rule the candidate is
-taken to win unless the owner says otherwise after listening; nobody had
-listened when 0.4.46 was committed.
+its `key.md`, not committed. Nobody had listened when 0.4.46 was committed;
+the owner then listened and chose B, by ear, on 2026-11-07.
 
 ## 2026-11-06 — the finger's shifts: level by ear, and no two alike, 0.4.45 (level chosen by the owner on Acustra; the variation chosen by the owner by ear)
 

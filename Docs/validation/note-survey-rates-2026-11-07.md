@@ -72,3 +72,20 @@ filterGain`), so the fundamental decays at `fundamentalT60` whatever the
 sections do above it. The single-note renders above show the fundamental's
 decay alike at 48 and 96 kHz (open C -8.2 dB/s at both; A string fret 5
 -26.4 and -29.0 dB/s, the body's coupling at that pitch).
+
+## Strings mode, 48 against 96 kHz
+
+Keys mode never reaches the lower strings' high frets, so the tab survey
+(`--mode strings`, every string from open to the 18th fret, 1064 notes)
+was run at both rates too. Level: mean -0.08 dB, sd 0.50 dB, no string's
+mean beyond -0.11 dB. Pitch the partials carry: mean +0.10 cents, sd 0.56.
+Nineteen notes differ by 1.5-5.3 cents (Concert Strum E string fret 12,
++5.5 at 48 kHz and +0.2 at 96; Soprano D Tuning E string fret 10, +1.2 and
++6.1), all on the inner strings between notes 71 and 77, where the body's
+T1 and the plate band's first modes drain the fundamental and split its
+peak (`f0_cents_error` differs up to 14 cents on the same notes). The body
+modes are prewarped at the host rate, so their centres hold; what moves is
+the coincidence itself, which a 1/fs change in the string's delay and
+dispersion fit shifts by a few cents. This is the coupling documented in
+[note-survey-2026-11-07.md](note-survey-2026-11-07.md), seen from the other
+rate, not a fault of its own; it is left as it is.

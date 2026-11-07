@@ -4,14 +4,15 @@
 //
 // Density: the band's sounding modes. Elie et al. 2011 counted 57 there; the
 // clusters stop at a sixth of an octave either side of a bank mode, so where
-// the bank's modes lie further apart the band keeps a gap, and the nine
-// bodies have 37-47 (the bank alone placed 18-25). At least 35 must sound.
+// the bank's modes lie further apart the band keeps a gap, and the twelve
+// bodies have 51-62 (the bank alone placed 18-25). At least 35 must sound.
 //
 // Peaks: the band's own modes' power summed over the four microphone and
 // input parts on a 5 Hz grid, averaged over a sixth of an octave either side
 // of each point (a cluster's widest span), against its mean over the band.
-// The bank alone rose 4.1-5.2 dB over it, the clusters 1.0-2.0 dB; no point
-// may rise 3 dB, half the mean's power again, over it.
+// The bank alone rose 4.1-5.2 dB over it; the clusters, brought flat after
+// their draw, rise 1.0-1.8 dB (0.4.46). No point may rise 3 dB, half the
+// mean's power again, over it.
 
 #include "DSP/AculeleEngine.h"
 

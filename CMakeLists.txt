@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 # Aculele: a physically modelled ukulele built on Acustra's engine. The
 # JUCE-free engine and performer, the demo renderer and two analysis tools;
 # there is no plug-in or editor yet.
-project(Aculele VERSION 0.4.45 LANGUAGES CXX)
+project(Aculele VERSION 0.4.46 LANGUAGES CXX)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
@@ -86,6 +86,8 @@ if(ACULELE_BUILD_TOOLS)
     # Each string's level and brightness in every shape, wood and Picking.
     add_executable(AculeleEvenness Tools/AculeleEvenness.cpp)
     target_link_libraries(AculeleEvenness PRIVATE AculeleDSP Threads::Threads)
+    add_executable(AculeleNoteSurvey Tools/AculeleNoteSurvey.cpp)
+    target_link_libraries(AculeleNoteSurvey PRIVATE AculeleDSP Threads::Threads)
 endif()
 
 if(BUILD_TESTING)

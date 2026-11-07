@@ -5,6 +5,56 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-11-07 — the bridge's plate-mode residues keep the uniform 1/A_p scaling, 0.4.46 (decided by measurement, not by ear)
+
+**What was decided.** How `scalePlateBridgeResidues` scales a plate mode's
+bridge residues when the guitar bank is morphed to a ukulele's top. The lever
+arms are physical lengths (`saddleLeverArm`, 13.3 mm string spacing over the
+archive's 21.6 mm half-separation) and a mode shape's slope goes as A_p^-1/2
+on the equal-thickness law, so 0.4.38's argument that the bridge span shrinks
+with the top (a ~ A_p^1/2) does not hold. Its uniform scaling stays anyway,
+as a pinned choice, not as physics.
+
+**The candidates.**
+
+- A, shipping since 0.4.38: heave, cross and rock all by 1/A_p.
+- B, the scaling consistent with the law: heave 1/A_p, cross 1/A_p^1.5, rock
+  1/A_p^2, the plate modes' moment radiation residues by a further
+  A_p^-1/2, the bridge ratio re-pinned 0.983 to 0.917 and the radiation
+  shelves to -1.79/-1.42/-0.85 dB.
+
+Both were measured with the plate band change of 0.4.46 in place
+([note survey](validation/note-survey-2026-11-07.md)). B evened the keys of
+three presets by 0.15-0.3 dB SD over C4-C6 but made the strings less even:
+the G string's lead over the four strings' mean 2.7-4.2 dB against 1.9-3.5,
+the cells' level SD 2.92-3.17 against 2.65-2.88, one pitch on two strings
+4.5-6.0 dB apart against 3.6-5.5. It brought Concert Mahogany's rocking mode
+near 638 Hz back to 0.34 and 0.21 s/kg at the A and G strings (0.13 and
+0.05 under A), and it failed `Aculele.Vibrato` and `Aculele.StringAxialForce` on
+notes at 587 Hz, 1.4 semitones under that mode; its bridge ratio alone failed
+`Aculele.ConstructionChange`'s piezo bound (54.3 dB under the chord against
+55).
+
+**Decided.** A, by the measurements above; nobody listened to B. The bank is
+a guitar's bridge stretched to a ukulele's top, and the consistent scaling
+does not make it play like one.
+
+**What it licensed.** `scalePlateBridgeResidues` keeps the uniform 1/A_p and
+its comment says why; `ukuleleTopMobilityRatio` stays 0.983. 0.4.46 ships
+the plate band's new lower edge (a mode belongs to the band when its
+cluster reaches 1 kHz) and one pass after the cluster draw that brings the
+band to its mean over each sixth of an octave, with the radiation shelves
+re-pinned for them to -2.88/-1.36/-1.16 dB and four presets' Output
+re-trimmed.
+
+**Listening set.** A/B of that plate band change (A 0.4.45, B 0.4.46; the A
+string chromatically to the 18th fret and back on Tenor Picked Melody and
+Concert Strum, RMS-matched, B trimmed +0.34 and -0.53 dB) was rendered to the
+project's files under `aculele/listening-tests/2026-11-07-plate-band/` with
+its `key.md`, not committed. Under the owner's standing rule the candidate is
+taken to win unless the owner says otherwise after listening; nobody had
+listened when 0.4.46 was committed.
+
 ## 2026-11-06 — the finger's shifts: level by ear, and no two alike, 0.4.45 (level chosen by the owner on Acustra; the variation chosen by the owner by ear)
 
 **What was decided.** These are Acustra 1.9.24's changes, ported (see its

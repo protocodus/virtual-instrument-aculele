@@ -21,7 +21,7 @@ namespace aculele
 {
 struct AculeleEngineTestAccess
 {
-    static void print(const AculeleEngine& engine, int shape, int wood)
+    static void print(const AculeleEngine& engine, int shape, int wood, double limitHz = 2000.0, std::size_t rowsKept = 10)
     {
         const auto& configuration = engine.bodyConfigurations_[
             static_cast<std::size_t>(4 * shape + wood)];
@@ -33,7 +33,7 @@ struct AculeleEngineTestAccess
             const double radius = std::hypot(mode.poleReal, mode.poleImaginary);
             const double angle = std::atan2(mode.poleImaginary, mode.poleReal);
             const double hz = angle * 48000.0 / (2.0 * 3.141592653589793);
-            if (hz <= 0.0 || hz > 2000.0 || radius >= 1.0)
+            if (hz <= 0.0 || hz > limitHz || radius >= 1.0)
                 continue;
             const double q = angle / (2.0 * (1.0 - radius));
             const double residue = std::hypot(mode.leftReal, mode.leftImaginary)
@@ -44,7 +44,7 @@ struct AculeleEngineTestAccess
         for (const auto& row : rows)
             strongest = std::max(strongest, row.level);
         std::sort(rows.begin(), rows.end(), [](const Row& a, const Row& b) { return a.level > b.level; });
-        rows.resize(std::min<std::size_t>(rows.size(), 10));
+        rows.resize(std::min<std::size_t>(rows.size(), rowsKept));
         std::sort(rows.begin(), rows.end(), [](const Row& a, const Row& b) { return a.hz < b.hz; });
         static const char* names[] { "Soprano", "Concert", "Tenor" };
         std::printf("%s (air mode %.0f Hz):\n", names[shape], configuration.airModeHz);
@@ -58,9 +58,12 @@ struct AculeleEngineTestAccess
 int main(int argc, char** argv)
 {
     const int wood = argc > 1 ? std::atoi(argv[1]) : 1;
+    // An optional upper limit in hertz lists every mode below it.
+    const double limitHz = argc > 2 ? std::atof(argv[2]) : 2000.0;
     auto engine = std::make_unique<aculele::AculeleEngine>();
     engine->prepare(48000.0, 256);
     for (int shape = 0; shape < 3; ++shape)
-        aculele::AculeleEngineTestAccess::print(*engine, shape, wood);
+        aculele::AculeleEngineTestAccess::print(*engine, shape, wood, limitHz,
+            argc > 2 ? 1000 : 10);
     return 0;
 }

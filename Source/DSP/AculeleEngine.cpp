@@ -994,9 +994,12 @@ constexpr bool guitarCaptureContour = ACULELE_GUITAR_CAPTURE_CONTOUR;
 // woods take their Shape's cut, so the woods keep their differences.
 // The concert and the tenor are assumed to fall as the soprano does; neither
 // is measured. Aculele.Radiation (Tools/AculeleRadiation.cpp) holds each
-// spruce body to the measured slope.
+// spruce body to the measured slope. The gains were re-pinned to it with
+// that check when the plate band took the modes its clusters reach under
+// 1 kHz and was brought flat after its draw (0.4.46), to -3.208, -3.202
+// and -3.207 dB per octave.
 constexpr std::array<float, 3> radiationTiltShelfHz { 1414.2f, 2828.4f, 5656.9f };
-constexpr std::array<float, 3> radiationTiltShelfDb { -2.09f, -1.75f, -1.44f };
+constexpr std::array<float, 3> radiationTiltShelfDb { -2.88f, -1.36f, -1.16f };
 
 std::array<std::complex<float>, 2> studioLowModeObservation(
     BodyShape shape, int sourceMode, float frequency, float q) noexcept
@@ -1537,12 +1540,19 @@ float piezoReferenceFor(const EngineParameters& parameters) noexcept
 }
 
 // A plate mode's bridge residues on a top of plateFrequency (1/A_p) times the
-// anchor's area. In saddleLeverArm's normalized bridge-span coordinates
-// u in [-1, 1], heave, cross and rock all have units of inverse modal mass
-// (1/m), because the physical derivative dphi/dy ~ A_p^-1/2 is multiplied by
-// the bridge half-span a ~ A_p^1/2. Scaling all three entries by 1/A_p
-// preserves the positive semidefinite residue matrix and matches the moment
-// radiation scaling in buildBodyConfiguration.
+// anchor's area. The lever arms are physical lengths (saddleLeverArm: 13.3 mm
+// string spacing over the archive's 21.6 mm half-separation, the same on
+// every body), and the mode shape's slope dphi/dy goes as A_p^-1/2, so the
+// scaling consistent with the equal-thickness law would take heave by 1/A_p,
+// the cross term by A_p^-1.5 and rock by A_p^-2. All three are scaled by
+// 1/A_p instead, on purpose: one positive scalar keeps the residue matrix
+// positive semidefinite, and the consistent scaling, re-measured on
+// 2026-11-07 (Docs/validation/note-survey-2026-11-07.md), brought back the
+// rocking mode near 638 Hz at 0.34 and 0.21 s/kg on the A and G strings and
+// left the strings less even (the G string's lead over the four strings'
+// mean 2.7-4.2 dB against 1.9-3.5, one pitch on two strings 4.5-6.0 dB apart
+// against 3.6-5.5). The bank is a guitar's bridge stretched to a ukulele's
+// top, so this is a pinned choice, not a derivation.
 void scalePlateBridgeResidues(detail::MeasuredBridgeMode& mode,
                               float plateFrequency) noexcept
 {
@@ -5943,8 +5953,12 @@ void AculeleEngine::buildBodyConfiguration(BodyConfiguration& configuration,
     // band, the low notes' included, by at most 1 dB and leaves the band's
     // mean power 0.5-1.1 dB lower, the peaks having held more of it than
     // the gaps they fill (chosen by ear, Docs/decisions.md). A mode broader
-    // than a third of an octave already spreads further and stays. The mode
-    // itself falls silent but keeps its pole and state, so a Shape that
+    // than a third of an octave already spreads further and stays. A mode
+    // belongs to the band when its cluster's span reaches it, so one within
+    // a sixth of an octave under 1 kHz joins too: a hard edge left the koa
+    // Tenor's 993 Hz mode a lone peak 10-25 dB over its clustered
+    // neighbours, and B5 on its A string 9 dB over the notes beside it. The
+    // mode itself falls silent but keeps its pole and state, so a Shape that
     // moves it out of the band finds it ringing.
     int bandEnd = count;
     {
@@ -5964,7 +5978,8 @@ void AculeleEngine::buildBodyConfiguration(BodyConfiguration& configuration,
             if (mode.poleImaginary == 0.0f)
                 continue;
             const float hz = std::atan2(mode.poleImaginary, mode.poleReal) * rate / twoPi;
-            if (hz >= plateBandLowHz && hz < plateBandHighHz && qOf(mode, hz) > spreadQ)
+            if (hz * sixthOctave >= plateBandLowHz && hz < plateBandHighHz
+                && qOf(mode, hz) > spreadQ)
                 spread[static_cast<std::size_t>(spreadCount++)] = { hz, index };
         }
         std::sort(spread.begin(), spread.begin() + spreadCount);
@@ -5976,23 +5991,29 @@ void AculeleEngine::buildBodyConfiguration(BodyConfiguration& configuration,
         // measured the ukulele's mobility flat across 1-6 kHz), and a
         // point-driven plate radiates a power independent of frequency below
         // coincidence (Cremer, Heckl and Petersson, Structure-Borne Sound).
-        std::array<float, bodyModeCount> cluster {};
+        // The band's power, its modes' four parts summed on a 5 Hz grid
+        // over 1-4.4 kHz, from the modes `included` lists, in that order;
+        // and its mean within a sixth of an octave either side of hz,
+        // clamped at the band's edges (0 where that window is empty).
+        constexpr double gridHz = 5.0;
+        constexpr int gridPoints = static_cast<int>(
+            (plateBandHighHz - plateBandLowHz) / gridHz);
+        std::array<double, gridPoints> power {};
+        std::array<int, bodyModeCount> included {};
+        const auto bandPower = [&] (int includedCount)
         {
-            constexpr double gridHz = 5.0;
-            constexpr int gridPoints = static_cast<int>(
-                (plateBandHighHz - plateBandLowHz) / gridHz);
-            std::array<double, gridPoints> power {};
             double mean = 0.0;
             for (int point = 0; point < gridPoints; ++point)
             {
+                power[static_cast<std::size_t>(point)] = 0.0;
                 const double at = plateBandLowHz + gridHz * (point + 0.5);
                 const std::complex<double> inverseZ = std::polar(1.0,
                     -2.0 * 3.14159265358979323846 * at / sampleRate);
                 std::array<std::complex<double>, 4> response {};
-                for (int item = 0; item < spreadCount; ++item)
+                for (int item = 0; item < includedCount; ++item)
                 {
                     const auto& mode = configuration.modes[static_cast<std::size_t>(
-                        spread[static_cast<std::size_t>(item)].second)];
+                        included[static_cast<std::size_t>(item)])];
                     const std::complex<double> pole(mode.poleReal, mode.poleImaginary);
                     const std::complex<double> direct = 1.0 / (1.0 - pole * inverseZ);
                     const std::complex<double> mirror = 1.0 / (1.0 - std::conj(pole) * inverseZ);
@@ -6010,17 +6031,28 @@ void AculeleEngine::buildBodyConfiguration(BodyConfiguration& configuration,
                     power[static_cast<std::size_t>(point)] += std::norm(part);
                 mean += power[static_cast<std::size_t>(point)] / gridPoints;
             }
+            return mean;
+        };
+        const auto localPower = [&] (float hz)
+        {
+            const int first = std::max(0, static_cast<int>(
+                (hz / sixthOctave - plateBandLowHz) / gridHz));
+            const int last = std::min(gridPoints, static_cast<int>(
+                (hz * sixthOctave - plateBandLowHz) / gridHz) + 1);
+            double local = 0.0;
+            for (int point = first; point < last; ++point)
+                local += power[static_cast<std::size_t>(point)];
+            return local / std::max(1, last - first);
+        };
+        std::array<float, bodyModeCount> cluster {};
+        {
+            for (int item = 0; item < spreadCount; ++item)
+                included[static_cast<std::size_t>(item)]
+                    = spread[static_cast<std::size_t>(item)].second;
+            const double mean = bandPower(spreadCount);
             for (int item = 0; item < spreadCount; ++item)
             {
-                const float hz = spread[static_cast<std::size_t>(item)].first;
-                const int first = std::max(0, static_cast<int>(
-                    (hz / sixthOctave - plateBandLowHz) / gridHz));
-                const int last = std::min(gridPoints, static_cast<int>(
-                    (hz * sixthOctave - plateBandLowHz) / gridHz) + 1);
-                double local = 0.0;
-                for (int point = first; point < last; ++point)
-                    local += power[static_cast<std::size_t>(point)];
-                local /= std::max(1, last - first);
+                const double local = localPower(spread[static_cast<std::size_t>(item)].first);
                 cluster[static_cast<std::size_t>(item)] = local > 0.0
                     ? static_cast<float>(mean / local) : 1.0f;
             }
@@ -6098,6 +6130,51 @@ void AculeleEngine::buildBodyConfiguration(BodyConfiguration& configuration,
             source.rightReal = source.rightImaginary = 0.0f;
             source.leftMomentReal = source.leftMomentImaginary = 0.0f;
             source.rightMomentReal = source.rightMomentImaginary = 0.0f;
+        }
+        // The cluster factor brings the source modes' power to the band's
+        // mean before the draw, but the members' random places and phases
+        // leave the realised band's local power a draw again: on the
+        // soprano a third of an octave could stand 3 dB over the mean. A
+        // plate's mean response is flat there (Elie et al. Fig. 5b, the
+        // ukulele's mobility flat across 1-6 kHz; Cremer, Heckl and
+        // Petersson for the radiated power), so one pass after the draw
+        // brings every sounding mode in the band, members and the modes left
+        // unspread alike, to the mean over a sixth of an octave either side
+        // of it: its residues take sqrt(mean / local). One pass, not
+        // iterated, so it evens the band's broad level and leaves the fine
+        // fluctuation between neighbouring modes that a real plate has.
+        {
+            int includedCount = 0;
+            for (int index = 0; index < bandEnd; ++index)
+            {
+                const auto& mode = configuration.modes[static_cast<std::size_t>(index)];
+                if (mode.poleImaginary == 0.0f)
+                    continue;
+                const float hz = std::atan2(mode.poleImaginary, mode.poleReal) * rate / twoPi;
+                if (hz >= plateBandLowHz && hz < plateBandHighHz)
+                    included[static_cast<std::size_t>(includedCount++)] = index;
+            }
+            const double mean = bandPower(includedCount);
+            std::array<float, bodyModeCount> gain {};
+            for (int item = 0; item < includedCount; ++item)
+            {
+                const auto& mode = configuration.modes[static_cast<std::size_t>(
+                    included[static_cast<std::size_t>(item)])];
+                const float hz = std::atan2(mode.poleImaginary, mode.poleReal) * rate / twoPi;
+                const double local = localPower(hz);
+                gain[static_cast<std::size_t>(item)] = local > 0.0
+                    ? static_cast<float>(std::sqrt(mean / local)) : 1.0f;
+            }
+            for (int item = 0; item < includedCount; ++item)
+            {
+                auto& mode = configuration.modes[static_cast<std::size_t>(
+                    included[static_cast<std::size_t>(item)])];
+                for (auto* residue : { &mode.leftReal, &mode.leftImaginary,
+                        &mode.rightReal, &mode.rightImaginary,
+                        &mode.leftMomentReal, &mode.leftMomentImaginary,
+                        &mode.rightMomentReal, &mode.rightMomentImaginary })
+                    *residue *= gain[static_cast<std::size_t>(item)];
+            }
         }
         configuration.count = bandEnd;
     }

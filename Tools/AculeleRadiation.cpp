@@ -32,6 +32,7 @@
 #include <cmath>
 #include <complex>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <vector>
@@ -40,7 +41,8 @@ namespace aculele
 {
 struct AculeleEngineTestAccess
 {
-    static std::vector<std::array<float, 2>> impulseResponse(int shape, int wood, int length)
+    static std::vector<std::array<float, 2>> impulseResponse(int shape, int wood, int length,
+                                                             bool moment = false)
     {
         auto engine = std::make_unique<AculeleEngine>();
         engine->prepare(48000.0, 256);
@@ -54,7 +56,9 @@ struct AculeleEngineTestAccess
         std::vector<std::array<float, 2>> response;
         for (int i = 0; i < length; ++i)
         {
-            const auto out = engine->bodyBank_.render(i == 0 ? 1.0f : 0.0f, 0.0f);
+            const auto out = moment
+                ? engine->bodyBank_.render(0.0f, i == 0 ? 1.0f : 0.0f)
+                : engine->bodyBank_.render(i == 0 ? 1.0f : 0.0f, 0.0f);
             response.push_back({ out.left, out.right });
         }
         return response;
@@ -116,6 +120,33 @@ int main(int argc, char** argv)
 {
     static const char* shapes[] { "Soprano", "Concert", "Tenor" };
     static const char* woods[] { "Spruce", "Mahogany", "Koa", "Cedar" };
+    if (argc == 4 && std::strcmp(argv[1], "--curve") == 0)
+    {
+        // The force and moment responses on a 1/48-octave grid, 150 Hz to
+        // 8 kHz: hz, left and right force response, left and right moment
+        // response, all in dB re 1.
+        constexpr int length = 32768;
+        constexpr double rate = 48000.0;
+        const int shape = std::atoi(argv[2]), wood = std::atoi(argv[3]);
+        const auto force = aculele::AculeleEngineTestAccess::impulseResponse(shape, wood, length);
+        const auto torque = aculele::AculeleEngineTestAccess::impulseResponse(shape, wood, length, true);
+        for (double hz = 150.0; hz < 8000.0; hz *= std::pow(2.0, 1.0 / 48.0))
+        {
+            const std::complex<double> step = std::polar(1.0, -6.283185307179586 * hz / rate);
+            std::complex<double> phasor(1.0, 0.0), fl, fr, ml, mr;
+            for (int i = 0; i < length; ++i)
+            {
+                fl += static_cast<double>(force[static_cast<std::size_t>(i)][0]) * phasor;
+                fr += static_cast<double>(force[static_cast<std::size_t>(i)][1]) * phasor;
+                ml += static_cast<double>(torque[static_cast<std::size_t>(i)][0]) * phasor;
+                mr += static_cast<double>(torque[static_cast<std::size_t>(i)][1]) * phasor;
+                phasor *= step;
+            }
+            const auto db = [] (const std::complex<double>& v) { return 20.0 * std::log10(std::abs(v) + 1e-12); };
+            std::printf("%.2f %.2f %.2f %.2f %.2f\n", hz, db(fl), db(fr), db(ml), db(mr));
+        }
+        return 0;
+    }
     if (argc == 2 && std::strcmp(argv[1], "--check") == 0)
     {
         constexpr double tolerance = 0.15;

@@ -52,3 +52,23 @@ level) is the per-note variation the rate change reseeds, not a direction.
 
 The engine is consistent across the host rates the Rack meets; the two
 faults were the survey's, and are fixed in the same commit as this report.
+
+## Block size
+
+Reason renders 64 frames at a time; the survey renders 256. With
+`AculeleNoteSurvey --block 64` (added for this) every one of the 574 notes
+at 48 kHz reads the same to the last digit of every column as at 256: the
+engine's control period does not follow the block.
+
+## The loss sections at the fundamental
+
+The Acukoto round found its copies of Acustra's loss sections
+(`constantLossSection`, `bendingLossSection`), fitted from the second
+partial up, taking an uncompensated bite out of the fundamental. Aculele
+keeps Acustra's arrangement: `configureVoice` and the tail's
+`updateTailHandLoss` divide both sections' magnitude at the playing
+frequency out of the loop gain (`loopGain = desiredPeriodGain /
+filterGain`), so the fundamental decays at `fundamentalT60` whatever the
+sections do above it. The single-note renders above show the fundamental's
+decay alike at 48 and 96 kHz (open C -8.2 dB/s at both; A string fret 5
+-26.4 and -29.0 dB/s, the body's coupling at that pitch).

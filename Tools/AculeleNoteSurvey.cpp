@@ -2,7 +2,7 @@
 // finding outliers in level, tone and resonance across the range:
 //
 //   AculeleNoteSurvey [--mode keys|strings] [--velocities 60,110] [--jobs N]
-//                     [--rate 48000] [--out note-survey.csv]
+//                     [--rate 48000] [--block 256] [--out note-survey.csv]
 //
 // keys (the default) plays every key from the tuning's lowest open string to
 // its highest open string's 18th fret on channel 1, the ordinary one-channel
@@ -12,8 +12,9 @@
 // string from open to the 18th fret. Each note is played alone after a reset,
 // held 1.6 s in a 2.5 s slot, through the preset exactly as shipped (room,
 // release noise, capture and Output included). 48 kHz unless --rate says
-// otherwise, 256-sample blocks; the analysis windows are in seconds, so a
-// survey at another rate measures the same thing.
+// otherwise, 256-sample blocks unless --block says otherwise (Reason renders
+// 64 at a time); the analysis windows are in seconds, so a survey at another
+// rate measures the same thing.
 //
 // Columns, per note:
 //  - level_db: K-weighted (ITU-R BS.1770, the stages designed at the rate)
@@ -61,7 +62,7 @@ namespace
 using namespace aculele;
 
 double rate = 48000.0; // --rate
-constexpr int block = 256;
+int block = 256; // --block
 constexpr int frets = 18;
 constexpr double pi = 3.14159265358979323846;
 
@@ -374,6 +375,8 @@ int main(int argc, char** argv)
             out = argv[i + 1];
         else if (!std::strcmp(argv[i], "--rate"))
             rate = std::max(8000.0, std::atof(argv[i + 1]));
+        else if (!std::strcmp(argv[i], "--block"))
+            block = std::max(1, std::atoi(argv[i + 1]));
         else if (!std::strcmp(argv[i], "--velocities"))
         {
             velocities.clear();

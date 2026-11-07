@@ -24,14 +24,19 @@
 //    centroid of the same spectrum;
 //  - f0_hz: the strongest peak within 1.5 semitones of the nominal pitch
 //    (A4 = 440 Hz) in the 0.3-1.0 s mono segment (Hann, 65536-point FFT,
-//    parabolic interpolation), and its error in cents;
+//    parabolic interpolation), and its error in cents; pitch_cents_error:
+//    the pitch the partials carry together, the amplitude-weighted mean of
+//    partials 1-5 each divided by its number (each the strongest peak within
+//    2.5% of its place on f0), in cents from nominal. A fundamental drained
+//    by a body resonance reads up to 10 cents off while the note's pitch,
+//    carried by the partials above it, moves a third of that;
 //  - spike_db: the strongest bin between 150 Hz and 6 kHz farther than 3%
 //    from every harmonic of f0, against the strongest bin within 3% of one.
 //    Harmonics up to 6 kHz count (at least 20), so a low note's 21st partial
 //    is not taken for a resonance.
 // stderr gets, per preset and velocity, the SD of level_db about a straight
 // line in note number, the largest residual and its note, and the note with
-// the largest spike_db.
+// the largest spike_db and the note whose pitch_cents_error is largest.
 
 #include "DSP/AculelePerformer.h"
 #include "DSP/AculelePresets.h"
@@ -145,7 +150,7 @@ std::vector<double> spectrum(const float* left, const float* right, std::size_t 
 struct Note
 {
     int velocity, string, fret, note;
-    double level, peak, level200, level1s, decay, bright, centroid, f0, cents, spike;
+    double level, peak, level200, level1s, decay, bright, centroid, f0, cents, pitch, spike;
 };
 
 Note measure(const std::vector<float>& left, const std::vector<float>& right, int velocity, int string,
@@ -200,6 +205,28 @@ Note measure(const std::vector<float>& left, const std::vector<float>& right, in
     }
     n.f0 = (static_cast<double>(best) + offset) * binHz;
     n.cents = 1200.0 * std::log2(n.f0 / nominal);
+    {
+        double weightedHz = 0.0, weights = 0.0;
+        for (int partial = 1; partial <= 5; ++partial)
+        {
+            const double centre = partial * n.f0;
+            const auto first = static_cast<std::size_t>(centre * 0.975 / binHz);
+            const auto last = std::min(p.size() - 2, static_cast<std::size_t>(centre * 1.025 / binHz) + 1);
+            if (first + 1 >= last)
+                break;
+            std::size_t peak = first;
+            for (std::size_t k = first; k <= last; ++k)
+                if (p[k] > p[peak])
+                    peak = k;
+            const double a = std::log(p[peak - 1] + 1e-300), b = std::log(p[peak] + 1e-300), c = std::log(p[peak + 1] + 1e-300);
+            const double d = a - 2.0 * b + c;
+            const double shift = d < 0.0 ? 0.5 * (a - c) / d : 0.0;
+            const double amplitude = std::sqrt(p[peak]);
+            weightedHz += amplitude * (static_cast<double>(peak) + shift) * binHz / partial;
+            weights += amplitude;
+        }
+        n.pitch = weights > 0.0 ? 1200.0 * std::log2(weightedHz / weights / nominal) : n.cents;
+    }
 
     const int harmonics = std::max(20, static_cast<int>(std::ceil(6000.0 / n.f0)));
     double harmonicPeak = 0.0, otherPeak = 0.0;
@@ -280,8 +307,11 @@ void summarise(const char* preset, int velocity, const std::vector<Note>& notes)
     double spread = 0.0, worst = 0.0;
     const Note* worstNote = &notes.front();
     const Note* spiky = &notes.front();
+    const Note* detuned = &notes.front();
     for (const auto& n : notes)
     {
+        if (std::fabs(n.pitch) > std::fabs(detuned->pitch))
+            detuned = &n;
         const double residual = n.level - (intercept + slope * n.note);
         spread += residual * residual / count;
         if (std::fabs(residual) > std::fabs(worst))
@@ -294,9 +324,10 @@ void summarise(const char* preset, int velocity, const std::vector<Note>& notes)
     }
     std::fprintf(stderr,
                  "%-32s v%-3d SD %4.2f dB (slope %+5.2f dB/st) | worst %+5.1f dB at note %d (s%d f%d) | "
-                 "spike %+5.1f dB at note %d (s%d f%d)\n",
+                 "spike %+5.1f dB at note %d (s%d f%d) | pitch %+5.1f c at note %d (s%d f%d)\n",
                  preset, velocity, std::sqrt(spread), slope, worst, worstNote->note, worstNote->string,
-                 worstNote->fret, spiky->spike, spiky->note, spiky->string, spiky->fret);
+                 worstNote->fret, spiky->spike, spiky->note, spiky->string, spiky->fret,
+                 detuned->pitch, detuned->note, detuned->string, detuned->fret);
 }
 } // namespace
 
@@ -341,14 +372,14 @@ int main(int argc, char** argv)
         return 1;
     }
     std::fprintf(file, "mode,preset,velocity,string,fret,note,level_db,peak_dbfs,level_200ms_db,level_1s_db,"
-                       "decay_db_per_s,bright_db,centroid_hz,f0_hz,f0_cents_error,spike_db\n");
+                       "decay_db_per_s,bright_db,centroid_hz,f0_hz,f0_cents_error,pitch_cents_error,spike_db\n");
     for (std::size_t job = 0; job < pairs; ++job)
     {
         const char* preset = factoryPresets[job / velocities.size()].slug;
         for (const auto& n : results[job])
-            std::fprintf(file, "%s,%s,%d,%d,%d,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.1f,%.3f,%.2f,%.2f\n",
+            std::fprintf(file, "%s,%s,%d,%d,%d,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.1f,%.3f,%.2f,%.2f,%.2f\n",
                          tab ? "strings" : "keys", preset, n.velocity, n.string, n.fret, n.note, n.level, n.peak,
-                         n.level200, n.level1s, n.decay, n.bright, n.centroid, n.f0, n.cents, n.spike);
+                         n.level200, n.level1s, n.decay, n.bright, n.centroid, n.f0, n.cents, n.pitch, n.spike);
         summarise(preset, velocities[job % velocities.size()], results[job]);
     }
     std::fclose(file);

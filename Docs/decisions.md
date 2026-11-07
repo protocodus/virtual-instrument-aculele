@@ -5,6 +5,41 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-11-07 — the top keeps the guitar's thickness; a 0.848 thickness pin is not taken (decided by measurement, not by ear)
+
+**What was decided.** Whether the scaled guitar banks keep the guitar's top
+thickness (the plate law, f ~ 1/A_p, m ~ A_p) or take one ukulele top
+thickness relative to it, h, so that f ~ h/A_p and m ~ A_p h, to bring T1
+down to the measured ukuleles (Sunta's concert at 395 Hz).
+
+**The candidates.**
+
+- A, the shipping engine (0.4.46): the guitar's thickness.
+- B: h = 0.848, pinned so Concert Mahogany's T1 reads 395 Hz, with the bridge
+  ratio re-pinned 0.983 to 0.818, the radiation shelves to -1.95/-1.13/-1.36
+  dB, the levels rewritten and five presets' Output re-trimmed. Measured with
+  it, the plate band's count scaled by top area (Elie et al.'s Eq. 4).
+
+**Decided.** A, by the measurements
+([validation](validation/top-thickness-2026-11-07.md)); B and the density
+change are rejected, and nobody listened. B turned `Aculele.Tuning`,
+`Vibrato`, `StringAxialForce` and `FingerLookahead` red at their limits, moved
+the concert's T1 coincidence from the open A to the open G (0.27 s/kg at
+394 Hz) instead of removing it, made both Low G tenors less even (level SD
+2.3 to 2.7 and 2.0 to 2.5 dB, steps up to 10 dB) and less in tune (worst
+fundamental 10-12 cents against 6-8), and moved A0 away from the three
+measured tenors. The density change needs 244-271 of the 232 body slots on
+the concert and tenor and did not bring their fluctuation toward the
+measured soprano's.
+
+**What it licensed.** Nothing ships; the engine, levels and presets stay at
+0.4.46. The concert's T1 on its open A stays a known gap. A later attempt
+must first solve the coupled polarisation tuning and vibrato near T1, and
+move the box or the string set with T1 so it does not land on another open
+string.
+
+The earlier 2026-11-07 entries stand.
+
 ## 2026-11-07 — the bridge's plate-mode residues keep the uniform 1/A_p scaling, 0.4.46 (decided by measurement, not by ear)
 
 **What was decided.** How `scalePlateBridgeResidues` scales a plate mode's

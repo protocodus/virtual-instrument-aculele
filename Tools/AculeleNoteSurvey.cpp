@@ -2,7 +2,7 @@
 // finding outliers in level, tone and resonance across the range:
 //
 //   AculeleNoteSurvey [--mode keys|strings] [--velocities 60,110] [--jobs N]
-//                     [--out note-survey.csv]
+//                     [--rate 48000] [--out note-survey.csv]
 //
 // keys (the default) plays every key from the tuning's lowest open string to
 // its highest open string's 18th fret on channel 1, the ordinary one-channel
@@ -11,11 +11,13 @@
 // strings plays tab (CC126 = 4 on channel 1, a string per channel): every
 // string from open to the 18th fret. Each note is played alone after a reset,
 // held 1.6 s in a 2.5 s slot, through the preset exactly as shipped (room,
-// release noise, capture and Output included). 48 kHz, 256-sample blocks.
+// release noise, capture and Output included). 48 kHz unless --rate says
+// otherwise, 256-sample blocks; the analysis windows are in seconds, so a
+// survey at another rate measures the same thing.
 //
 // Columns, per note:
-//  - level_db: K-weighted (ITU-R BS.1770) power of both channels over the
-//    first second, as Tools/AculeleEvenness.cpp; level_200ms_db over 0-200 ms
+//  - level_db: K-weighted (ITU-R BS.1770, the stages designed at the rate)
+//    power of both channels over the first second, as Tools/AculeleEvenness.cpp; level_200ms_db over 0-200 ms
 //    and level_1s_db over 900-1100 ms; decay_db_per_s is their difference
 //    over 0.85 s, a rough decay rate of the held note;
 //  - peak_dbfs: the largest |sample| of either channel;
@@ -58,9 +60,8 @@ namespace
 {
 using namespace aculele;
 
-constexpr double rate = 48000.0;
+double rate = 48000.0; // --rate
 constexpr int block = 256;
-constexpr long slot = 120000, hold = 76800; // 2.5 s, 1.6 s
 constexpr int frets = 18;
 constexpr double pi = 3.14159265358979323846;
 
@@ -79,13 +80,35 @@ void parallel(std::size_t count, int jobs, const std::function<void(std::size_t)
 
 double decibels(double power) { return 10.0 * std::log10(std::max(power, 1.0e-30)); }
 
-// BS.1770's two K-weighting stages at 48 kHz.
+// BS.1770's two K-weighting stages, designed at the survey's rate from the
+// analogue prototypes the standard's 48 kHz tables come from (a +4 dB shelf
+// at 1682 Hz, Q 0.707, and a 38.1 Hz second-order high-pass, Q 0.5; the
+// constants are the ones that reproduce the published 48 kHz coefficients to
+// 1e-15). At 48 kHz the stages are the standard's tables exactly.
 double kWeightedPower(const float* x, std::size_t begin, std::size_t end)
 {
-    constexpr double b1[3] { 1.53512485958697, -2.69169618940638, 1.19839281085285 };
-    constexpr double a1[3] { 1.0, -1.69065929318241, 0.73248077421585 };
-    constexpr double b2[3] { 1.0, -2.0, 1.0 };
-    constexpr double a2[3] { 1.0, -1.99004745483398, 0.99007225036621 };
+    double b1[3], a1[3], b2[3], a2[3];
+    {
+        const double gainDb = 3.999843853973347, q = 0.7071752369554196;
+        const double k = std::tan(pi * 1681.974450955533 / rate);
+        const double vh = std::pow(10.0, gainDb / 20.0), vb = std::pow(vh, 0.4996667741545416);
+        const double a0 = 1.0 + k / q + k * k;
+        b1[0] = (vh + vb * k / q + k * k) / a0;
+        b1[1] = 2.0 * (k * k - vh) / a0;
+        b1[2] = (vh - vb * k / q + k * k) / a0;
+        a1[0] = 1.0;
+        a1[1] = 2.0 * (k * k - 1.0) / a0;
+        a1[2] = (1.0 - k / q + k * k) / a0;
+    }
+    {
+        const double q = 0.5003270373238773;
+        const double k = std::tan(pi * 38.13547087602444 / rate);
+        const double a0 = 1.0 + k / q + k * k;
+        b2[0] = 1.0; b2[1] = -2.0; b2[2] = 1.0;
+        a2[0] = 1.0;
+        a2[1] = 2.0 * (k * k - 1.0) / a0;
+        a2[2] = (1.0 - k / q + k * k) / a0;
+    }
     double s1[2] {}, s2[2] {}, sum = 0.0;
     // The filters run from the note's start so a later window is not a cold start.
     for (std::size_t i = 0; i < end; ++i)
@@ -132,10 +155,14 @@ void fft(std::vector<std::complex<double>>& x)
 }
 
 // The power spectrum of the channels' mean over [begin, end), Hann-windowed.
+// size: the FFT's length at 48 kHz; at another rate it grows to the power of
+// two that keeps the same window in seconds, so the resolution in Hz holds.
 std::vector<double> spectrum(const float* left, const float* right, std::size_t begin, std::size_t end,
                              std::size_t size)
 {
     const std::size_t length = end - begin;
+    while (size < length)
+        size *= 2;
     std::vector<std::complex<double>> x(size);
     for (std::size_t i = 0; i < length; ++i)
         x[i] = 0.5 * (static_cast<double>(left[begin + i]) + right[begin + i])
@@ -175,7 +202,7 @@ Note measure(const std::vector<float>& left, const std::vector<float>& right, in
         double above = 0.0, total = 0.0, weighted = 0.0;
         for (std::size_t k = 0; k < p.size(); ++k)
         {
-            const double f = static_cast<double>(k) * rate / 16384.0;
+            const double f = static_cast<double>(k) * rate / static_cast<double>(2 * (p.size() - 1));
             total += p[k];
             weighted += p[k] * f;
             if (f > 2500.0)
@@ -185,9 +212,8 @@ Note measure(const std::vector<float>& left, const std::vector<float>& right, in
         n.centroid = weighted / total;
     }
 
-    constexpr std::size_t size = 65536;
-    const double binHz = rate / static_cast<double>(size);
-    const auto p = spectrum(left.data(), right.data(), ms(0.3), ms(1.0), size);
+    const auto p = spectrum(left.data(), right.data(), ms(0.3), ms(1.0), 65536);
+    const double binHz = rate / static_cast<double>(2 * (p.size() - 1));
     const double nominal = 440.0 * std::pow(2.0, (note - 69) / 12.0);
     const double ratio = std::pow(2.0, 1.5 / 12.0);
     auto lo = static_cast<std::size_t>(nominal / ratio / binHz), hi = static_cast<std::size_t>(nominal * ratio / binHz) + 1;
@@ -249,7 +275,8 @@ std::vector<Note> play(const FactoryPreset& preset, int velocity, bool tab)
     performer->prepare(rate, block);
     performer->setParameters(parameters);
     performer->setTempoBpm(120.0);
-    std::vector<float> left(slot), right(slot);
+    const auto slot = static_cast<long>(2.5 * rate), hold = static_cast<long>(1.6 * rate);
+    std::vector<float> left(static_cast<std::size_t>(slot)), right(static_cast<std::size_t>(slot));
     if (tab)
     {
         performer->beginBlock(left.data(), right.data(), block);
@@ -345,6 +372,8 @@ int main(int argc, char** argv)
             tab = !std::strcmp(argv[i + 1], "strings");
         else if (!std::strcmp(argv[i], "--out"))
             out = argv[i + 1];
+        else if (!std::strcmp(argv[i], "--rate"))
+            rate = std::max(8000.0, std::atof(argv[i + 1]));
         else if (!std::strcmp(argv[i], "--velocities"))
         {
             velocities.clear();

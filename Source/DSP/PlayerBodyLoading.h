@@ -13,7 +13,8 @@ namespace aculele::detail
 // and mechanical residues stay fixed, so each positive-real bridge mode
 // retains its positive-semidefinite residue matrix. This helper runs only
 // while configuring a body or building the tuning observer, never per sample.
-inline float playerLoadedBodyQ(float frequency, float q, bool enabled) noexcept
+inline float playerLoadedBodyQ(float frequency, float q, bool enabled,
+                               float participation = 1.0f) noexcept
 {
     if (!enabled)
         return q;
@@ -22,6 +23,6 @@ inline float playerLoadedBodyQ(float frequency, float q, bool enabled) noexcept
         * (700.0f * 700.0f) / (f2 + 700.0f * 700.0f);
     const float forearm = 0.002f * f2 / (f2 + 300.0f * 300.0f)
         * (1800.0f * 1800.0f) / (f2 + 1800.0f * 1800.0f);
-    return q / (1.0f + q * (torso + forearm));
+    return q / (1.0f + q * participation * (torso + forearm));
 }
 } // namespace aculele::detail

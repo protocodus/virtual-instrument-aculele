@@ -1098,6 +1098,18 @@ struct ModalPole
     float q;
 };
 
+float loadedRadiationQ(ModalPole pole, const BodyShapeMorph& morph,
+                       int index, bool playerLoading) noexcept
+{
+    // The forearm and torso load the smaller top's dominant plate motion
+    // more strongly as its driving-point participation increases. Scale the
+    // authored contact loss by the same inverse-modal-mass and participation
+    // ratio as T1's bridge residue. This keeps a matched pole for the bridge
+    // and microphones without moving the wood/shape resonance or its residue.
+    const float participation = index == morph.t1Index ? morph.t1BridgeLevel : 1.0f;
+    return detail::playerLoadedBodyQ(pole.frequency, pole.q, playerLoading, participation);
+}
+
 std::complex<float> radiationDigitalPole(float frequency, float q, float rate) noexcept
 {
     const float radius = std::exp(-pi * frequency / (q * rate));
@@ -1412,6 +1424,19 @@ struct UkuleleStringLoss
     float highMix;
 };
 
+// An open string's nut is lossy even when the finger is off the board.
+// Reuse the former 0.0074 dB round-trip support loss on the open branch.
+// The stopped string keeps the 0.022 dB fitted to the sampled ukuleles.
+// Both the live string and the resting strings in the tuning calculation
+// must have the same loss for the open-string resonance.
+float withStringStopLoss(float t60, float frequency, float fretContact) noexcept
+{
+    constexpr float nutLossDb = 0.0074f;
+    constexpr float fretLossDb = 0.022f;
+    const float lossDb = (1.0f - fretContact) * nutLossDb + fretContact * fretLossDb;
+    return 1.0f / (1.0f / t60 + lossDb / 60.0f * frequency);
+}
+
 UkuleleStringLoss ukuleleStringLoss(const EngineParameters& parameters,
                                     int stringIndex, float tension,
                                     float soundingLength, float frequency) noexcept
@@ -1616,7 +1641,7 @@ ModalPole steelOwnBridgePole(std::size_t index,
     {
         auto pole = radiationPole(detail::measuredSteelBodyModes, twin, anchor,
                                   morph, wood, calibration);
-        pole.q = detail::playerLoadedBodyQ(pole.frequency, pole.q, playerLoading);
+        pole.q = loadedRadiationQ(pole, morph, twin, playerLoading);
         return pole;
     }
     const float lowModeMorph = anchorModeFactor(anchor, source.frequency,
@@ -1868,7 +1893,7 @@ void visitSteelBlendBridge(float a0, float t1, float plate, float t1UpperHz,
                 anchor, jointMorph, wood, calibration);
             auto placed = steelJointBridgeModes[index];
             placed.frequency = pole.frequency;
-            placed.q = detail::playerLoadedBodyQ(pole.frequency, pole.q, playerLoading);
+            placed.q = loadedRadiationQ(pole, jointMorph, source, playerLoading);
             // The class radiationPole gave the twin; a plate mode takes the
             // top's mass as B's do (shapeBridgeMode).
             if (steelJointRadiationModes[static_cast<std::size_t>(source)].frequency
@@ -4971,6 +4996,7 @@ void AculeleEngine::prepare(double sampleRate, int)
 void AculeleEngine::reset() noexcept
 {
     restartRandomDraws();
+    handGestures_.restart();
     resetSoundState();
     palmMute_ = targetPalmMute_;
     pitchBendSemitones_.fill(0.0f);
@@ -5062,6 +5088,8 @@ void AculeleEngine::resetSoundState() noexcept
 {
     idleQuietSamples_ = 0;
     idleFlushed_ = true;
+    handGestures_.clear();
+    muteIdleSamples_ = 0;
     resetPiezo();
     micDelayLeft_.fill(0.0f);
     micDelayRight_.fill(0.0f);
@@ -5525,8 +5553,7 @@ std::array<float, 2> AculeleEngine::radiationModePole(
         targetBodyFor(parameters.shape), parameters.bodyMaterial);
     const auto pole = radiationPole(bank, index, anchor, morph,
         woodFactorsFor(parameters.bodyMaterial), calibration);
-    return { pole.frequency,
-             detail::playerLoadedBodyQ(pole.frequency, pole.q, playerLoading) };
+    return { pole.frequency, loadedRadiationQ(pole, morph, index, playerLoading) };
 }
 
 WoodPhysicalProperties AculeleEngine::bodyWoodProperties(BodyMaterial material) noexcept
@@ -5712,8 +5739,7 @@ void AculeleEngine::buildBodyConfiguration(BodyConfiguration& configuration,
             / 120.0f) / 6.0f, 0.0f, 1.0f);
         // A body stays against the player throughout a held note and its
         // release. This fixed passive loss is not a key-up envelope.
-        const float q = detail::playerLoadedBodyQ(engine.frequency, engine.q,
-                                                 performanceRealism_.playerBodyLoading);
+        const float q = loadedRadiationQ(engine, morph, index, performanceRealism_.playerBodyLoading);
         const auto pole = radiationDigitalPole(frequency, q, static_cast<float>(sampleRate));
         mode.poleReal = pole.real();
         mode.poleImaginary = audibleAtThisRate ? pole.imag() : 0.0f;
@@ -6993,7 +7019,7 @@ AculeleEngine::restingStringModels() noexcept
         model.delay = clamp(rawDelay - bridgePhaseDelay(bridgePortMobility(frequency, string), frequency, string),
             3.0f, static_cast<float>(activeDelaySamples() - 3));
         model.impedance = stringImpedance(parameters_, string, notes[index]) * masterTuneRatio_;
-        const float fundamentalT60 = loss.fundamentalT60;
+        const float fundamentalT60 = withStringStopLoss(loss.fundamentalT60, frequency, 0.0f);
         const float desiredGain = std::pow(0.001f, 1.0f / std::max(fundamentalT60 * frequency, 1.0f));
         const float lossOmega = static_cast<float>(referenceLossOmega(omega, sampleRate_));
         const float filterGain = magnitudeForOnePoleMix(highCoefficient, model.highMix, lossOmega)
@@ -7577,26 +7603,21 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
     dispersion.used[2] = voice.dispersionDesign.decayRatios[2] > 0.0f;
     // Woodhouse and Lynch-Aird's law already follows the stopped string's
     // pitch, so steel's fitted fret slope is not carried over.
-    float fundamentalT60 = ukuleleLoss.fundamentalT60;
     // A stopped string ends at the fret with the fingertip pressed on it just
     // behind, and the pad takes a little of every wave that reaches that end;
     // an open string ends on the bone nut. In all five sampled ukuleles
     // (Docs/validation/sample-pack-benchmark-2026-10-29.md, Open and
     // fretted) the open strings' partials ring 1.15-1.46 times as long as
     // fretted notes' at the same frequency, and C4, open on any ukulele,
-    // 1.17-1.86 times; Aculele's rang 1.01-1.06 times. That loss replaces
-    // Acustra's authored 0.0074 dB per round trip, which every string, open
-    // or stopped, lost alike. Its size, per round trip at the stop, is
-    // fitted to those recordings (open notes now ring 1.15-1.32 times as
-    // long on nylon); no fingertip impedance has been measured. One loss per
+    // 1.17-1.86 times; Aculele's rang 1.01-1.06 times. The extra loss is
+    // fitted to those recordings. In the original calibration the nut had
+    // no loss, and open notes rang 1.15-1.32 times as long on nylon. No
+    // fingertip impedance has been measured. One loss per
     // round trip takes every partial alike, so the low ones, which the string
     // itself loses least, lose the most of their ring, as the recordings' do
     // (1.5 times under 700 Hz, 1.2 above 1.8 kHz). Rates add.
-    constexpr float fretStopLossDb = 0.022f;
     const float fretStop = frettingContactWeight(soundingLength, voice.harmonic);
-    if (fretStop > 0.0f)
-        fundamentalT60 = 1.0f / (1.0f / fundamentalT60
-            + fretStop * fretStopLossDb / 60.0f * frequency);
+    float fundamentalT60 = withStringStopLoss(ukuleleLoss.fundamentalT60, frequency, fretStop);
     if (handRate > 0.0f)
         fundamentalT60 = 1.0f / (1.0f / fundamentalT60 + handRate);
     const float rawDelay = static_cast<float>(tunedLoopDelay(
@@ -9911,11 +9932,14 @@ void AculeleEngine::beginRelease(Voice& voice, int stringIndex) noexcept
     // Dissipative rates add. Blending T60 itself would give an intermediate
     // contact less loss than the same weighted open/fretted damping rates.
     // A stopped note still damps faster than an open catch. The gentler pad
-    // contact uses the time already reached by a slow MIDI release; it halves
-    // the former open/fretted loss-rate jump without erasing the distinction.
-    const float nominalReleaseSeconds = fretContact == 0.0f ? 1.25f
-        : fretContact == 1.0f ? 0.32f
-        : 1.0f / ((1.0f - fretContact) / 1.25f + fretContact / 0.32f);
+    // contact takes twice as long as the fretting hand's catch. It was 1.25 s
+    // on the open string, leaving the lowest notes audible well after key-up.
+    constexpr float openReleaseSeconds = 0.64f;
+    constexpr float frettedReleaseSeconds = 0.32f;
+    const float nominalReleaseSeconds = fretContact == 0.0f ? openReleaseSeconds
+        : fretContact == 1.0f ? frettedReleaseSeconds
+        : 1.0f / ((1.0f - fretContact) / openReleaseSeconds
+                  + fretContact / frettedReleaseSeconds);
     // An explicit fast key-up represents a firm damping contact; a slow
     // one a gentler contact. This is a bounded performance map, not a fit
     // to recordings (the sustained-note corpora carry no release gesture).
@@ -12623,7 +12647,8 @@ void AculeleEngine::setLowerZoneMemberCount(int memberCount) noexcept
         sustainPedals_[static_cast<std::size_t>(midiChannel - 1)] = false;
     }
     lowerZoneMemberCount_ = next;
-    if (getActiveVoiceCount() == 0)
+    handGestures_.stopChannels(1, lastAffectedChannel);
+    if (getActiveVoiceCount() == 0 && !handGestures_.active())
     {
         for (int string = 0; string < stringCount; ++string)
             returnToOpenString(voices_[static_cast<std::size_t>(string)], string, true);
@@ -12676,7 +12701,9 @@ void AculeleEngine::allSoundOff(int midiChannel) noexcept
         if (voice.played && channelControlsVoice(midiChannel, voice))
             returnToOpenString(voice, string, true);
     }
-    if (getActiveVoiceCount() == 0)
+    const int lastChannel = isLowerZoneMaster(midiChannel) ? lowerZoneMemberCount_ + 1 : midiChannel;
+    handGestures_.stopChannels(midiChannel, lastChannel);
+    if (getActiveVoiceCount() == 0 && !handGestures_.active())
     {
         for (int string = 0; string < stringCount; ++string)
             returnToOpenString(voices_[static_cast<std::size_t>(string)], string, true);
@@ -12687,6 +12714,60 @@ void AculeleEngine::allSoundOff(int midiChannel) noexcept
         pickingGestureSeen_ = false;
         pickingGestureOriginSample_ = sampleClock_;
         pickingGestureSample_ = sampleClock_;
+    }
+}
+
+void AculeleEngine::playHandGesture(HandGesture gesture, float velocity, int midiChannel) noexcept
+{
+    if (!prepared_ || midiChannel < 1 || midiChannel > midiChannelCount
+        || !handGestures_.trigger(gesture, velocity, midiChannel, sampleRate_))
+        return;
+    suspended_ = false;
+    idleFlushed_ = false;
+    idleQuietSamples_ = 0;
+
+    if (gesture != HandGesture::MuteStrings)
+        return;
+
+    // A firm landing damps faster than a soft touch. This authored hand
+    // contact has a 45–82 ms T60 and holds open/sympathetic strings for a
+    // little longer. The existing body, room, and fast repluck tails ring
+    // through; the hand dissipates energy only at the string loops.
+    const float seconds = 0.082f - 0.037f * clamp(velocity, 0.0f, 1.0f);
+    muteIdleSamples_ = static_cast<int>(0.16 * sampleRate_);
+    anticipations_.fill({});
+    hand_.fill({});
+    for (auto& voice : voices_)
+    {
+        voice.muteIdleDamping = handDamping(seconds, tunedMidiFrequency(voice.openMidi));
+        if (!voice.played)
+            continue;
+
+        // Let a pluck already in flight run under the hand loss. Cancel a
+        // strum member the pick has yet to reach, including a held repluck.
+        voice.pluckDelay = 0;
+        voice.repluckPending = false;
+        voice.repluckContactPending = false;
+        voice.releaseAfterPluck = false;
+        voice.pedalHeldAtKeyUp = false;
+        voice.pedalReleasedBeforePluck = false;
+        voice.heldShapeOwners = 0u;
+        voice.ownerCount = 0;
+        freezeMemberPitchBend(voice);
+        voice.keyDown = false;
+        voice.pedalHeld = false;
+        voice.releaseJoinPending = false;
+        voice.releaseJoinRemainingBeats = 0.0;
+        voice.releaseVelocity = -1.0f;
+        if (voice.contactTravelEnabled)
+            voice.excitationEnvelope = 0.0f;
+        voice.releaseSeconds = voice.releaseSeconds > 0.0f
+            ? std::min(seconds, voice.releaseSeconds) : seconds;
+        voice.releaseDamping = handDamping(voice.releaseSeconds, loopFundamental(voice));
+        const int handBack = static_cast<int>((voice.releaseSeconds + 0.055f) * sampleRate_);
+        voice.returnSamples = voice.returnSamples > 0
+            ? std::min(handBack, voice.returnSamples) : handBack;
+        beginGestureDamping(voice);
     }
 }
 
@@ -15298,7 +15379,7 @@ bool AculeleEngine::suspend() noexcept
     // engine that was never suspended. Clearing the residue sooner, while
     // it was under -120 dBFS at the output, changed a chord struck seconds
     // later by up to 6e-4 (2026-10-12 decision).
-    if (!prepared_ || !idleFlushed_)
+    if (!prepared_ || !idleFlushed_ || handGestures_.active())
         return false;
     for (const auto& voice : voices_)
         if (voice.played || voice.keyDown || voice.pedalHeld
@@ -15412,6 +15493,9 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
         float piezoImpedance1 = 0.0f;
         float axialBodyForce = 0.0f, axialBodyMoment = 0.0f, axialPiezoForce = 0.0f;
         const float saddleHeight = saddleHeightRatio();
+        const bool muteIdleStrings = muteIdleSamples_ > 0;
+        if (muteIdleStrings)
+            --muteIdleSamples_;
         for (int string = 0; string < stringCount; ++string)
         {
             auto& voice = voices_[static_cast<std::size_t>(string)];
@@ -15423,10 +15507,10 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
                     --voice.pluckDelay;
             }
             processPendingRelease(voice, string);
-            float releaseGain = (voice.keyDown || voice.pedalHeld
-                                 || voice.releaseJoinPending
-                                 || voice.releaseAfterPluck || !voice.played)
-                ? 1.0f : voice.releaseDamping;
+            const float releaseGain = !voice.played
+                ? (muteIdleStrings ? voice.muteIdleDamping : 1.0f)
+                : ((voice.keyDown || voice.pedalHeld || voice.releaseJoinPending
+                    || voice.releaseAfterPluck) ? 1.0f : voice.releaseDamping);
             // A bend is a tension change, so the port this string presents
             // moves with it. The junction sums impedances every sample and a
             // whole-tone bend moves this one by 12%; followed at the delay's
@@ -15852,10 +15936,25 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
         // physical model. Sending it through displacement-wave derivatives
         // or transverse loss would attenuate precisely the handling modes
         // a soft fingertip excites. The zero branch retains baseline bits.
-        const BodyOutput body = axialBodyForce == 0.0f && axialBodyMoment == 0.0f
+        const bool handContact = handGestures_.active();
+        HandGestureSource::Drive contact {};
+        if (handContact)
+        {
+            contact = handGestures_.render();
+            axialBodyForce += contact.force;
+            axialBodyMoment += contact.moment;
+            axialPiezoForce += contact.pickup;
+        }
+        BodyOutput body = axialBodyForce == 0.0f && axialBodyMoment == 0.0f
             ? renderBody(lastBridgeBodyForce_ + 0.0f, bodyMomentRate)
             : renderBody(lastBridgeBodyForce_ + axialBodyForce,
                          bodyMomentRate + axialBodyMoment);
+        if (handContact)
+        {
+            body.left += contact.air + contact.side;
+            body.right += contact.air - contact.side;
+            body.upper += contact.air;
+        }
         const float bodyScale = 0.68f + 0.72f * bodyAmount_;
         const float monoBody = 0.5f * (body.left + body.right);
         const float spreadLeft = monoBody + width_ * (body.left - monoBody);
@@ -16643,7 +16742,7 @@ void AculeleEngine::processIdleFlush(float samplePeak) noexcept
     }
     if (idleFlushed_)
         return;
-    bool idle = true;
+    bool idle = !handGestures_.active();
     for (const auto& voice : voices_)
         idle = idle && !voice.played && !voice.keyDown && !voice.pedalHeld
             && !voice.tailActive && voice.pluckDelay == 0

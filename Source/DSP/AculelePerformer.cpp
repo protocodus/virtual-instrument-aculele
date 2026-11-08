@@ -1055,9 +1055,8 @@ bool Performer::handleEvent(int eventSample, const std::uint8_t* data,
             || (status == 0x90u && size >= 3 && (data[2] & 0x7fu) == 0u));
     if ((positiveNoteOn || noteOff) && isKeyswitch(static_cast<int>(data[1] & 0x7fu)))
     {
-        // A keyswitch is a controller: it acts
-        // at once, ahead of its sample's Note Ons, on every channel, and
-        // its key-up is nothing but the chuck's end.
+        // Keyswitches act before the played notes at their sample. Only
+        // Chuck uses key-up; one-shot noises never enter a chord group.
         const int note = static_cast<int>(data[1] & 0x7fu);
         if (note == keyswitchChuck)
             chuck_ = positiveNoteOn;
@@ -1065,6 +1064,17 @@ bool Performer::handleEvent(int eventSample, const std::uint8_t* data,
         {
             if (note == keyswitchSustain)
                 setKeyswitchSustain(!keyswitchSustain_);
+            else if (isHandGesture(note))
+            {
+                engine_.playHandGesture(static_cast<HandGesture>(note - keyswitchStringBrush),
+                    static_cast<float>(data[2] & 0x7fu) / 127.0f, midiChannel);
+                if (note == keyswitchMuteStrings)
+                {
+                    portamentoSources_.fill(-1);
+                    for (auto& channel : liftedKeys_)
+                        channel.fill({});
+                }
+            }
             else
                 strokeMode_ = note == keyswitchDownstroke ? StrokeMode::Down
                             : note == keyswitchUpstroke ? StrokeMode::Up
@@ -1155,7 +1165,7 @@ void Performer::anticipateHeldNotes() noexcept
             continue;
         std::array<AculeleEngine::ReleasingKey, AculeleEngine::stringCount> releasing {};
         int releasingCount = 0;
-        bool connected = false;
+        bool skipAnticipation = false;
         for (int other = 0; other < heldCount_; ++other)
         {
             const auto& event = held_[static_cast<std::size_t>(other)];
@@ -1166,16 +1176,22 @@ void Performer::anticipateHeldNotes() noexcept
             const int eventChannel = static_cast<int>(event.bytes[0] & 0x0fu) + 1;
             const int data1 = static_cast<int>(event.bytes[1] & 0x7fu);
             const int data2 = static_cast<int>(event.bytes[2] & 0x7fu);
-            if (status == 0xb0u && eventChannel == channel && other < index
-                && ((data1 == 65 && data2 >= 64) || data1 == 84))
-                connected = true;
+            // The mute hand interrupts the old fret movement, regardless of
+            // MIDI channel. A note after it gets a new ordinary contact.
+            if ((status == 0x90u && data1 == keyswitchMuteStrings && data2 > 0)
+                || (status == 0xb0u && eventChannel == channel && other < index
+                    && ((data1 == 65 && data2 >= 64) || data1 == 84)))
+            {
+                skipAnticipation = true;
+                break;
+            }
             // Only a string a key holds now can be freed.
             if ((status == 0x80u || (status == 0x90u && data2 == 0))
                 && releasingCount < AculeleEngine::stringCount
                 && engine_.heldString(data1, eventChannel) >= 0)
                 releasing[static_cast<std::size_t>(releasingCount++)] = { data1, eventChannel };
         }
-        if (connected)
+        if (skipAnticipation)
             continue;
         engine_.anticipateNoteOn(note, channel,
                                  static_cast<int>(held.due - processedSamples_),
@@ -1219,9 +1235,15 @@ void Performer::gatherChord(int first) noexcept
                     continue;
             }
         }
-        if (held.size < 3 || static_cast<int>(held.bytes[0] & 0x0fu) + 1 != channel)
+        if (held.size < 3)
             continue;
         const int note = static_cast<int>(held.bytes[1] & 0x7fu);
+        // Do not pull a new stroke ahead of an intervening mute, even
+        // when another MIDI channel sent the mute.
+        if (status == 0x90u && note == keyswitchMuteStrings && (held.bytes[2] & 0x7fu) != 0)
+            return;
+        if (static_cast<int>(held.bytes[0] & 0x0fu) + 1 != channel)
+            continue;
         // A keyswitch is never part of a chord: it comes due on its own,
         // where it was sent, and a chord gathered across it is unchanged.
         if (isKeyswitch(note))

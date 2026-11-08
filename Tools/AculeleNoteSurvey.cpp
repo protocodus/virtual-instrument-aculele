@@ -1,8 +1,9 @@
 // Every playable note of every factory preset, at two velocities, as a CSV for
 // finding outliers in level, tone and resonance across the range:
 //
-//   AculeleNoteSurvey [--mode keys|strings] [--velocities 60,110] [--jobs N]
-//                     [--rate 48000] [--block 256] [--out note-survey.csv]
+//   AculeleNoteSurvey [--mode keys|strings] [--bank presets|constructions]
+//                     [--velocities 60,110] [--jobs N] [--rate 48000]
+//                     [--block 256] [--out note-survey.csv]
 //
 // keys (the default) plays every key from the tuning's lowest open string to
 // its highest open string's 18th fret on channel 1, the ordinary one-channel
@@ -15,12 +16,16 @@
 // otherwise, 256-sample blocks unless --block says otherwise (Reason renders
 // 64 at a time); the analysis windows are in seconds, so a survey at another
 // rate measures the same thing.
+// The constructions bank holds all Concert Strum controls fixed except Shape
+// and Wood, so it covers the entire 3 x 4 matrix at the same tuning and stroke.
 //
 // Columns, per note:
 //  - level_db: K-weighted (ITU-R BS.1770, the stages designed at the rate)
 //    power of both channels over the first second, as Tools/AculeleEvenness.cpp; level_200ms_db over 0-200 ms
 //    and level_1s_db over 900-1100 ms; decay_db_per_s is their difference
 //    over 0.85 s, a rough decay rate of the held note;
+//  - pre_release_db over 1.4-1.6 s; release_100ms_db and release_700ms_db
+//    over 1.7-1.9 s and 2.3-2.5 s, respectively, on the same K-weighted scale;
 //  - peak_dbfs: the largest |sample| of either channel;
 //  - bright_db: the share of the channels' mean's power above 2.5 kHz over
 //    the first 0.3 s (Hann), as AculeleEvenness; centroid_hz: the power
@@ -52,6 +57,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <thread>
@@ -63,7 +69,8 @@ using namespace aculele;
 
 double rate = 48000.0; // --rate
 int block = 256; // --block
-constexpr int frets = 18;
+constexpr int frets = AculeleEngine::fretCount;
+constexpr double holdSeconds = 1.6;
 constexpr double pi = 3.14159265358979323846;
 
 void parallel(std::size_t count, int jobs, const std::function<void(std::size_t)>& work)
@@ -179,6 +186,7 @@ struct Note
 {
     int velocity, string, fret, note;
     double level, peak, level200, level1s, decay, bright, centroid, f0, cents, pitch, spike;
+    double preRelease, release100ms, release700ms;
 };
 
 Note measure(const std::vector<float>& left, const std::vector<float>& right, int velocity, int string,
@@ -193,6 +201,9 @@ Note measure(const std::vector<float>& left, const std::vector<float>& right, in
     n.level200 = power(0, ms(0.2));
     n.level1s = power(ms(0.9), ms(1.1));
     n.decay = (n.level200 - n.level1s) / 0.85;
+    n.preRelease = power(ms(holdSeconds - 0.2), ms(holdSeconds));
+    n.release100ms = power(ms(holdSeconds + 0.1), ms(holdSeconds + 0.3));
+    n.release700ms = power(ms(holdSeconds + 0.7), left.size());
     double peak = 0.0;
     for (std::size_t i = 0; i < left.size(); ++i)
         peak = std::max({ peak, std::fabs(static_cast<double>(left[i])), std::fabs(static_cast<double>(right[i])) });
@@ -276,7 +287,8 @@ std::vector<Note> play(const FactoryPreset& preset, int velocity, bool tab)
     performer->prepare(rate, block);
     performer->setParameters(parameters);
     performer->setTempoBpm(120.0);
-    const auto slot = static_cast<long>(2.5 * rate), hold = static_cast<long>(1.6 * rate);
+    const auto slot = static_cast<long>(2.5 * rate), hold = static_cast<long>(holdSeconds * rate);
+    const auto settledOnset = static_cast<long>(0.1 * rate);
     std::vector<float> left(static_cast<std::size_t>(slot)), right(static_cast<std::size_t>(slot));
     if (tab)
     {
@@ -311,11 +323,17 @@ std::vector<Note> play(const FactoryPreset& preset, int velocity, bool tab)
             if (done <= hold && hold < done + length)
                 performer->noteOff(static_cast<int>(hold - done), key.channel, key.note);
             performer->endBlock();
-            if (!tab && done == block)
+            if (done <= settledOnset && settledOnset < done + length)
             {
-                key.string = performer->engine().heldString(key.note, key.channel);
-                if (key.string >= 0)
-                    key.fret = key.note - open[static_cast<std::size_t>(key.string)];
+                const int playedString = performer->engine().heldString(key.note, key.channel);
+                if (playedString < 0 || (tab && playedString != key.string))
+                {
+                    std::fprintf(stderr, "%s: note %d on channel %d took string %d (expected %d)\n",
+                                 preset.slug, key.note, key.channel, playedString, key.string);
+                    std::abort();
+                }
+                key.string = playedString;
+                key.fret = key.note - open[static_cast<std::size_t>(key.string)];
             }
         }
         notes.push_back(measure(left, right, velocity, key.string, key.fret, key.note));
@@ -363,6 +381,7 @@ int main(int argc, char** argv)
 {
     int jobs = 4;
     bool tab = false;
+    bool constructions = false;
     std::vector<int> velocities { 60, 110 };
     std::string out = "note-survey.csv";
     for (int i = 1; i + 1 < argc; ++i)
@@ -371,6 +390,8 @@ int main(int argc, char** argv)
             jobs = std::max(1, std::atoi(argv[i + 1]));
         else if (!std::strcmp(argv[i], "--mode"))
             tab = !std::strcmp(argv[i + 1], "strings");
+        else if (!std::strcmp(argv[i], "--bank"))
+            constructions = !std::strcmp(argv[i + 1], "constructions");
         else if (!std::strcmp(argv[i], "--out"))
             out = argv[i + 1];
         else if (!std::strcmp(argv[i], "--rate"))
@@ -391,10 +412,32 @@ int main(int argc, char** argv)
             }
         }
     }
-    const std::size_t pairs = factoryPresets.size() * velocities.size();
+    std::vector<FactoryPreset> presets(factoryPresets.begin(), factoryPresets.end());
+    if (constructions)
+    {
+        presets.clear();
+        constexpr BodyShape shapes[] { BodyShape::Soprano, BodyShape::Concert, BodyShape::Tenor };
+        constexpr BodyMaterial woods[] { BodyMaterial::Spruce, BodyMaterial::Mahogany,
+                                         BodyMaterial::Koa, BodyMaterial::Cedar };
+        constexpr const char* slugs[][4] {
+            { "soprano-spruce", "soprano-mahogany", "soprano-koa", "soprano-cedar" },
+            { "concert-spruce", "concert-mahogany", "concert-koa", "concert-cedar" },
+            { "tenor-spruce", "tenor-mahogany", "tenor-koa", "tenor-cedar" }
+        };
+        for (std::size_t shape = 0; shape < std::size(shapes); ++shape)
+            for (std::size_t wood = 0; wood < std::size(woods); ++wood)
+            {
+                auto preset = factoryPresets.front();
+                preset.slug = slugs[shape][wood];
+                preset.shape = shapes[shape];
+                preset.bodyMaterial = woods[wood];
+                presets.push_back(preset);
+            }
+    }
+    const std::size_t pairs = presets.size() * velocities.size();
     std::vector<std::vector<Note>> results(pairs);
     parallel(pairs, jobs, [&](std::size_t job) {
-        results[job] = play(factoryPresets[job / velocities.size()], velocities[job % velocities.size()], tab);
+        results[job] = play(presets[job / velocities.size()], velocities[job % velocities.size()], tab);
     });
 
     FILE* file = std::fopen(out.c_str(), "w");
@@ -404,14 +447,17 @@ int main(int argc, char** argv)
         return 1;
     }
     std::fprintf(file, "mode,preset,velocity,string,fret,note,level_db,peak_dbfs,level_200ms_db,level_1s_db,"
-                       "decay_db_per_s,bright_db,centroid_hz,f0_hz,f0_cents_error,pitch_cents_error,spike_db\n");
+                       "decay_db_per_s,bright_db,centroid_hz,f0_hz,f0_cents_error,pitch_cents_error,spike_db,"
+                       "pre_release_db,release_100ms_db,release_700ms_db\n");
     for (std::size_t job = 0; job < pairs; ++job)
     {
-        const char* preset = factoryPresets[job / velocities.size()].slug;
+        const char* preset = presets[job / velocities.size()].slug;
         for (const auto& n : results[job])
-            std::fprintf(file, "%s,%s,%d,%d,%d,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.1f,%.3f,%.2f,%.2f,%.2f\n",
+            std::fprintf(file, "%s,%s,%d,%d,%d,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.1f,%.3f,%.2f,%.2f,%.2f,"
+                               "%.2f,%.2f,%.2f\n",
                          tab ? "strings" : "keys", preset, n.velocity, n.string, n.fret, n.note, n.level, n.peak,
-                         n.level200, n.level1s, n.decay, n.bright, n.centroid, n.f0, n.cents, n.pitch, n.spike);
+                         n.level200, n.level1s, n.decay, n.bright, n.centroid, n.f0, n.cents, n.pitch, n.spike,
+                         n.preRelease, n.release100ms, n.release700ms);
         summarise(preset, velocities[job % velocities.size()], results[job]);
     }
     std::fclose(file);

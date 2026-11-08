@@ -9,6 +9,7 @@
 #pragma once
 
 #include "FittedPhysicalData.h"
+#include "HandGestures.h"
 #include "OutputStage.h"
 #include "PerformanceRealism.h"
 
@@ -385,6 +386,10 @@ public:
     void muteStroke(int string, int delaySamples, float velocity,
                     int midiChannel = 1, unsigned heldShapeOwners = 0u,
                     bool chuck = false) noexcept;
+
+    // One-shot physical contacts at the event's sample. Mute Strings also
+    // damps ringing strings regardless of key ownership or Sustain.
+    void playHandGesture(HandGesture gesture, float velocity, int midiChannel) noexcept;
     // A strum sweeps all four strings of a ukulele, and a chord of three
     // notes on one channel leaves one of them free: the note a fretting hand
     // holding the planned shape gives that string, or -1. It is the chord
@@ -1711,6 +1716,7 @@ private:
         VoiceConfigurationKey referencePickConfigurationKey {};
         float level { 0.0f };
         float releaseDamping { 1.0f };
+        float muteIdleDamping { 1.0f };
         // The hand's T60 for the release under way (beginRelease), from
         // which releaseDamping follows the loop's period; zero when none.
         float releaseSeconds { 0.0f };
@@ -2611,6 +2617,8 @@ private:
     float palmMute_ { 0.0f };
     float targetPalmMute_ { 0.0f };
     float palmMuteSmoothing_ { 0.5f };
+    HandGestureSource handGestures_ {};
+    int muteIdleSamples_ {};
     // An idle instrument settles on a rounding-level residue (about 1e-12 at
     // the output) that its strings and bridge hold between them; after
     // idleFlushSeconds with nothing played and everything under

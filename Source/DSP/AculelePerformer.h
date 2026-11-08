@@ -103,9 +103,9 @@ public:
     // (AculeleEngine::muteStroke) and the stroke's keys own none. The
     // stroke's sample releases its key-ups first, so a chord drawn straight
     // after another is muted too, and so is a string the sustain lets ring;
-    // a key held on keeps its string ringing. They never sound and take no string; their key-ups
-    // are consumed, F0's ending its chucks. E0 is left alone: front ends
-    // that follow Acustra's carry a connected-gesture cue there.
+    // a key held on keeps its string ringing. E0 is left alone for front
+    // ends that carry Acustra's connected-gesture cue there. F#0 through
+    // A0 trigger hand noises once at key-down and never own a string.
     enum class StrokeMode { Automatic, Down, Up };
     static constexpr double strumAlternationBeats = 0.75;
     static constexpr double strumPendulumBeats = 4.0;
@@ -115,10 +115,18 @@ public:
     static constexpr int keyswitchAutomatic = 26;  // D0
     static constexpr int keyswitchSustain = 27;    // D#0
     static constexpr int keyswitchChuck = 29;      // F0
+    static constexpr int keyswitchStringBrush = 30; // F#0
+    static constexpr int keyswitchFretShift = 31;   // G0
+    static constexpr int keyswitchBodyTap = 32;     // G#0
+    static constexpr int keyswitchMuteStrings = 33; // A0
+    [[nodiscard]] static constexpr bool isHandGesture(int note) noexcept
+    {
+        return note >= keyswitchStringBrush && note <= keyswitchMuteStrings;
+    }
     [[nodiscard]] static constexpr bool isKeyswitch(int note) noexcept
     {
         return (note >= keyswitchDownstroke && note <= keyswitchSustain)
-            || note == keyswitchChuck;
+            || note == keyswitchChuck || isHandGesture(note);
     }
     // The keyswitches' effect, for a front end's own control; it takes
     // effect at once, like setSustainHold.

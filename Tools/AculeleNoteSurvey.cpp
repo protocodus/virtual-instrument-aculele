@@ -268,7 +268,8 @@ Note measure(const std::vector<float>& left, const std::vector<float>& right, in
 
     const int harmonics = std::max(20, static_cast<int>(std::ceil(6000.0 / n.f0)));
     double harmonicPeak = 0.0, otherPeak = 0.0;
-    for (auto k = static_cast<std::size_t>(150.0 / binHz); k <= static_cast<std::size_t>(6000.0 / binHz); ++k)
+    const auto lastBin = std::min(p.size() - 1, static_cast<std::size_t>(6000.0 / binHz));
+    for (auto k = static_cast<std::size_t>(150.0 / binHz); k <= lastBin; ++k)
     {
         const double f = static_cast<double>(k) * binHz;
         const int h = std::max(1, static_cast<int>(std::lround(f / n.f0)));
@@ -314,9 +315,14 @@ std::vector<Note> play(const FactoryPreset& preset, int velocity, bool tab)
     for (auto key : keys)
     {
         performer->reset();
-        for (long done = 0; done < slot; done += block)
+        for (long done = 0; done < slot;)
         {
-            const int length = static_cast<int>(std::min<long>(block, slot - done));
+            long end = done + std::min<long>(block, slot - done);
+            // A large block may span the onset observation and the release.
+            // End it before key-up so the string is still owned when read.
+            if (done <= settledOnset && end > hold)
+                end = hold;
+            const int length = static_cast<int>(end - done);
             performer->beginBlock(left.data() + done, right.data() + done, length);
             if (done == 0)
                 performer->noteOn(0, key.channel, key.note, velocity);
@@ -335,6 +341,7 @@ std::vector<Note> play(const FactoryPreset& preset, int velocity, bool tab)
                 key.string = playedString;
                 key.fret = key.note - open[static_cast<std::size_t>(key.string)];
             }
+            done = end;
         }
         notes.push_back(measure(left, right, velocity, key.string, key.fret, key.note));
     }

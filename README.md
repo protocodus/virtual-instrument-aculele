@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.4.48 — 2026-11-08 — The string's stretch is read at the host rate
+
+The longitudinal-force source now follows the string at every host sample. Its spatial cell width no longer also lowers its time sampling rate, which folded the squared motion's upper sum tones into lower frequencies before the output filter could remove them. The existing spatial approximation, longitudinal resonances and output bandwidth stay in place. This removes the extra reduced-rate aliases; it does not make the nonlinear string fully oversampled. Independent source-frequency and mechanical bridge-work checks accompany it ([validation](Docs/validation/axial-source-2026-11-08.md)). The sound change is a local candidate awaiting the owner's A/B review.
+
 ### 0.4.47 — 2026-11-08 — The same stroke stays the same stroke up the neck
 
 A pluck's release now follows the string's compliance where the hand actually meets it. The high-register easing and the knee move the hand toward the bridge on stopped strings, where the string is stiffer to it, but the release was calibrated as if the open string had been plucked there too, so the same stroke grew louder up the neck: 0.9-3.2 dB at the 18th fret on every preset but the picked tenor. Every preset now falls with pitch, 1.3-5.7 dB at the 18th fret, the direction a real instrument takes; open strings are unchanged ([sweep](Docs/validation/fretboard-release-2026-11-08.md)). Acustra 1.9.25 found and fixed the same law. Four presets' Output moved 0.1-0.4 dB to stay at -9 VU.

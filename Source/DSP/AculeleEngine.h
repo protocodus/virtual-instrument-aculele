@@ -1432,6 +1432,8 @@ private:
             bool designed { false };
             std::uint32_t lengthBits { 0 }, tensionBits { 0 };
             std::uint32_t scaleBits { 0 }, lossBits { 0 };
+            // Spatial cell width only. The nonlinear stretch is evaluated
+            // at every host sample so its sum tones are not decimated.
             int stride { 1 };
             // The force's output band (designStringAxialForce): four lowpass
             // sections, b0 b1 b2 a1 a2, in transposed direct form II.
@@ -1450,8 +1452,8 @@ private:
             float force { 0.0f };
             bool ringing { false };
             int quietSamples { 0 };
-            // The stretch last evaluated, and its change spread over the
-            // samples to the next evaluation.
+            // The stretch last evaluated and its one-sample change. The
+            // countdown also drains the final change after a voice retires.
             double lastStretch { 0.0 };
             float increment { 0.0f };
             int countdown { 0 };

@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.4.52 — 2026-11-08 — The axial pickup keeps one force unit at tiny calibration scales
+
+The axial observer and pickup now share the same guarded newton conversion when an offline displacement calibration is below 0.1 mm. Different guards previously overstated the axial pickup force there, by up to 100 times. Factory calibration and normal product controls are unchanged; the physical stretch still follows the actual displacement squared, including zero ([validation](Docs/validation/piezo-live-load-2026-11-08.md)).
+
 ### 0.4.51 — 2026-11-08 — The pickup follows the strings' live load
 
 The piezo saddle now follows the bridge's actual string impedance during construction changes, tuning, tension bends and retained note tails. Previously it kept the Standard-tuning load from reset. A prepared filter bank follows the existing mechanical port smoothly, keeps its histories and adds no audio-thread fitting or latency; the mechanical junction and microphones are unchanged ([validation](Docs/validation/piezo-live-load-2026-11-08.md)).

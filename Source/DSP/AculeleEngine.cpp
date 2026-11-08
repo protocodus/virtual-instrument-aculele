@@ -13899,8 +13899,12 @@ void AculeleEngine::designStringAxialForce(Voice& voice, int stringIndex) noexce
     const double roundTrip = rate / fundamental;
     axial.roundTrip = static_cast<float>(roundTrip);
     const double displacement = static_cast<double>(excursion);
+    // Convert newtons with the same guarded common force unit the pickup
+    // converts back to newtons. Separate displacement floors disagreed
+    // below 0.1 mm in the setup-only calibration range (up to 100x).
+    // The actual physical stretch below still uses d^2, including d=0.
     axial.forceScale = static_cast<float>(-static_cast<double>(breakAngleProjection)
-        / (48000.0 * std::max(displacement, 1.0e-6)));
+        / piezoNewtonsPerUnit_);
     // The source per unit of D times the line's sum of squared cell slopes:
     // F in square metres per metre is d^2 (D / 2L) times that sum.
     const double perStretch = displacement * displacement

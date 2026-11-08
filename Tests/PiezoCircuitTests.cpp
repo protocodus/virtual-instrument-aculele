@@ -46,6 +46,20 @@ struct AculeleEngineTestAccess
     {
         return AculeleEngine::designPiezoSaddle(rate, impedance);
     }
+    static float axialScale(AculeleEngine& engine)
+    {
+        auto& voice = engine.voices_[3];
+        engine.designStringAxialForce(voice, 3);
+        return voice.stringAxialForce.forceScale;
+    }
+    static void axialTension(AculeleEngine& engine, float newtons)
+    {
+        engine.renderPiezo(newtons * axialScale(engine));
+    }
+    static float lastStretch(const AculeleEngine& engine)
+    {
+        return engine.voices_[3].stringAxialForce.lastStretch;
+    }
     static double midband(const AculeleEngine& engine)
     {
         return Design::voltsPerNewton * engine.piezoMidbandGain_;
@@ -318,6 +332,50 @@ void testUnitsAndLatency()
     expect(d * d * k / cp < 0.00032, "electrical backreaction bound invalid");
     std::cout << "Piezo units: " << gain << " V/N; latency " << latency
               << " samples; electrical coupling bound " << d * d * k / cp << '\n';
+}
+
+void testCalibrationForceUnits()
+{
+    auto engine = std::make_unique<aculele::AculeleEngine>();
+    engine->prepare(48000, 1);
+    // A known one-newton longitudinal tension increment projects onto the
+    // normal sensor by -sin(12 degrees), then gives 0.2 V/N open circuit.
+    // This is an independent dimensional port check, including the setup
+    // calibration's reachable guarded range; it does not assert a new
+    // reciprocal longitudinal mechanical model.
+    const double projected = -std::sin(12.0 * pi / 180.0);
+    for (float displacement : { 0.0f, 1e-8f, 1e-6f, 1e-5f, 1e-4f,
+            aculele::fittedPhysicalCalibration.steelDisplacementScaleMetres, 0.04f })
+    {
+        auto calibration = aculele::fittedPhysicalCalibration;
+        calibration.steelDisplacementScaleMetres = displacement;
+        engine->setPhysicalCalibration(calibration);
+        Access::bypassSaddle(*engine);
+        Access::axialTension(*engine, 1.0f);
+        expect(std::abs(engine->getLastPiezoProbe().openCircuit - 0.2 * projected) < 1e-8,
+               "axial newtons and sensor newtons disagree at displacement "
+                   + std::to_string(displacement));
+        if (displacement >= 1e-4f)
+        {
+            const float previous = static_cast<float>(double(float(projected))
+                / (48000.0 * double(displacement)));
+            expect(Access::axialScale(*engine) == previous,
+                   "ordinary displacement calibration changed its axial force conversion");
+        }
+        if (displacement == 0.0f)
+        {
+            engine->setStringPerChannelMode(true);
+            engine->noteOn(69, 0.9f, 4);
+            for (int sample = 0; sample < 256; ++sample)
+            {
+                float left {}, right {};
+                engine->process(&left, &right, 1);
+                expect(Access::lastStretch(*engine) == 0.0f,
+                       "zero physical displacement creates a nonzero stretch");
+            }
+        }
+    }
+    std::cout << "Axial/piezo force units agree across displacement calibration0..0.04m\n";
 }
 
 std::complex<double> analogSaddle(double frequency, double impedance)
@@ -842,6 +900,7 @@ int main(int argc, char** argv)
     };
     if (wanted("dc")) testOperatingPoint();
     if (wanted("units")) testUnitsAndLatency();
+    if (wanted("units")) testCalibrationForceUnits();
     if (wanted("saddle")) testSaddleFilter();
     if (wanted("routing")) testOutputRouting();
     if (wanted("small")) testSmallSignal();

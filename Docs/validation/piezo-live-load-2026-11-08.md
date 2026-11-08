@@ -88,3 +88,48 @@ approximation and latency. Both use identical production Performer MIDI,
 live controls, seeds, rate and blocks, with whole-file stereo RMS matching.
 Raw float audio, element force, circuit voltages, junction impedance and
 filter poles are retained. No listening verdict or push is implied.
+
+## Setup calibration force-unit edge (0.4.52)
+
+The accepted offline displacement calibration spans zero to 0.04 m. A final
+unit audit found that the axial observer divided physical force by
+`48000 * max(d, 1e-6)`, whereas the pickup converted the result back with
+`48000 * max(d, 1e-4)`. Below 0.1 mm those distinct guards overstated the
+axial force reaching the pickup, by up to 100 times. At zero displacement
+the actual stretch remains zero. This edge is reachable through the
+setup-only calibration API, not ordinary product controls; the factory
+displacement is about 7.74 mm.
+
+The observer now uses the pickup's already configured common force unit,
+as Acustra does. The physical stretch still uses the actual `d^2`, and no
+calibration range, component value or nominal conversion changes. A focused
+regression sends a known one-newton longitudinal increment through the
+existing 12-degree saddle projection and the pickup's 0.2 V/N sensitivity,
+at zero, 10 nm, 1/10/100 micrometres, factory calibration and 40 mm. It also
+requires the ordinary-scale conversion to retain its exact float value and
+zero physical displacement to produce no stretch.
+
+The regression fails the four guarded-scale cases against 0.4.51 and passes
+0.4.52. The affected circuit, live-load, axial, bridge-work, fuzz-replay and
+audio-demo suites pass (6/6), and C++17/`-Werror` builds. All 23 unit/audio
+suites had passed 0.4.51 immediately before this edge correction. An
+eight-second production Performer trajectory at factory calibration,
+including live construction/tuning/bend/tail events, is byte-identical
+between 0.4.51 and 0.4.52 across Main, separate pickup, force, voltage,
+junction-load and pole traces (14,112,000 bytes). Existing listening pairs
+remain valid; this calibration-only invariant needs no new audition.
+
+## Incremental cost
+
+An exclusive development-machine comparison against 0.4.50 used an outer
+ABBA order, five trials per invocation, identical GCC 14.2 Release flags,
+48 kHz and 256-frame blocks. Median prepare time rises from 38.07 to
+59.84 ms as it builds the bank; reset falls from 0.438 to 0.087 ms because
+it no longer fits a filter. Four held strings change from 0.09454 to
+0.09391 times realtime, and continuous member bending from 0.08021 to
+0.08043 times realtime (-0.67% / +0.28%, within small timing variation).
+The final `Aculele.CpuBudget` check passes all seven presets at
+0.07204–0.09357 times realtime, below its unchanged 0.35 gate. These wall
+times are not Reason/DAW CPU figures or a hard realtime proof. Raw trials
+and the gate report are retained outside the checkout in
+`review/piezo-audit/aculele-load-cost/`.

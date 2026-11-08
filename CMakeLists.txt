@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 # Aculele: a physically modelled ukulele built on Acustra's engine. The
 # JUCE-free engine and performer, the demo renderer and two analysis tools;
 # there is no plug-in or editor yet.
-project(Aculele VERSION 0.4.50 LANGUAGES CXX)
+project(Aculele VERSION 0.4.51 LANGUAGES CXX)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
@@ -103,6 +103,11 @@ if(BUILD_TESTING)
         ACULELE_PIEZO_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/Tests/Fixtures/piezo-circuit")
     add_test(NAME Aculele.PiezoCircuit COMMAND AculelePiezoCircuitTests)
     set_tests_properties(Aculele.PiezoCircuit PROPERTIES LABELS unit)
+
+    add_executable(AculelePiezoLoadTests Tests/PiezoLoadTests.cpp)
+    target_link_libraries(AculelePiezoLoadTests PRIVATE AculeleDSP)
+    add_test(NAME Aculele.PiezoLoad COMMAND AculelePiezoLoadTests)
+    set_tests_properties(Aculele.PiezoLoad PROPERTIES LABELS unit)
 
     add_executable(AculeleTuningTests Tests/TuningTests.cpp)
     target_link_libraries(AculeleTuningTests PRIVATE AculeleDSP)

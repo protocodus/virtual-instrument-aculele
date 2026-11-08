@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.4.51 — 2026-11-08 — The pickup follows the strings' live load
+
+The piezo saddle now follows the bridge's actual string impedance during construction changes, tuning, tension bends and retained note tails. Previously it kept the Standard-tuning load from reset. A prepared filter bank follows the existing mechanical port smoothly, keeps its histories and adds no audio-thread fitting or latency; the mechanical junction and microphones are unchanged ([validation](Docs/validation/piezo-live-load-2026-11-08.md)).
+
 ### 0.4.50 — 2026-11-08 — The pickup follows its saddle model at audio rates
 
 The piezo saddle filter now stays within 0.38 dB of its analog force-transfer model through 19.8 kHz at 44.1 kHz, where the guitar's short approximation missed by 9.6 dB. Its added numerical delay is aligned on the microphones, room and separate pickup: core sensor/transport latency is 15 samples, plus the output stage and optional Performer holds. The electrical component model and physical saddle values are unchanged ([validation and limits](Docs/validation/piezo-sensor-2026-11-08.md)).

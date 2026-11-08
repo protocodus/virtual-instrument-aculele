@@ -4844,12 +4844,7 @@ void AculeleEngine::prepare(double sampleRate, int)
     // sources, Tools/PiezoReference.py simulates the same circuit).
     {
         using D = PiezoDesign;
-        double impedance = 0.0;
-        const auto standard = openNotes(Tuning::Standard);
-        for (int string = 0; string < stringCount; ++string)
-            impedance += static_cast<double>(stringImpedance(parameters_,
-                string, standard[static_cast<std::size_t>(string)]));
-        piezoSaddle_ = designPiezoSaddle(sampleRate_, impedance);
+        preparePiezoSaddleBank();
         // The input section as deviations from its operating point. The jack
         // node carries only capacitors, so its charge stays where it was and
         // V_J = (Cp V_oc + C1 V_IN) / (Cs + C1); the IN node then sees C1 in
@@ -5001,16 +4996,8 @@ void AculeleEngine::reset() noexcept
     captureMix_[static_cast<std::size_t>(parameters_.capture)] = 1.0f;
     bodyConfigured_ = false;
     bodyUpdatePending_ = false;
-    // Both banks and the piezo saddle load follow the construction, which is
-    // only known here: prepare runs before the pending parameters are adopted.
-    {
-        double impedance = 0.0;
-        const auto standard = openNotes(Tuning::Standard);
-        for (int string = 0; string < stringCount; ++string)
-            impedance += static_cast<double>(stringImpedance(parameters_,
-                string, standard[static_cast<std::size_t>(string)]));
-        piezoSaddle_ = designPiezoSaddle(sampleRate_, impedance);
-    }
+    // The body banks follow the adopted construction. The pickup's prepared
+    // load bank needs no redesign here: its live load follows the junction.
     configureBridge();
     bridgeUpdatePending_ = false;
     configureBody();
@@ -5048,6 +5035,12 @@ void AculeleEngine::reset() noexcept
             configureVoice(voices_[static_cast<std::size_t>(string)], string,
                            voices_[static_cast<std::size_t>(string)].midiNote,
                            false);
+    float impedance = 0.0f;
+    if (sympatheticStringsEnabled_)
+        for (const auto& voice : voices_)
+            impedance += voice.characteristicImpedance
+                       * voice.appliedBendImpedanceScale;
+    updatePiezoSaddle(impedance);
 }
 
 void AculeleEngine::resetSoundState() noexcept
@@ -14781,6 +14774,100 @@ AculeleEngine::BodyOutput AculeleEngine::renderBody(float bridgeInput,
     return result;
 }
 
+void AculeleEngine::preparePiezoSaddleBank() noexcept
+{
+    // Z = mu * 2 L f. Enumerate the supported strings/lengths/tunings once,
+    // taking each string's largest port separately: a retained tail can
+    // belong to a different construction from its replacement. The main
+    // and one tail branch each have at most sqrt(2) times that impedance
+    // (maximumBendRatioSquared, including the stretched linear mass), and
+    // master tuning adds at most 100 cents. The physical bound is
+    // 2.3551421 N s/m. The product Z0 * appliedScale is bounded, even when
+    // retuning rebases the scale to preserve the old port before its slew.
+    std::array<float, stringCount> maximumPort {};
+    EngineParameters construction;
+    for (int shape = 0; shape < 3; ++shape)
+        for (int material = 0; material < 2; ++material)
+            for (int tuning = 0; tuning < 3; ++tuning)
+            {
+                construction.shape = static_cast<BodyShape>(shape);
+                construction.strings = static_cast<StringMaterial>(material);
+                construction.tuning = static_cast<Tuning>(tuning);
+                const auto notes = openNotes(construction.tuning);
+                for (int string = 0; string < stringCount; ++string)
+                {
+                    const auto i = static_cast<std::size_t>(string);
+                    maximumPort[i] = std::max(maximumPort[i],
+                        stringImpedance(construction, string, notes[i]));
+                }
+            }
+    double maximum = 0.0;
+    for (float port : maximumPort)
+        maximum += port;
+    maximum *= 2.0 * std::sqrt(static_cast<double>(maximumBendRatioSquared))
+             * std::exp2(1.0 / 12.0);
+    // Round the numerical domain outward to a millinewton-second/metre:
+    // 2.356 here. This covers float rebase/follower/sum roundoff; it is a
+    // storage envelope, not a changed string or mounting parameter.
+    piezoSaddleMaximum_ = static_cast<float>(std::ceil(1000.0 * maximum) / 1000.0);
+    construction = EngineParameters {};
+    const auto notes = openNotes(construction.tuning);
+    piezoSaddleAnchor_ = 0.0f;
+    for (int string = 0; string < stringCount; ++string)
+        piezoSaddleAnchor_ += stringImpedance(construction, string,
+            notes[static_cast<std::size_t>(string)]);
+    piezoSaddleLowIndexScale_ = piezoSaddleBankHalf / piezoSaddleAnchor_;
+    piezoSaddleHighIndexScale_ = piezoSaddleBankHalf
+        / (piezoSaddleMaximum_ - piezoSaddleAnchor_);
+    // Numerical resolution only. Keep the default open-string load as an
+    // exact design point and bound interpolation error independently in the
+    // circuit test. QR solves belong only to prepare(), never reset or a
+    // parameter/note callback.
+    for (int index = 0; index < piezoSaddleBankSize; ++index)
+    {
+        const double impedance = index <= piezoSaddleBankHalf
+            ? double(piezoSaddleAnchor_) * index / piezoSaddleBankHalf
+            : double(piezoSaddleAnchor_)
+                + (double(piezoSaddleMaximum_) - piezoSaddleAnchor_)
+                    * (index - piezoSaddleBankHalf) / piezoSaddleBankHalf;
+        piezoSaddleBank_[static_cast<std::size_t>(index)]
+            = designPiezoSaddle(sampleRate_, impedance);
+    }
+    piezoSaddleImpedance_ = -1.0f;
+    updatePiezoSaddle(piezoSaddleAnchor_);
+}
+
+void AculeleEngine::updatePiezoSaddle(float impedance) noexcept
+{
+    if (!(piezoSaddleMaximum_ > 0.0f) || !exact::isfinite(impedance))
+        return;
+    impedance = std::clamp(impedance, 0.0f, piezoSaddleMaximum_);
+    if (impedance == piezoSaddleImpedance_)
+        return;
+    piezoSaddleImpedance_ = impedance;
+    const float position = impedance == piezoSaddleAnchor_ ? float(piezoSaddleBankHalf)
+        : impedance <= piezoSaddleAnchor_
+        ? impedance * piezoSaddleLowIndexScale_
+        : piezoSaddleBankHalf
+            + (impedance - piezoSaddleAnchor_) * piezoSaddleHighIndexScale_;
+    const int index = std::min(static_cast<int>(position), piezoSaddleBankSize - 2);
+    const float mix = std::clamp(position - index, 0.0f, 1.0f);
+    const auto& first = piezoSaddleBank_[static_cast<std::size_t>(index)];
+    const auto& second = piezoSaddleBank_[static_cast<std::size_t>(index + 1)];
+    for (int tap = 0; tap < piezoSaddleTaps; ++tap)
+    {
+        const auto i = static_cast<std::size_t>(tap);
+        piezoSaddle_.b[i] = first.b[i] + mix * (second.b[i] - first.b[i]);
+    }
+    piezoSaddle_.a1 = first.a1 + mix * (second.a1 - first.a1);
+    piezoSaddle_.a2 = first.a2 + mix * (second.a2 - first.a2);
+    // Both Schur stability (1 +/- a1 + a2 > 0, 1 - a2 > 0) and unit DC
+    // transmission are convex/linear constraints on these coefficients.
+    // Keep DF-I histories intact. Z already follows the same physical port
+    // slew as the mechanical junction; no independent load smoother or
+    // second reaction force is introduced by this observation update.
+}
+
 // The analog F_p/F_r in PiezoDesign, with exactly matched poles. Acustra's
 // four-tap undelayed numerator fit is insufficient at this bridge's larger
 // G=0.009 s/kg: at 44.1 kHz it misses the target by 9.6 dB near 20 kHz.
@@ -14943,8 +15030,10 @@ void AculeleEngine::resetPiezo() noexcept
 // solved in turn, each as deviations from the 4.5 V operating point, and a
 // silent input maps to exact zero. The chain runs every sample whatever
 // Capture selects, so a switch or a newly cabled output lands on warm state.
-// Its output is seven samples behind its input (the BLAMP's look-ahead) at
-// every rate. The result is in force units: dividing by the element's
+// renderPiezo has fourteen samples of observation delay: seven for the
+// saddle approximation and seven for the electrical BLAMP. process adds
+// the shared transport sample for fifteen total. The result is in force
+// units: dividing by the element's
 // sensitivity and the preamp's mid-band gain leaves the trim alone there.
 // PiezoDesign item 2 at run time: the engine's force unit in newtons is the
 // calibration's displacement unit (the strings' own) per 48 kHz sample, so
@@ -15585,6 +15674,10 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
             piezoImpedance0 = lastPiezoImpedanceSum_;
             piezoImpedance1 = lastPiezoImpedanceMoment_;
         }
+        // The seat is loaded by the same normal mechanical ports as the
+        // junction, including its held load and any retained tail. Pickup
+        // sensitivity weights belong to the measured force, not to Z.
+        updatePiezoSaddle(drive.impedance0);
         const bool portIsLoaded = drive.impedance0 > 1.0e-6f;
         float bridgeDisplacement = 0.0f;
         float bridgeRotation = 0.0f;

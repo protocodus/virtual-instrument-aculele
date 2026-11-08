@@ -730,8 +730,9 @@ private:
         // as the strings' own, and the element's resonance went undamped:
         // on Concert nylon the saddle filter peaked +11 dB at 5.8 kHz, where
         // this bridge's loss holds it to +2 dB at 4.6 kHz.
-        // SZ: the four strings' summed wave impedance at their standard open
-        // notes (stringImpedance).
+        // SZ: the junction's current unweighted normal-port impedance sum,
+        // including its retained tail branches and its held load at rest.
+        // This changes the observation filter, not the mechanical junction.
         static constexpr double saddleMass = 3.8e-3;
         static constexpr double elementHz = 6000.0;
         static constexpr double elementLoss = 1.0 / 18.0;
@@ -803,6 +804,10 @@ private:
     };
     static PiezoSaddleFilter designPiezoSaddle(double sampleRate,
                                                double stringImpedanceSum) noexcept;
+    static constexpr int piezoSaddleBankHalf = 32;
+    static constexpr int piezoSaddleBankSize = 2 * piezoSaddleBankHalf + 1;
+    void preparePiezoSaddleBank() noexcept;
+    void updatePiezoSaddle(float stringImpedanceSum) noexcept;
 
     struct OnePole
     {
@@ -2374,6 +2379,10 @@ private:
     float lastPiezoForce_ { 0.0f };
     // The saddle filter, in direct form I; histories are force units.
     PiezoSaddleFilter piezoSaddle_ {};
+    std::array<PiezoSaddleFilter, piezoSaddleBankSize> piezoSaddleBank_ {};
+    float piezoSaddleAnchor_ {}, piezoSaddleMaximum_ {};
+    float piezoSaddleLowIndexScale_ {}, piezoSaddleHighIndexScale_ {};
+    float piezoSaddleImpedance_ { -1.0f };
     std::array<float, piezoSaddleTaps> piezoSaddleInput_ {};
     float piezoTransport_ {}; // one sample, on both Main and separate Piezo
     std::array<float, 2> piezoSaddleOutput_ {};

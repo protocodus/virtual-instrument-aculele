@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 # Aculele: a physically modelled ukulele built on Acustra's engine. The
 # JUCE-free engine and performer, the demo renderer and two analysis tools;
 # there is no plug-in or editor yet.
-project(Aculele VERSION 0.4.52 LANGUAGES CXX)
+project(Aculele VERSION 0.4.53 LANGUAGES CXX)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
@@ -96,6 +96,16 @@ if(BUILD_TESTING)
     else()
         find_package(Python3 COMPONENTS Interpreter)
     endif()
+
+    add_executable(AculeleLowRateCaptureTests Tests/LowRateCaptureTests.cpp)
+    target_link_libraries(AculeleLowRateCaptureTests PRIVATE AculeleDSP)
+    add_test(NAME Aculele.LowRateCapture COMMAND AculeleLowRateCaptureTests)
+    set_tests_properties(Aculele.LowRateCapture PROPERTIES LABELS unit)
+
+    add_executable(AculeleOutputCeilingTests Tests/OutputCeilingTests.cpp)
+    target_link_libraries(AculeleOutputCeilingTests PRIVATE AculeleDSP)
+    add_test(NAME Aculele.OutputCeiling COMMAND AculeleOutputCeilingTests)
+    set_tests_properties(Aculele.OutputCeiling PROPERTIES LABELS unit)
 
     add_executable(AculelePiezoCircuitTests Tests/PiezoCircuitTests.cpp)
     target_link_libraries(AculelePiezoCircuitTests PRIVATE AculeleDSP)

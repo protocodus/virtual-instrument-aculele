@@ -4814,8 +4814,23 @@ void AculeleEngine::prepare(double sampleRate, int)
     if (!exact::isfinite(sampleRate) || sampleRate <= 0.0)
         sampleRate = 48000.0;
     sampleRate_ = std::clamp(sampleRate, 8000.0, maximumSupportedSampleRate);
-    mainOutput_.Prepare(sampleRate_, protocodus::kVuGuard);
-    piezoOutput_.Prepare(sampleRate_, protocodus::kVuGuard);
+    // Low-rate reconstruction can exceed the sample peak. The reviewed
+    // 8-32 kHz output survey reserves another 3.3 dB (a -4.8 dBFS sampled
+    // ceiling); see Docs/validation/output-levels-2026-11-08.md. This is
+    // output headroom, not a change to the physical excitation or piezo
+    // volts. Reciprocal scaling lowers only the limiter's effective ceiling.
+    // Shift its preceding compressor threshold by the same amount so its
+    // VU transfer and the quiet gain stay unchanged, to float precision.
+    constexpr double lowRateOutputReserveDb = 3.3;
+    lowRateOutputReserve_ = sampleRate_ < 44100.0;
+    outputLimiterDrive_ = lowRateOutputReserve_
+        ? static_cast<float>(std::pow(10.0, lowRateOutputReserveDb / 20.0)) : 1.0f;
+    outputLimiterReturn_ = 1.0f / outputLimiterDrive_;
+    auto outputCompressor = protocodus::kVuGuard;
+    if (lowRateOutputReserve_)
+        outputCompressor.thresholdDb += lowRateOutputReserveDb;
+    mainOutput_.Prepare(sampleRate_, outputCompressor);
+    piezoOutput_.Prepare(sampleRate_, outputCompressor);
 #if ACULELE_EXTENDED_SAMPLE_RATES
     const auto active = static_cast<std::size_t>(delayCapacityForRate(sampleRate_));
     pickReleaseDisplacement_.prepareSize(active);
@@ -14404,7 +14419,13 @@ void AculeleEngine::BodyBank::CaptureFilter::configure(double sampleRate,
             : detail::balancedOriginalCaptureSection(
                   detail::captureVoicingSections[slot]);
         const auto kind = section.kind;
-        const double frequency = section.frequencyHz;
+        // The authored observation contour can exceed Nyquist at supported
+        // low host rates. RBJ's sine then changes sign and produces unstable
+        // poles. Keep its frequency ordering and shelf endpoints with a
+        // bounded near-Nyquist approximation; every section is unchanged at
+        // 16 kHz and above. This is recording EQ, not a mechanical body pole.
+        const double frequency = std::min(static_cast<double>(section.frequencyHz),
+                                          0.45 * sampleRate);
         const double gainDb = section.gainDb;
         const double q = section.q;
         const double amplitude = std::pow(10.0, gainDb / 40.0);
@@ -15865,7 +15886,7 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
             // with only the piezo selected that route adds exact zeros to
             // this, so the two agree.
             std::array<float, 1> piezoFrame { radiationReferenceGain * outputGain_ * loadedPiezo };
-            piezoOutput_.Process(piezoFrame);
+            processOutputStage(piezoOutput_, piezoFrame);
             const float piezoOut = safetyLimit(piezoFrame[0]);
             piezo[sample] = exact::isfinite(piezoOut) ? piezoOut : 0.0f;
         }
@@ -15983,7 +16004,7 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
         // safety limiter after it, linear through -1 dBFS, never acts on its
         // output.
         std::array<float, 2> frame { outputLeft, outputRight };
-        mainOutput_.Process(frame);
+        processOutputStage(mainOutput_, frame);
         outputLeft = safetyLimit(frame[0]);
         outputRight = safetyLimit(frame[1]);
         left[sample] = exact::isfinite(outputLeft) ? outputLeft : 0.0f;

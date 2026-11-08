@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.4.53 — 2026-11-08 — Low-rate output keeps headroom and stable microphones
+
+Below 44.1 kHz, the final limiter reserves another 3.3 dB for peaks between samples. Reciprocal scaling and a matching compressor threshold shift preserve quiet gain and the normal VU transfer; the string forces, pickup circuit and calibrated preset levels are unchanged. At 8 kHz, an authored microphone shelf above Nyquist also made its filter unstable and could silence Main while the separate pickup kept playing. Capture corners now stop at 90% of Nyquist, a bandwidth approximation that leaves every section unchanged from 16 kHz up. There is no extra core latency, and output at 44.1 kHz and above is unchanged ([validation](Docs/validation/output-levels-2026-11-08.md)).
+
 ### 0.4.52 — 2026-11-08 — The axial pickup keeps one force unit at tiny calibration scales
 
 The axial observer and pickup now share the same guarded newton conversion when an offline displacement calibration is below 0.1 mm. Different guards previously overstated the axial pickup force there, by up to 100 times. Factory calibration and normal product controls are unchanged; the physical stretch still follows the actual displacement squared, including zero ([validation](Docs/validation/piezo-live-load-2026-11-08.md)).

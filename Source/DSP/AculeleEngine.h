@@ -2470,11 +2470,25 @@ private:
     float outputGain_ { 0.42f };
     // Main's and the Piezo output's shared output stages: the VU guard,
     // which holds the hardest chords out of the red of Reason's meter, then
-    // a limiter holding -1.5 dBFS, under the safety limiter's knee so a
-    // limited signal never reaches it. The Piezo output's runs only while
-    // that bus is rendered.
+    // a limiter holding -1.5 dBFS (-4.8 below 44.1 kHz), under the safety
+    // limiter's knee so a limited signal never reaches it. The Piezo
+    // output's runs only while that bus is rendered.
     protocodus::OutputStage<2> mainOutput_;
     protocodus::OutputStage<1> piezoOutput_;
+    bool lowRateOutputReserve_ { false };
+    float outputLimiterDrive_ { 1.0f };
+    float outputLimiterReturn_ { 1.0f };
+    template <std::size_t Channels>
+    void processOutputStage(protocodus::OutputStage<Channels>& stage,
+                            std::array<float, Channels>& frame) noexcept
+    {
+        // At ordinary rates the old stage call remains the entire path.
+        if (lowRateOutputReserve_)
+            for (float& sample : frame) sample *= outputLimiterDrive_;
+        stage.Process(frame);
+        if (lowRateOutputReserve_)
+            for (float& sample : frame) sample *= outputLimiterReturn_;
+    }
     bool piezoOutputRunning_ { false };
     float piezoMix_ { 0.0f };
     // The crossfade's gains for piezoBlendFor_, a function of it alone.

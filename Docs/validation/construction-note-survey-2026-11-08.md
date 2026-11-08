@@ -1,7 +1,9 @@
 # Note color and decay across all constructions
 
 The comparison uses the previous engine at `3f511c9` and the updated engine
-with the same survey tool. All twelve combinations of soprano, concert and
+with the same survey tool, capture gain tables and preset trims. This isolates
+the changes in mechanical behavior. The final output calibration is measured
+separately. All twelve combinations of soprano, concert and
 tenor with spruce, mahogany, koa and cedar use Concert Strum's other
 controls, including Standard tuning, nylon strings and stereo microphones.
 Each isolated note starts after a reset. The tab sweep plays every string
@@ -92,10 +94,9 @@ each note's two fret neighbors fell from 3.47 to 3.04 dB/s. The analogous
 brightness deviation moved from 3.45 to 3.41 dB. There are still individual
 color differences at the top of the neck. For example, the tenor cedar's
 A-string fret 16 is brighter and quieter than its neighbors at both
-velocities. The same spectral regions already show real body peaks and
-troughs in the [earlier note survey](note-survey-2026-11-07.md), so this
-change retains the construction-specific color instead of applying per-note
-gain or EQ.
+velocities. The [earlier note survey](note-survey-2026-11-07.md) compares
+these kinds of peaks and troughs with measured ukulele radiativity. This
+change retains the construction-specific color.
 
 | Shape and wood | Median brightness, dB | Median held decay, dB/s | Open C at 1.4–1.6 s, dB |
 | --- | ---: | ---: | ---: |
@@ -115,3 +116,19 @@ gain or EQ.
 The table shows velocity 110. PlateBand, ConstructionChange, Vibrato,
 Tuning, StringAxialForce, BridgeMobility and Radiation pass on the updated
 engine.
+
+## Factory output calibration
+
+`AculeleLevels --write` regenerated the capture reference table for the
+updated engine. Tenor Fluorocarbon Fingerstyle's Output trim moved from
+−0.5 to −0.8 dB and Tenor Picked Melody's from −0.9 to −1.0 dB. With those
+trims, `AculeleLevels --check` passes. Its offline Reason meter model uses
+a 300 ms window and −12 dB VU Offset. Typical factory playing reads
+−9.05 to −8.83 VU. The hardest test chords peak at −1.50 dBFS. The furthest
+alternate capture from the −9 VU target is Low G Tenor's piezo at −10.39 VU.
+
+A repeat of the 912 velocity-110 tab cases with the new gain table also
+verified every played string assignment. In each of the twelve
+constructions, the scatter of first-second note levels about a straight
+line in pitch was smaller. The mean scatter across constructions fell from
+2.62 to 2.54 dB, and the worst construction fell from 2.99 to 2.83 dB.

@@ -140,8 +140,11 @@ struct DispersionProgress
     bool done { false };
     int nextStart { 0 };
     double worst { 0.0 };
-    std::array<double, 2> decayRatio {};
-    std::array<double, 2> poleRatio {};
+    std::array<double, 3> decayRatio {};
+    std::array<double, 3> poleRatio {};
+    std::array<double, 3> thirdTrialDecay {};
+    std::array<double, 3> thirdTrialPole {};
+    bool thirdTrialStarted { false };
 };
 } // namespace detail
 
@@ -902,18 +905,25 @@ private:
         float highLossMix { 0.1f };
         float broadLossCoefficient { 0.5f };
         float lowpassCoefficient { 0.5f };
-        // The dispersion's two allpass sections (calibrateDispersion in
-        // AculeleEngine.cpp), in cascade. The second runs only on the
-        // stiffer notes that need it; inactive, it is bypassed and leaves
-        // the loop exactly as it was.
+        // The dispersion's up to three allpass sections (calibrateDispersion
+        // in AculeleEngine.cpp). Additional sections run only on notes that
+        // need them. The third runs before the second, directly after the
+        // Thiran read, so its two-sample handover leaves downstream states
+        // intact. A third section always implies an active second section.
         float dispersionA1 { 0.0f };
         float dispersionA2 { 0.0f };
         bool secondDispersionActive { false };
         // Dropped under a sounding wave while it still had strength: it
         // stays in until its coefficients reach zero (configureVoice).
         bool secondDispersionRetiring { false };
+        int secondDispersionZeroHistory { 0 };
         float secondDispersionA1 { 0.0f };
         float secondDispersionA2 { 0.0f };
+        bool thirdDispersionActive { false };
+        bool thirdDispersionRetiring { false };
+        int thirdDispersionZeroHistory { 0 };
+        float thirdDispersionA1 { 0.0f };
+        float thirdDispersionA2 { 0.0f };
         // The string's own bending loss (bendingLossSection in
         // AculeleEngine.cpp): g / (1 + a1 z^-1 + a2 z^-2), unit gain at DC,
         // designed at the host rate from the loss law rather than mapped
@@ -949,10 +959,10 @@ private:
         // A discrete refret/retune changes intrinsic sections over the same
         // one-roundtrip physical transition as its feedback loss. Histories
         // stay intact; target revisions retain a finite completion deadline.
-        // The order is the bending section's g, a1, a2, the two dispersion
+        // The order is the bending section's g, a1, a2, the three dispersion
         // sections' a1, a2, then the constant-loss section's g, a1, a2, n1,
         // n2.
-        static constexpr std::size_t intrinsicCoefficientCount = 12;
+        static constexpr std::size_t intrinsicCoefficientCount = 14;
         using IntrinsicCoefficients = std::array<float, intrinsicCoefficientCount>;
         IntrinsicCoefficients intrinsicCoefficientTarget {};
         IntrinsicCoefficients intrinsicCoefficientStep {};
@@ -964,6 +974,7 @@ private:
         OnePole lossFilter {};
         SecondOrderAllpass dispersion {};
         SecondOrderAllpass secondDispersion {};
+        SecondOrderAllpass thirdDispersion {};
         // The fractional-delay allpass's state: its two previous outputs.
         float allpassY1 { 0.0f };
         float allpassY2 { 0.0f };
@@ -1026,6 +1037,10 @@ private:
         // Switches the second dispersion section in or out under a sounding
         // wave (see its definition).
         void switchSecondDispersion(bool active) noexcept;
+        void switchThirdDispersion(bool active) noexcept;
+        // Only the section directly following the Thiran read may switch.
+        void switchLeadingDispersion(SecondOrderAllpass& section,
+                                     bool& currentlyActive, bool active) noexcept;
         // Runs the sections over reads before the first, keeping only
         // their states (releaseOverPeriod).
         void warmSections(const float* reads, int count) noexcept;
@@ -1033,6 +1048,7 @@ private:
         // Switches the retiring second section out and gives its two
         // samples back to the delay.
         void retireSecondDispersion() noexcept;
+        void retireThirdDispersion() noexcept;
         // Read-only point observation of both travelling waves; does not
         // advance the feedback allpass or alter the vibrating string.
         [[nodiscard]] float displacementAt(float fraction) const noexcept;
@@ -1338,13 +1354,13 @@ private:
     bool pickingGestureSeen_ { false };
 
     // One dispersion design (calibrateDispersion) with the exact arguments
-    // it was made for (solvedDispersion): the two sections' pole pairs
+    // it was made for (solvedDispersion): up to three sections' pole pairs
     // relative to the fundamental, a zero decay ratio an unused section.
     struct DispersionSolve
     {
         std::array<double, 13> arguments {};
-        std::array<float, 2> decayRatios { 0.0f, 0.0f };
-        std::array<float, 2> poleRatios { 0.0f, 0.0f };
+        std::array<float, 3> decayRatios { 0.0f, 0.0f, 0.0f };
+        std::array<float, 3> poleRatios { 0.0f, 0.0f, 0.0f };
         // The worst partial, in cents, of the full search it comes from.
         float worstCents { 0.0f };
         bool valid { false };
@@ -2300,8 +2316,9 @@ private:
         float bendingGain { 1.0f }, bendingA1 { 0.0f }, bendingA2 { 0.0f };
         float constantGain { 1.0f }, constantA1 { 0.0f }, constantA2 { 0.0f };
         float constantN2 { 0.0f };
-        std::array<float, 4> dispersion {};
+        std::array<float, 6> dispersion {};
         bool secondDispersion { false };
+        bool thirdDispersion { false };
     };
     std::array<RestingStringModel, stringCount> restingStringModels_ {};
     std::array<int, stringCount> restingStringNotes_ {};

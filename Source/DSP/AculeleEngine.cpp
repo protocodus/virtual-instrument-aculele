@@ -6942,12 +6942,14 @@ float AculeleEngine::coupledPolarisationDetune(
     const std::array<std::uint32_t, 7> key { static_cast<std::uint32_t>(stringIndex), exact::bits(frequency), exact::bits(impedance),
         exact::bits(bentImpedance), exact::bits(normalGain), exact::bits(parallelGain),
         exact::bits(static_cast<float>(sampleRate_)) };
+    // The tuning is the whole ukulele's, with every idle string on its
+    // bridge: the sympathetic switch takes their sound out of the mix, not
+    // the string out of tune (as Acustra 1.9.26 found its own switch did).
     if (voice.commonTuningGeneration == voiceConfigurationGeneration_
-        && voice.commonTuningKey == key && voice.commonTuningSympathetic == sympatheticStringsEnabled_)
+        && voice.commonTuningKey == key)
         return voice.commonTuningValue;
     voice.commonTuningKey = key;
     voice.commonTuningGeneration = voiceConfigurationGeneration_;
-    voice.commonTuningSympathetic = sympatheticStringsEnabled_;
     const auto finish = [&voice] (float result)
     {
         voice.commonTuningValue = result;
@@ -6963,7 +6965,6 @@ float AculeleEngine::coupledPolarisationDetune(
     const double unbentAdmittance = 1.0 / static_cast<double>(impedance);
     const auto loadOtherStrings = [&](const PortMobility& source) {
         PortMobility effective = source;
-        if (!sympatheticStringsEnabled_) return effective;
         const double eta = saddleHeightRatio(), arm = saddleLeverArm(stringIndex);
         const Complex y11 = Complex(source.parallel) / (eta * eta);
         const Complex y01 = -Complex(source.transfer) / eta - arm * y11;
@@ -8255,18 +8256,27 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
     // Thumb at the 20th); the knee beat both, and a hard bound at 0.36, on
     // the benchmark (Docs/decisions.md, 2026-09-30). CC74 still names any
     // point of its published 0.05-0.46 band directly.
-    constexpr float kneePoint = 0.36f;
-    if (!hasTimbre && basePosition > kneePoint)
+    const auto knee = [](float point)
     {
+        constexpr float kneePoint = 0.36f;
         constexpr float width = handLimit - kneePoint;
-        basePosition = handLimit
-            - width * width / (basePosition - kneePoint + width);
-    }
+        return point > kneePoint
+            ? handLimit - width * width / (point - kneePoint + width)
+            : point;
+    };
+    if (!hasTimbre)
+        basePosition = knee(basePosition);
     // Past the band's edge the take's draw is reflected back inside it, so
     // a pluck near the edge still varies from take to take. Clamping the
     // drawn point instead put every such pluck on exactly the edge.
     const float highestPoint = hasTimbre ? 0.46f : handLimit;
     const float nominalPosition = clamp(basePosition, lowestPoint, highestPoint);
+    // The point the same hand meets the open string at, with no high-register
+    // easing (it acts only below the 4th fret's length): the reference the
+    // release amplitude is calibrated on.
+    const float openNominalPosition = hasTimbre
+        ? nominalPosition
+        : clamp(knee(distanceFromBridge / scaleLength), lowestPoint, handLimit);
     float position = nominalPosition + takeOffset;
     if (position > highestPoint)
         position = 2.0f * highestPoint - position;
@@ -8416,20 +8426,22 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
     voice.lastPluckVelocity = v;
     voice.lastPluckSample = sampleClock_;
     // A hand lets the string go at the force it can hold, not at a set
-    // displacement: a point force F at distance a from the bridge deflects a
-    // string of tension T and speaking length L by F a (L - a) / (T L), so the
-    // same stroke displaces a stopped string less than the open one it was
-    // calibrated on, by (L - a)/L against (L0 - a)/L0 at the same hand
-    // position.
+    // displacement: a point force F at fraction p of a string of tension T
+    // and speaking length L deflects it by F L p (1 - p) / T, so the same
+    // stroke's release scales by L p (1 - p) against L0 p0 (1 - p0), p0 the
+    // point the same hand meets the open string at. The former ratio
+    // (1 - p)/(1 - a/L0) held the hand's distance a from the bridge fixed,
+    // but the high-register easing and the knee move the hand bridgeward on
+    // stopped strings, where the string is stiffer to it, so the same stroke
+    // grew louder up the neck (Acustra 1.9.25 found and fixed the same law;
+    // Docs/validation/fretboard-release-2026-11-08.md has Aculele's sweep).
     const float heldDistance = position * soundingLength;
     // Downward wheels can ask the finite model for a virtual string longer
-    // than its open length. Refer that case to its own open length: the
-    // ordinary fixed-force shortening law remains exact, while a hostile
-    // wheel cannot turn the minimum contact-position bound into a gain.
-    const float nominalDistance = nominalPosition * soundingLength;
+    // than its open length; a hostile wheel must not turn the minimum
+    // contact-position bound into a gain, so that case keeps unit scale.
     const float releaseScale = soundingLength <= scaleLength
-        ? (1.0f - nominalPosition)
-            / clamp(1.0f - nominalDistance / scaleLength, 0.05f, 1.0f)
+        ? soundingLength * nominalPosition * (1.0f - nominalPosition)
+            / (scaleLength * openNominalPosition * (1.0f - openNominalPosition))
         : 1.0f;
     // The random contact point is a small movement of the same hand force.
     // A taut string's point compliance is L*p*(1-p)/T: keeping displacement

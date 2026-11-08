@@ -1668,7 +1668,6 @@ private:
         // small attack glide does not change its frozen reference load.
         std::uint64_t commonTuningGeneration { 0 };
         std::array<std::uint32_t, 7> commonTuningKey {};
-        bool commonTuningSympathetic { false };
         float commonTuningValue { 0.0f };
         // Each loop's delay as configureVoice tuned it at 48 kHz, in 48 kHz
         // samples, for a Pick release at another rate (writePickRelease);

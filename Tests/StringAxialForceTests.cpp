@@ -117,7 +117,12 @@ double kirchhoffCarrier(Engine& engine)
 // sharpest corner loses its highest partials' share; a few percent.
 void slowLimitIsKirchhoffCarrier()
 {
-    auto engine = played(false);
+    // A full-velocity pluck at the 5th fret: 0.4.47's release law (the same
+    // force displaces a stopped string by L p (1 - p) / T) takes about 2 dB
+    // off the 12th-fret pluck the check read before, which left its stretch
+    // at 0.0078 N, under the 0.01 N this comparison needs to stand clear of
+    // the cells' averaging.
+    auto engine = played(false, true, 5, 1.0f);
     auto& axial = Access::voice(*engine, aString).stringAxialForce;
     double engineSum = 0.0, independentSum = 0.0;
     double engineSquares = 0.0, independentSquares = 0.0, cross = 0.0;

@@ -123,6 +123,13 @@ struct PerformanceRealism
     // resonances. Off, the stretch acts at once along the whole string, a
     // uniform tension with no longitudinal resonance.
     bool axialWaves { true };
+    // Scale the contact release arc by the local transverse compliance
+    // (p(1 - p) / (p0(1 - p0)))^0.22 so stiffer bridgeward contacts unload
+    // faster and more compliant soundhole-ward contacts unload more warmly.
+    bool pluckBoundaryCompliance { true };
+    // Smooth unilateral fret-crown grazing when hard downward normal-plane
+    // excursions on fretted strings exceed the fret clearance.
+    bool fretCrownGrazing { true };
 };
 
 } // namespace aculele

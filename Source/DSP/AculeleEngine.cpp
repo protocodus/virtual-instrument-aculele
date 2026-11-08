@@ -8757,11 +8757,17 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
     // (the owner's choice of less contrast, 2026-10-13), where the
     // fingertip's follow it. The edge was fitted, at full velocity, when the
     // force went as v^2 and the slip as 1/force, which a fixed edge keeps.
+    constexpr float referencePointCompliance = 0.18f * (1.0f - 0.18f);
+    const float localCompliance = (soundingLength / scaleLength)
+        * position * (1.0f - position) / referencePointCompliance;
+    const float boundaryCompliance = performanceRealism_.pluckBoundaryCompliance
+        ? clamp(std::pow(localCompliance, 0.22f), 0.72f, 1.35f)
+        : 1.0f;
     if (pick)
         slipPole = plectrumSlipPole(voice, releasedAmplitude, heldDistance,
             soundingLength, scaleLength,
             physicalCalibration_.pickEdgeRadiusMetres * releaseTouch
-                * gestureCompliance);
+                * gestureCompliance * boundaryCompliance);
     else
     {
         // The nominal full-velocity contact bounds release speed. Thumb
@@ -8774,7 +8780,8 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
             heldDistance, soundingLength, scaleLength, fingerReleaseRadius);
         const double pole = plectrumSlipPole(voice, releasedAmplitude,
             heldDistance, soundingLength, scaleLength,
-            fingerReleaseRadius * releaseTouch * gestureCompliance * releaseGestureScale
+            fingerReleaseRadius * releaseTouch * gestureCompliance
+                * boundaryCompliance * releaseGestureScale
                 * std::pow(contactForce, fingerContactForceExponent));
         if (referencePole > 0.0 && pole > 0.0)
         {
@@ -14213,8 +14220,17 @@ void AculeleEngine::finishVoice(Voice& voice, int stringIndex,
     // The local-contact paths have already entered incident waves before
     // the junction solve. Writing this source again would duplicate energy.
     const float boundaryExcitation = voice.contactTravelEnabled ? 0.0f : excitation;
-    voice.loops[0].write(verticalIncident - bridgeDisplacement
-                         + 0.76f * boundaryExcitation);
+    float normalOut = verticalIncident - bridgeDisplacement
+                    + 0.76f * boundaryExcitation;
+    if (performanceRealism_.fretCrownGrazing && voice.speakingFret > 0
+        && voice.harmonic <= 1 && normalOut < -0.052f)
+    {
+        constexpr float clearance = 0.052f;
+        constexpr float knee = 0.040f;
+        const float excess = -normalOut - clearance;
+        normalOut = -(clearance + knee * std::tanh(excess / knee));
+    }
+    voice.loops[0].write(normalOut);
     // The crown's sideways motion is (h/a) times the rocking; on a bridge
     // whose rocking was not measured it never moves, and the parallel loop
     // reflects rigidly as it always did.

@@ -227,7 +227,10 @@ public:
     // The piezo chain's pipeline (renderPiezo), which the microphones wait
     // out so the two sensors blend on one time base, at every rate and for
     // every Capture.
-    static constexpr int outputLatency = 7;
+    // Seven samples in the saddle approximation, seven in U1B's
+    // BLAMP, one common transport sample. With the adapter's phase-zero
+    // half-band decimators, 15 yields whole host samples at 1x/2x/4x.
+    static constexpr int outputLatency = 15;
     // Main and the Piezo output are this many samples later than the
     // strings: the pipeline, then the output stage's look-ahead
     // (protocodus::OutputStage::DelayFor, a multiple of 4 samples, so a host
@@ -688,8 +691,8 @@ private:
     // The under-saddle piezo and the analog chain behind it (renderPiezo in
     // AculeleEngine.cpp, Docs/decisions.md 2026-09-29 "Accurate piezo
     // chain"), in signal order: a real, documented chain at component level.
-    // Tools/PiezoReference.py simulates the same parts as a circuit, and
-    // Tests/PiezoCircuitTests.cpp holds this implementation to it. Values
+    // Tools/PiezoCircuitReference.py independently simulates the electrical
+    // parts; Tests/PiezoCircuitTests.cpp also checks the analytic saddle. Values
     // marked "chosen" were picked from a documented range.
     struct PiezoDesign
     {
@@ -787,11 +790,15 @@ private:
         // it per construction and Picking.
         static constexpr float trim = 2.4417f;
     };
-    // The saddle filter at the host rate: matched
-    // poles and least-squares zeros (renderPiezo).
+    // The analog saddle at the host rate: exact matched poles, a delayed
+    // numerator fit (renderPiezo). Twenty taps make the 44.1/48 kHz fit
+    // accurate for this ukulele's higher bridge conductance; the seven
+    // samples of numerical delay are included in outputLatency above.
+    static constexpr int piezoSaddleTaps = 20;
+    static constexpr int piezoSaddleLatency = 7;
     struct PiezoSaddleFilter
     {
-        std::array<float, 5> b {};
+        std::array<float, piezoSaddleTaps> b {};
         float a1 { 0.0f }, a2 { 0.0f };
     };
     static PiezoSaddleFilter designPiezoSaddle(double sampleRate,
@@ -2367,7 +2374,8 @@ private:
     float lastPiezoForce_ { 0.0f };
     // The saddle filter, in direct form I; histories are force units.
     PiezoSaddleFilter piezoSaddle_ {};
-    std::array<float, 5> piezoSaddleInput_ {};
+    std::array<float, piezoSaddleTaps> piezoSaddleInput_ {};
+    float piezoTransport_ {}; // one sample, on both Main and separate Piezo
     std::array<float, 2> piezoSaddleOutput_ {};
     // The preamp's input section, trapezoidal, as deviations from its
     // operating point: w = V_IN - kin V_oc and C2's voltage.
@@ -2565,7 +2573,7 @@ private:
     float roomSendFor_ { 0.0f };
     float roomSend_ { 0.0f };
     // The microphones, held back by the piezo chain's pipeline (renderPiezo's
-    // output is seven samples behind its input at every rate), so the two
+    // output plus saddle fit and transport have outputLatency samples), so the two
     // sensors meet on the instrument's one time base.
     static constexpr int piezoPipelineSamples = outputLatency;
     std::array<float, piezoPipelineSamples> micDelayLeft_ {};

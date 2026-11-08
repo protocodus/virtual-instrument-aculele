@@ -14781,15 +14781,18 @@ AculeleEngine::BodyOutput AculeleEngine::renderBody(float bridgeInput,
     return result;
 }
 
-// The saddle filter: the analog F_p / F_r (PiezoDesign) with its poles
-// mapped exactly, z = e^{sT}, and its zeros (four coefficients, five from
-// 88.2 kHz) fitted by weighted least squares to the analog response times
-// the poles' denominator over 256 log-spaced points from 20 Hz to
-// min(20 kHz, 0.45 fs), weighted by |H|^-1/2, with the DC gain held at
-// exactly 1. Bilinear designs fold the whole band above the 6 kHz peak
-// toward Nyquist, and a two-zero matched design (Vicanek) cannot place the
-// analog zeros: 55-60 degrees off at 10 kHz. Below 16 kHz a pole at 6 kHz
-// would alias, so there the filter is four taps with no poles.
+// The analog F_p/F_r in PiezoDesign, with exactly matched poles. Acustra's
+// four-tap undelayed numerator fit is insufficient at this bridge's larger
+// G=0.009 s/kg: at 44.1 kHz it misses the target by 9.6 dB near 20 kHz.
+// Fit H(jw)*exp(-jw*7/fs) instead, with twenty taps, preserving DC exactly.
+// The added numerical delay supplies the causal support the analog phase
+// needs near Nyquist; it is compensated on every microphone/room bus.
+// The target and weighting are unchanged physical quantities, not a tone fit.
+// At 88.2 kHz and above, the established five-tap fit already meets 0.1 dB /
+// 2 degrees through 20 kHz; retain it and insert seven exact zero taps to
+// avoid an unnecessarily ill-conditioned high-order fit to a narrow band.
+// Below 16 kHz use the established four-tap, pole-free approximation, also
+// delayed seven samples. Tests/PiezoCircuitTests.cpp checks every regime.
 AculeleEngine::PiezoSaddleFilter
 AculeleEngine::designPiezoSaddle(double sampleRate, double impedance) noexcept
 {
@@ -14814,14 +14817,43 @@ AculeleEngine::designPiezoSaddle(double sampleRate, double impedance) noexcept
         a1 = -2.0 * radius * std::cos(damped * period);
         a2 = radius * radius;
     }
-    const int taps = sampleRate >= 88200.0 ? 5 : 4;
+    const bool shortFit = sampleRate < 16000.0 || sampleRate >= 88200.0;
+    const int taps = shortFit ? (sampleRate < 16000.0 ? 4 : 5) : piezoSaddleTaps;
+    const int targetDelay = shortFit ? 0 : piezoSaddleLatency;
+    const int offset = shortFit ? piezoSaddleLatency : 0;
     const int freeTaps = taps - 1;
+    constexpr int maximumFree = piezoSaddleTaps - 1;
     const double dc = 1.0 + a1 + a2;
     const double bottom = 20.0;
     const double top = std::min(20000.0, 0.45 * sampleRate);
     const double logSpan = std::log(top / bottom);
-    std::array<double, 16> normal {};
-    std::array<double, 4> right {};
+    std::array<double, maximumFree * maximumFree> triangular {};
+    std::array<double, maximumFree> right {};
+    // Streaming Givens QR uses a fixed 19x19 workspace and avoids squaring
+    // the longer basis's condition number in normal equations. Setup only.
+    const auto append = [&] (std::array<double, maximumFree> row, double value)
+    {
+        for (int j = 0; j < freeTaps; ++j)
+        {
+            const auto uj = static_cast<std::size_t>(j);
+            const auto diagonal = uj * maximumFree + uj;
+            const double norm = std::hypot(triangular[diagonal], row[uj]);
+            if (norm == 0.0)
+                continue;
+            const double c = triangular[diagonal] / norm, sn = row[uj] / norm;
+            for (int k = j; k < freeTaps; ++k)
+            {
+                const auto uk = static_cast<std::size_t>(k);
+                const auto at = uj * maximumFree + uk;
+                const double previous = triangular[at];
+                triangular[at] = c * previous + sn * row[uk];
+                row[uk] = -sn * previous + c * row[uk];
+            }
+            const double previous = right[uj];
+            right[uj] = c * previous + sn * value;
+            value = -sn * previous + c * value;
+        }
+    };
     constexpr int points = 256;
     for (int point = 0; point < points; ++point)
     {
@@ -14832,7 +14864,7 @@ AculeleEngine::designPiezoSaddle(double sampleRate, double impedance) noexcept
         const double denNorm = denRe * denRe + denIm * denIm;
         const double hRe = (numRe * denRe + numIm * denIm) / denNorm;
         const double hIm = (numIm * denRe - numRe * denIm) / denNorm;
-        std::array<double, 5> zRe {}, zIm {};
+        std::array<double, piezoSaddleTaps> zRe {}, zIm {};
         for (int k = 0; k < taps; ++k)
         {
             zRe[static_cast<std::size_t>(k)] = std::cos(k * omega * period);
@@ -14840,76 +14872,48 @@ AculeleEngine::designPiezoSaddle(double sampleRate, double impedance) noexcept
         }
         const double aRe = 1.0 + a1 * zRe[1] + a2 * zRe[2];
         const double aIm = a1 * zIm[1] + a2 * zIm[2];
-        const double targetRe0 = hRe * aRe - hIm * aIm;
-        const double targetIm0 = hRe * aIm + hIm * aRe;
+        const double haRe = hRe * aRe - hIm * aIm;
+        const double haIm = hRe * aIm + hIm * aRe;
+        const double delayRe = std::cos(targetDelay * omega * period);
+        const double delayIm = -std::sin(targetDelay * omega * period);
+        const double targetRe0 = haRe * delayRe - haIm * delayIm;
+        const double targetIm0 = haRe * delayIm + haIm * delayRe;
         const double hMagnitude = std::sqrt(hRe * hRe + hIm * hIm);
-        const double weight = 1.0 / (hMagnitude * (aRe * aRe + aIm * aIm));
+        const double weight = 1.0 / std::sqrt(hMagnitude * (aRe * aRe + aIm * aIm));
         const auto last = static_cast<std::size_t>(freeTaps);
-        // b_last = dc - sum of the others: the freeTaps taps multiply
-        // z^-k - z^-last, and dc z^-last moves to the target.
+        // b_last = dc - sum(b_0..b_previous) makes DC transmission exactly
+        // one before float storage, including the explicit delay.
         const double targetRe = targetRe0 - dc * zRe[last];
         const double targetIm = targetIm0 - dc * zIm[last];
+        std::array<double, maximumFree> realRow {}, imaginaryRow {};
         for (int j = 0; j < freeTaps; ++j)
         {
             const auto uj = static_cast<std::size_t>(j);
-            const double pjRe = zRe[uj] - zRe[last], pjIm = zIm[uj] - zIm[last];
-            right[uj] += weight * (pjRe * targetRe + pjIm * targetIm);
-            for (int l = 0; l < freeTaps; ++l)
-            {
-                const auto ul = static_cast<std::size_t>(l);
-                const double plRe = zRe[ul] - zRe[last], plIm = zIm[ul] - zIm[last];
-                normal[uj * 4 + ul] += weight * (pjRe * plRe + pjIm * plIm);
-            }
+            realRow[uj] = weight * (zRe[uj] - zRe[last]);
+            imaginaryRow[uj] = weight * (zIm[uj] - zIm[last]);
         }
+        append(realRow, weight * targetRe);
+        append(imaginaryRow, weight * targetIm);
     }
-    // Cholesky, in place: normal = L L^T.
-    for (int j = 0; j < freeTaps; ++j)
-    {
-        const auto uj = static_cast<std::size_t>(j);
-        double diagonal = normal[uj * 4 + uj];
-        for (int k = 0; k < j; ++k)
-            diagonal -= normal[uj * 4 + static_cast<std::size_t>(k)]
-                * normal[uj * 4 + static_cast<std::size_t>(k)];
-        diagonal = std::sqrt(std::max(diagonal, 1.0e-300));
-        normal[uj * 4 + uj] = diagonal;
-        for (int i = j + 1; i < freeTaps; ++i)
-        {
-            const auto ui = static_cast<std::size_t>(i);
-            double value = normal[ui * 4 + uj];
-            for (int k = 0; k < j; ++k)
-                value -= normal[ui * 4 + static_cast<std::size_t>(k)]
-                    * normal[uj * 4 + static_cast<std::size_t>(k)];
-            normal[ui * 4 + uj] = value / diagonal;
-        }
-    }
-    std::array<double, 4> solution {};
-    for (int i = 0; i < freeTaps; ++i)
-    {
-        const auto ui = static_cast<std::size_t>(i);
-        double value = right[ui];
-        for (int k = 0; k < i; ++k)
-            value -= normal[ui * 4 + static_cast<std::size_t>(k)]
-                * solution[static_cast<std::size_t>(k)];
-        solution[ui] = value / normal[ui * 4 + ui];
-    }
+    std::array<double, maximumFree> solution {};
     for (int i = freeTaps - 1; i >= 0; --i)
     {
         const auto ui = static_cast<std::size_t>(i);
-        double value = solution[ui];
+        double value = right[ui];
         for (int k = i + 1; k < freeTaps; ++k)
-            value -= normal[static_cast<std::size_t>(k) * 4 + ui]
+            value -= triangular[ui * maximumFree + static_cast<std::size_t>(k)]
                 * solution[static_cast<std::size_t>(k)];
-        solution[ui] = value / normal[ui * 4 + ui];
+        solution[ui] = value / triangular[ui * maximumFree + ui];
     }
     PiezoSaddleFilter filter;
     double sum = 0.0;
     for (int k = 0; k < freeTaps; ++k)
     {
-        filter.b[static_cast<std::size_t>(k)]
+        filter.b[static_cast<std::size_t>(offset + k)]
             = static_cast<float>(solution[static_cast<std::size_t>(k)]);
         sum += solution[static_cast<std::size_t>(k)];
     }
-    filter.b[static_cast<std::size_t>(freeTaps)] = static_cast<float>(dc - sum);
+    filter.b[static_cast<std::size_t>(offset + freeTaps)] = static_cast<float>(dc - sum);
     filter.a1 = static_cast<float>(a1);
     filter.a2 = static_cast<float>(a2);
     return filter;
@@ -14918,6 +14922,7 @@ AculeleEngine::designPiezoSaddle(double sampleRate, double impedance) noexcept
 void AculeleEngine::resetPiezo() noexcept
 {
     piezoSaddleInput_.fill(0.0f);
+    piezoTransport_ = 0.0f;
     piezoSaddleOutput_.fill(0.0f);
     piezoFrontW_ = piezoFrontC2_ = 0.0;
     piezoLastOpen_ = piezoLastClamp_ = 0.0;
@@ -14977,13 +14982,13 @@ float AculeleEngine::renderPiezo(float force) noexcept
     const auto& saddle = piezoSaddle_;
     auto& x = piezoSaddleInput_;
     auto& y = piezoSaddleOutput_;
-    x[4] = x[3];
-    x[3] = x[2];
-    x[2] = x[1];
-    x[1] = x[0];
+    for (std::size_t i = x.size() - 1; i > 0; --i)
+        x[i] = x[i - 1];
     x[0] = input;
-    const float pressed = saddle.b[0] * x[0] + saddle.b[1] * x[1] + saddle.b[2] * x[2]
-        + saddle.b[3] * x[3] + saddle.b[4] * x[4] - saddle.a1 * y[0] - saddle.a2 * y[1];
+    double feed = 0.0;
+    for (std::size_t i = 0; i < x.size(); ++i)
+        feed += static_cast<double>(saddle.b[i]) * x[i];
+    const float pressed = static_cast<float>(feed - saddle.a1 * y[0] - saddle.a2 * y[1]);
     y[1] = y[0];
     y[0] = pressed;
     // 2. The element's open-circuit voltage.
@@ -15743,8 +15748,14 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
         // Advance the whole piezo chain even while unheard, so selecting it
         // crossfades to the voltage of the already-ringing instrument. The
         // piezo force keeps the original zero-sign normalization.
-        const float loadedPiezo = renderPiezo(axialPiezoForce == 0.0f
+        const float nextPiezo = renderPiezo(axialPiezoForce == 0.0f
             ? lastPiezoForce_ + 0.0f : lastPiezoForce_ + axialPiezoForce);
+        // One additional transport sample, shared by Main and the separate
+        // pickup. Microphone/room FIFOs include the same sample. Fifteen
+        // total core samples combines with phase-zero 2x/4x decimation to
+        // whole host samples; this is scheduling, not a circuit component.
+        const float loadedPiezo = piezoTransport_;
+        piezoTransport_ = nextPiezo;
         const float idlePeak = std::max({ exact::abs(body.left),
             exact::abs(body.right), exact::abs(body.upper),
             exact::abs(loadedPiezo) });
@@ -15763,7 +15774,7 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
         }
         // The microphones wait out the piezo's pipeline (renderPiezo), so a
         // Capture crossfade and Piezo Mix sum the two sensors as the
-        // instrument moved them, at every sample rate. Main is seven samples
+        // instrument moved them, at every sample rate. Main is fifteen samples
         // later than the strings for every Capture.
         float monoMic = radiationReferenceGain * monoReference_ * outputGain_
             * (bodyScale * body.upper + 0.0f);

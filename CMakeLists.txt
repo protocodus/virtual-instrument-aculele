@@ -193,6 +193,12 @@ if(BUILD_TESTING)
     target_link_libraries(AculeleFingerLookaheadTests PRIVATE AculeleDSP)
     add_test(NAME Aculele.FingerLookahead COMMAND AculeleFingerLookaheadTests)
 
+    # U11: every control reaches held and new notes after long play.
+    add_executable(AculeleParameterReachTests Tests/ParameterReachTests.cpp)
+    target_link_libraries(AculeleParameterReachTests PRIVATE AculeleDSP Threads::Threads)
+    add_test(NAME Aculele.ParameterReach COMMAND AculeleParameterReachTests --reach --jobs 4)
+    set_tests_properties(Aculele.ParameterReach PROPERTIES TIMEOUT 1800)
+
     # U4 input fuzzing (Tests/DspFuzz.cpp). The replay build runs on every
     # platform: committed reproducers in Tests/Fixtures/fuzz, then seeded
     # random inputs. The libFuzzer build compiles the DSP with coverage, so it

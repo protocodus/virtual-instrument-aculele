@@ -13906,7 +13906,20 @@ float AculeleEngine::renderStringAxialForce(Voice& voice, int stringIndex) noexc
         return 0.0f;
     if (driven)
     {
-        if (axial.countdown <= 0)
+        // The stretch goes as the square of the string's motion, so once the
+        // string's bridge force has fallen 40 dB from its peak the force this
+        // source adds stands 80 dB under its own peak and 40 dB further under
+        // the note than it did at the attack. There the line's sum, about a
+        // third of a ringing note's work, stops; the ring rings out on what
+        // it holds, and the next sum counts from its own stretch. A re-pluck,
+        // or a string the bridge drives back up, starts it again. Measured
+        // against the ungated engine, the seven demos and 13 held notes
+        // differ by 82 dB or more under each one's RMS
+        // (Docs/validation/attack-and-sustain-2026-11-09.md).
+        constexpr float quietDrive = 0.01f;
+        if (axial.countdown <= 0 && axial.drive < quietDrive * axial.drivePeak)
+            axial.rereference = true;
+        else if (axial.countdown <= 0)
         {
             designStringAxialForce(voice, stringIndex);
             double stretch = 0.0;
@@ -14244,6 +14257,9 @@ void AculeleEngine::finishVoice(Voice& voice, int stringIndex,
     const float magnitude = exact::abs(localReactionForce);
     voice.level += levelSmoothing_ * (magnitude - voice.level);
     voice.peakLevel = std::max(voice.peakLevel, voice.level);
+    auto& axial = voice.stringAxialForce;
+    axial.drive += levelSmoothing_ * (magnitude - axial.drive);
+    axial.drivePeak = std::max(axial.drivePeak, axial.drive);
     // A released string is handed back once its release damping has had its
     // T60 and the hand's 80 ms; waiting for it to fall silent would wait for
     // ever, because the bridge keeps driving it while anything else sounds.

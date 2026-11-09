@@ -1459,11 +1459,17 @@ private:
             // A new pluck or a cleared line holds a new shape whose stretch
             // the hand set up before the release: count its changes from
             // there, and let what the old one launched ring on.
+            // The string's own bridge force, smoothed as Voice::level is
+            // but without its floor, and its peak since the line was last
+            // rewritten: the quiet-string gate (renderStringAxialForce).
+            float drive { 0.0f };
+            float drivePeak { 0.0f };
             void lineRewritten() noexcept
             {
                 rereference = true;
                 validAge = 0;
                 countdown = 0;
+                drivePeak = 0.0f;
             }
             void clear() noexcept { *this = StringAxialForce {}; }
         };

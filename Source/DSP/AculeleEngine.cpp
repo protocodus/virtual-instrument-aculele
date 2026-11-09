@@ -14052,6 +14052,16 @@ float AculeleEngine::renderStringAxialForce(Voice& voice, int stringIndex) noexc
         input = axial.increment;
         --axial.countdown;
     }
+    // A gated or held string's ring decays for as long as its voice is
+    // played, so without a floor its states sink into subnormal floats, on
+    // which each operation costs tens of cycles on x86: about 40% of a held
+    // chord's CPU. They stop at the waveguide's 1e-30 floor, 600 dB under a
+    // newton; the demos render bit for bit as before
+    // (Docs/benchmarks/cpu-2026-11-09.md).
+    const auto floored = [] (float value)
+    {
+        return exact::abs(value) < 1.0e-30f ? 0.0f : value;
+    };
     if (performanceRealism_.axialWaves)
     {
         constexpr int mask = Voice::StringAxialForce::ringSize - 1;
@@ -14060,14 +14070,14 @@ float AculeleEngine::renderStringAxialForce(Voice& voice, int stringIndex) noexc
         const float earlier = axial.ring[static_cast<std::size_t>(
             (axial.writeIndex - axial.ringDelay - 1) & mask)];
         const float allpass = axial.thiran * (delayed - axial.thiranY1) + earlier;
-        axial.thiranY1 = allpass;
-        axial.lossY1 = axial.lossGain * allpass + axial.lossPole * axial.lossY1;
+        axial.thiranY1 = floored(allpass);
+        axial.lossY1 = floored(axial.lossGain * allpass + axial.lossPole * axial.lossY1);
         axial.force = input + axial.lossY1;
         axial.ring[static_cast<std::size_t>(axial.writeIndex)] = axial.force;
         axial.writeIndex = (axial.writeIndex + 1) & mask;
     }
     else
-        axial.force = input + axial.lossPole * axial.force;
+        axial.force = floored(input + axial.lossPole * axial.force);
     // The band on the way out, so that a redesign's step in the ring's
     // delay is held to it as well.
     float output = axial.force;
@@ -14077,8 +14087,8 @@ float AculeleEngine::renderStringAxialForce(Voice& voice, int stringIndex) noexc
             const auto& c = axial.band[section];
             auto& z = axial.bandState[section];
             const float filtered = c[0] * output + z[0];
-            z[0] = c[1] * output - c[3] * filtered + z[1];
-            z[1] = c[2] * output - c[4] * filtered;
+            z[0] = floored(c[1] * output - c[3] * filtered + z[1]);
+            z[1] = floored(c[2] * output - c[4] * filtered);
             output = filtered;
         }
     axial.ringing = true;

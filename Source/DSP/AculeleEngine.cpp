@@ -2494,7 +2494,13 @@ double constantLossMagnitude(double gain, double a1, double a2, double n2,
 // chatter across it.
 int delayAnchor(double samples) noexcept
 {
-    return static_cast<int>(exact::floor(samples - 1.1));
+    // floor(samples - 1.1) by truncation, which rounds toward zero, so only
+    // a negative fraction steps down. The library's floor is a call on
+    // every x86-64 build without SSE4.1, Reason's among them, and readDelay
+    // asks here each time a string's delay moves.
+    const double shifted = samples - 1.1;
+    const int whole = static_cast<int>(shifted);
+    return static_cast<double>(whole) > shifted ? whole - 1 : whole;
 }
 
 void thiranCoefficients(double samples, double& a1, double& a2) noexcept

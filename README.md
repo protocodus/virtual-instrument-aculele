@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.4.62 — 2026-11-09 — One library call fewer on a ringing string
+
+Each time a ringing string's delay moved, the loop called the maths library's `floor`, which Reason's x86 build cannot do inline. It now truncates instead, to the same integer. Every demo and the stress, body-change, String Age and bridge-hand phrases through every preset render bit for bit as in 0.4.61 ([measurement](Docs/benchmarks/cpu-consolidation-2026-11-09.md)).
+
 ### 0.4.61 — 2026-11-09 — A held chord comes to rest
 
 A chord kept under its keys or the sustain pedal never reached the flush that clears an idle instrument, which waited for every string to be handed back. Its waves and their filters' memories decayed into subnormal numbers and stayed there. Where the host does not set flush-to-zero, a 256-sample block then took 5-7 times as long (24-33% of the period on the development machine, from 4-5%) from 50-110 s into the hold, for as long as the chord was held. An idle instrument's level observers stopped at the smallest subnormal the same way wherever the front end does not suspend the engine. The flush now runs with strings held, once everything is under 1e-11 (about 190 dB under a played note, 11-27 s into a held chord): they are cleared where they are and stay held, and every string's level observer is cleared with them. Acustra found it in the string loop Aculele shares (its 1.9.38). Every demo and the stress, body-change and String Age phrases render bit for bit as in 0.4.60 ([audit](Docs/validation/consolidation-audit-2026-11-09.md), [measurement](Docs/benchmarks/cpu-consolidation-2026-11-09.md)).

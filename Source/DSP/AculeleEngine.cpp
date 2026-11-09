@@ -3323,10 +3323,22 @@ void refineDispersionDesign(const DispersionPartials& partials,
 // not an exact finite-difference solution.
 //
 // The same deterministic algorithm runs synchronously or one refinement at
-// a time in prepareDispersion. Readiness never changes the selected model.
+// a time in prepareDispersion. Readiness never changes the finished model.
 // Nearby pitch/stiffness revisions continue from the last design with one
 // first-section refit, retaining all its sections, before using a fallback
 // if its error exceeds the previous full search's error by more than 1 cent.
+//
+// The fallback starts an interim design takes: what a note sounds on when a
+// construction change has left its finished design still to make
+// (AculeleEngine::solvedDispersion). Over every body, string set and tuning
+// at String Age 0, 0.15, 0.5 and 1 at 48 kHz, 740 of 5,472 slots need the
+// fallback, none below the 5th fret. Their worst partial is out by a mean
+// 13 cents and at most 405 after the first fit alone, 7.3 and 44 after the
+// first start, 7.1 and 32 after the tenth, and 4.5 and 14 finished: the
+// first start removes the bad cases and the next nine add nothing, until
+// the third section does.
+constexpr int interimDispersionStarts = 1;
+
 DispersionCalibration calibrateDispersion(
     double inharmonicity, double fundamental, double sampleRate,
     double broadCoefficient, double broadMix,
@@ -4961,15 +4973,17 @@ void AculeleEngine::prepare(double sampleRate, int)
     prepareBodyConfigurations();
     prepared_ = true;
     restartRandomDraws();
+    dispersionSearchesInFull_ = true;
     reset();
     // Every fresh pluck's design, made here rather than a step every 5.3 ms
     // of audio, so a prepared engine is ready (ready()) and its first notes
-    // sound. 20-110 ms of a factory preset at 48 kHz on the development
-    // machine. Each call checks slots or takes one step of a bounded
-    // search; the bound only keeps a design that never settles from
-    // holding prepare() for ever.
+    // take their finished designs. 20-110 ms of a factory preset at 48 kHz
+    // on the development machine. Each call checks slots or takes one step
+    // of a bounded search; the bound only keeps a design that never settles
+    // from holding prepare() for ever.
     for (int step = 0; !dispersionReady_ && step < 64 * preparedDispersionCount; ++step)
         prepareDispersion();
+    dispersionSearchesInFull_ = false;
 }
 
 void AculeleEngine::reset() noexcept
@@ -6803,11 +6817,21 @@ AculeleEngine::DispersionSolve AculeleEngine::solvedDispersion(
         if (prepared != preparedDispersion_.end())
             return *prepared;
     }
+    // Nothing made matches. A ready engine searches in full, as prepare()
+    // does. While the designs are being made again after a construction
+    // change, the note takes the search's first fit and one fallback start
+    // and no more (interimDispersionStarts), so its block does not carry the
+    // sixteen: the design is not complete, and the string's next fresh
+    // pluck replaces it with the finished one (configureVoice).
+    const bool interim = !dispersionSearchesInFull_ && !ready();
+    detail::DispersionProgress progress;
     const auto calibration = calibrateDispersion(
         arguments[0], arguments[1], arguments[2], arguments[3],
         arguments[4], arguments[5], arguments[6], arguments[7], arguments[8],
         arguments[9], arguments[10], arguments[11], arguments[12],
-        continues ? &start : nullptr);
+        continues ? &start : nullptr, interim ? &progress : nullptr,
+        interim ? interimDispersionStarts : 16);
+    const bool searched = !interim || progress.done;
     DispersionSolve solve;
     solve.arguments = arguments;
     for (std::size_t section = 0; section < dispersionSectionCount; ++section)
@@ -6815,9 +6839,12 @@ AculeleEngine::DispersionSolve AculeleEngine::solvedDispersion(
         solve.decayRatios[section] = static_cast<float>(calibration.decayRatio[section]);
         solve.poleRatios[section] = static_cast<float>(calibration.poleRatio[section]);
     }
-    solve.worstCents = static_cast<float>(calibration.worst);
+    solve.worstCents = static_cast<float>(searched ? calibration.worst
+                                                   : progress.worst);
     solve.valid = true;
-    if (!continues)
+    // A design continued from an interim one is no more finished than it.
+    solve.complete = searched && (!continues || previous->complete);
+    if (!continues && solve.complete)
     {
         dispersionSolves_[static_cast<std::size_t>(nextDispersionSolve_)] = solve;
         nextDispersionSolve_ = (nextDispersionSolve_ + 1)
@@ -6893,17 +6920,22 @@ bool AculeleEngine::preparedDispersionArguments(
 }
 
 // One step of the designs made ahead of their notes, every 5.3 ms of audio
-// (process), and all of them in prepare(): a stale slot's search begun, or
-// one start of the search under way. On the development machine a step
-// takes a median 0.3 ms and at most about 2 ms, and once every slot is
-// ready, about 10 us to check one. After a Shape change the factory presets'
-// slots are made again 0.6-2.4 s later at 48 kHz (Aculele.Ready); until then
-// the Performer ignores note-ons (ready()).
+// (process), and all of them in prepare(). After a change to the slots'
+// inputs every slot first takes its interim design, the search's first fit
+// and one fallback start (interimDispersionStarts), so a note finds a design
+// for its string without searching; most are finished there. Then the stiff
+// slots' searches are finished, one start a step, as a search from nothing
+// runs them: the finished designs are the same bit for bit
+// (Aculele.PreparedDispersion). On the development machine a step takes a
+// median 0.3 ms and at most about 2 ms, and once every slot is ready, about
+// 10 us to check one. After a Shape change the factory presets' slots are
+// finished again 0.6-2.5 s later at 48 kHz (Aculele.Ready).
 void AculeleEngine::prepareDispersion() noexcept
 {
     // Every input of a slot's arguments moves the configuration generation
-    // or the need for a 48 kHz reference; either change starts the count of
-    // made slots again.
+    // or the need for a 48 kHz reference; either change starts the counts of
+    // made and finished slots again, and drops a search under way for
+    // arguments that no longer stand.
     const bool reference = picksAtReferenceRate();
     if (dispersionReadyGeneration_ != voiceConfigurationGeneration_
         || dispersionReadyReference_ != reference)
@@ -6912,8 +6944,27 @@ void AculeleEngine::prepareDispersion() noexcept
         dispersionReadyReference_ = reference;
         dispersionReady_ = false;
         dispersionReadySlots_ = 0;
+        dispersionMadeSlots_ = 0;
+        preparingDispersion_ = false;
     }
     auto& progress = preparingDispersionProgress_;
+    const auto keep = [this] (const std::array<double, 13>& arguments,
+                              const DispersionCalibration& calibration,
+                              const detail::DispersionProgress& search)
+    {
+        auto& solve = preparedDispersion_[static_cast<std::size_t>(
+            preparedDispersionSlot_)];
+        solve.arguments = arguments;
+        for (std::size_t section = 0; section < dispersionSectionCount; ++section)
+        {
+            solve.decayRatios[section] = static_cast<float>(calibration.decayRatio[section]);
+            solve.poleRatios[section] = static_cast<float>(calibration.poleRatio[section]);
+        }
+        solve.worstCents = static_cast<float>(search.done ? calibration.worst
+                                                          : search.worst);
+        solve.valid = true;
+        solve.complete = search.done;
+    };
     if (!preparingDispersion_)
     {
         // A ready engine checks one slot a step. An unready one checks up to
@@ -6926,19 +6977,45 @@ void AculeleEngine::prepareDispersion() noexcept
         {
             const auto& prepared = preparedDispersion_[static_cast<std::size_t>(
                 preparedDispersionSlot_)];
-            if (preparedDispersionArguments(preparedDispersionSlot_, arguments)
-                && !(prepared.valid && prepared.arguments == arguments))
+            const bool used = preparedDispersionArguments(preparedDispersionSlot_,
+                                                          arguments);
+            const bool made = !used
+                || (prepared.valid && prepared.arguments == arguments);
+            if (!made)
+            {
+                // Its interim design, in this one step.
+                dispersionReady_ = false;
+                dispersionReadySlots_ = 0;
+                dispersionMadeSlots_ = 0;
+                progress = {};
+                const auto calibration = calibrateDispersion(arguments[0],
+                    arguments[1], arguments[2], arguments[3], arguments[4],
+                    arguments[5], arguments[6], arguments[7], arguments[8],
+                    arguments[9], arguments[10], arguments[11], arguments[12],
+                    nullptr, &progress, interimDispersionStarts);
+                keep(arguments, calibration, progress);
+                preparedDispersionSlot_ = (preparedDispersionSlot_ + 1)
+                    % preparedDispersionCount;
+                return;
+            }
+            // Every slot holds a design: finish this one's search.
+            if (used && !prepared.complete
+                && dispersionMadeSlots_ >= preparedDispersionCount)
                 break;
             preparedDispersionSlot_ = (preparedDispersionSlot_ + 1)
                 % preparedDispersionCount;
-            if (dispersionReadySlots_ < preparedDispersionCount
+            dispersionMadeSlots_ = std::min(dispersionMadeSlots_ + 1,
+                                            preparedDispersionCount);
+            if (used && !prepared.complete)
+                dispersionReadySlots_ = 0;
+            else if (dispersionReadySlots_ < preparedDispersionCount
                 && ++dispersionReadySlots_ == preparedDispersionCount)
                 dispersionReady_ = true;
             if (dispersionReady_ || check == unreadyChecks)
                 return;
         }
-        dispersionReady_ = false;
-        dispersionReadySlots_ = 0;
+        // The search starts again from nothing, a start a step from here on,
+        // so its first step repeats the interim design's two.
         preparingDispersionArguments_ = arguments;
         progress = {};
         preparingDispersion_ = true;
@@ -6946,24 +7023,12 @@ void AculeleEngine::prepareDispersion() noexcept
     const auto& a = preparingDispersionArguments_;
     const auto calibration = calibrateDispersion(a[0], a[1], a[2], a[3], a[4],
         a[5], a[6], a[7], a[8], a[9], a[10], a[11], a[12], nullptr, &progress,
-        progress.started ? 1 : 0);
+        progress.started ? 1 : interimDispersionStarts);
     if (!progress.done)
         return;
-    auto& solve = preparedDispersion_[static_cast<std::size_t>(
-        preparedDispersionSlot_)];
-    solve.arguments = a;
-    for (std::size_t section = 0; section < dispersionSectionCount; ++section)
-    {
-        solve.decayRatios[section] = static_cast<float>(calibration.decayRatio[section]);
-        solve.poleRatios[section] = static_cast<float>(calibration.poleRatio[section]);
-    }
-    solve.worstCents = static_cast<float>(calibration.worst);
-    solve.valid = true;
+    // The next step finds the slot finished and counts it.
+    keep(a, calibration, progress);
     preparingDispersion_ = false;
-    preparedDispersionSlot_ = (preparedDispersionSlot_ + 1) % preparedDispersionCount;
-    // Not counted made: the inputs may have moved while it was searched.
-    // The next pass checks it again.
-    dispersionReadySlots_ = 0;
 }
 
 const std::array<AculeleEngine::RestingStringModel, AculeleEngine::stringCount>&
@@ -7591,9 +7656,14 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
         // Resetting a wave does not change an otherwise identical design.
         // Keep the existing request tolerances and metadata updates, while
         // reusing only a solve with exactly the same complete input tuple;
-        // a design near the string's last continues from it.
-        if (voice.dispersionDesign.arguments != arguments)
-            voice.dispersionDesign = solvedDispersion(arguments, &voice.dispersionDesign);
+        // a design near the string's last continues from it. An interim
+        // design (solvedDispersion) lasts until the string is plucked
+        // afresh: with its waves cleared it takes the finished design, not
+        // a continuation of the interim one, and nothing sounding steps.
+        const bool replaceInterim = clearDelay && !voice.dispersionDesign.complete;
+        if (replaceInterim || voice.dispersionDesign.arguments != arguments)
+            voice.dispersionDesign = solvedDispersion(arguments,
+                replaceInterim ? nullptr : &voice.dispersionDesign);
         voice.dispersionDesignFrequency = lossDesignFrequency;
         voice.dispersionDesignInharmonicity = inharmonicity;
         voice.dispersionDesignAge = age;
@@ -7684,7 +7754,10 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
             static_cast<float>(fitBending.a1), static_cast<float>(fitBending.a2),
             static_cast<float>(fitConstant.a1), static_cast<float>(fitConstant.a2),
             static_cast<float>(fitConstant.n1), static_cast<float>(fitConstant.n2) },
-            &voice.referencePickDispersion);
+            // As the string's own design above: a fresh pluck replaces an
+            // interim reference instead of continuing from it.
+            clearDelay && !voice.referencePickDispersion.complete
+                ? nullptr : &voice.referencePickDispersion);
         const auto& decayRatios = voice.referencePickDispersion.decayRatios;
         const auto& poleRatios = voice.referencePickDispersion.poleRatios;
         const float referenceOmega = twoPi * frequency

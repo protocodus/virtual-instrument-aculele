@@ -20,7 +20,9 @@ namespace aculele
 {
 struct AculeleEngineTestAccess
 {
-    // Whether every slot the configuration uses holds its current design.
+    // Whether every slot the configuration uses holds its current design,
+    // finished: from 0.4.59 a valid slot may hold an interim design, the
+    // search cut short (Aculele.Ready), which is not what this compares.
     static bool ready(const AculeleEngine& engine)
     {
         for (int slot = 0; slot < AculeleEngine::preparedDispersionCount; ++slot)
@@ -28,7 +30,8 @@ struct AculeleEngineTestAccess
             std::array<double, 13> arguments {};
             const auto& prepared = engine.preparedDispersion_[static_cast<std::size_t>(slot)];
             if (engine.preparedDispersionArguments(slot, arguments)
-                && !(prepared.valid && prepared.arguments == arguments))
+                && !(prepared.valid && prepared.complete
+                     && prepared.arguments == arguments))
                 return false;
         }
         return true;

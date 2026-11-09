@@ -1082,11 +1082,6 @@ bool Performer::handleEvent(int eventSample, const std::uint8_t* data,
         }
         return false;
     }
-    // Until the engine is ready a note would run its own dispersion search
-    // in its note-on block (AculeleEngine::ready): the instrument stays
-    // silent instead (owner, 2026-11-09). Keyswitches above still latch.
-    if (positiveNoteOn && !engine_.ready())
-        return false;
     if (positiveNoteOn)
     {
         if (pendingNoteOnCount_ < sampleGroupCapacity)

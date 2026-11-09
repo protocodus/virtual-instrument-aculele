@@ -250,13 +250,15 @@ public:
     // grid steps under 18 kHz.
     static constexpr int radiationContinuationSlots = 19;
     void reset() noexcept;
-    // Whether every string's fresh pluck at every fret finds its dispersion
-    // design made (prepareDispersion). prepare() makes them all, so a
-    // prepared engine is ready; a Shape, String Set, Tuning, String Age,
-    // master tune or rate change makes it unready until the designs it
-    // changed are made again, 0.8-3.5 s at 48 kHz. Until then a note would
-    // run its own search, 3.5-9 ms on the development machine, in its
-    // note-on block, so front ends ignore note-ons (Performer).
+    // Whether every string's fresh pluck at every fret finds its finished
+    // dispersion design made (prepareDispersion). prepare() makes them all,
+    // so a prepared engine is ready; a Shape, String Set, Tuning, String
+    // Age, master tune or rate change makes it unready until the designs it
+    // changed are made again, 0.6-2.5 s for a factory preset at 48 kHz.
+    // Notes sound all the while: until its finished design is made a note
+    // takes the same search's first two steps (solvedDispersion), and the
+    // string's next fresh pluck the finished one. A front end has nothing
+    // to wait for; this only reports the work under way.
     [[nodiscard]] bool ready() const noexcept
     {
         return dispersionReady_
@@ -1393,6 +1395,9 @@ private:
         // The worst partial, in cents, of the full search it comes from.
         float worstCents { 0.0f };
         bool valid { false };
+        // False for a search cut short at a note (solvedDispersion), which
+        // the string's next fresh pluck replaces (configureVoice).
+        bool complete { false };
     };
 
     struct Voice
@@ -2287,6 +2292,8 @@ private:
     // the note a start at a time (prepareDispersion): a stiff note's whole
     // search took 3.5-9 ms of the note-on batch. A prepared design is the
     // same full search the note would run, so it does not change the sound.
+    // After a construction change every slot first takes its interim design
+    // (complete false), then the stiff ones' searches are finished.
     static constexpr int preparedDispersionCount = stringCount * (fretCount + 1) * 2;
     std::array<DispersionSolve, preparedDispersionCount> preparedDispersion_ {};
     int preparedDispersionSlot_ { 0 };
@@ -2294,11 +2301,17 @@ private:
     std::array<double, 13> preparingDispersionArguments_ {};
     detail::DispersionProgress preparingDispersionProgress_ {};
     int preparedDispersionCountdown_ { 0 };
-    // ready(): every slot found made in a row since the inputs to the
+    // ready(): every slot found finished in a row since the inputs to the
     // slots' arguments last changed (the configuration generation and
-    // whether a 48 kHz reference is needed).
+    // whether a 48 kHz reference is needed). dispersionMadeSlots_ counts
+    // the slots found holding a design for their arguments, finished or
+    // interim: the searches are finished only once every slot has one.
     bool dispersionReady_ { false };
     int dispersionReadySlots_ { 0 };
+    int dispersionMadeSlots_ { 0 };
+    // prepare() is not real-time and searches every design in full, so a
+    // prepared engine holds the designs a search from nothing makes.
+    bool dispersionSearchesInFull_ { false };
     std::uint64_t dispersionReadyGeneration_ { 0 };
     bool dispersionReadyReference_ { false };
     [[nodiscard]] bool preparedDispersionArguments(

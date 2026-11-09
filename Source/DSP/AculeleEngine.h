@@ -1362,6 +1362,14 @@ private:
         int readIndex { 0 };
         int remaining { 0 };
         bool overflow { false };
+        // Every slot outside the `remaining` from readIndex is zero: add()
+        // writes only inside them and process() zeroes each slot it reads.
+        // So clear() and a copy touch those slots alone, where the whole
+        // planes are 128 KB at 48 kHz, set and copied at every re-plucked
+        // note (captureTail).
+        RepluckArrivals() noexcept = default;
+        RepluckArrivals(const RepluckArrivals& other) noexcept { *this = other; }
+        RepluckArrivals& operator=(const RepluckArrivals& other) noexcept;
         void clear() noexcept;
         void add(int offset, float normal, float parallel) noexcept;
         std::array<float, 2> process() noexcept;

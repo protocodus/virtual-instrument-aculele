@@ -80,3 +80,29 @@ engine still searches in full at the note for a design nothing made
 matches: a stiff note re-plucked off its fret's pitch whose continued
 design misses by more than a cent beyond the last search (README, Known
 gaps).
+
+## The heaviest note-on block (0.4.60)
+
+**Found.** The stress phrase's heaviest block, eight notes struck at once
+over ringing strings, ran 10.1 million instructions against 4.8-6.1 million
+in the blocks either side, and 2.9 million of them were `memset` and
+`memcpy`: each string's re-pluck arrival ring (128 KB at 48 kHz) was cleared
+whole at every note start and copied whole into the tail a re-plucked note
+leaves ringing.
+
+**Fix.** A ring holds zeros outside its pending arrivals: `add()` writes
+only inside them and `process()` zeroes each slot it reads. `clear()` and a
+copy now touch the pending slots alone (`RepluckArrivals`).
+
+**Measured.** 8.3 million instructions (-18%), first-level data misses
+139,798 to 96,671, the block 10.7-12.9% of the period from 12.6-15.6%
+(`Docs/benchmarks/cpu-consolidation-2026-11-09.md`). The demos, the stress
+phrase and the body-change and String Age phrases render bit for bit as
+0.4.59. `Aculele.RepluckArrivals` holds the invariant: 20,000 seeded adds,
+reads, clears and copies against a ring that clears and copies whole
+planes, and no slot set outside the pending ones after any block of a
+rapidly re-plucked phrase on every preset.
+
+**Left.** The strings' own delay lines, 32 KB each, are still cleared and
+copied whole at a note start (18 and about 14 in that block); a ringing
+line has no pending window to bound them by.

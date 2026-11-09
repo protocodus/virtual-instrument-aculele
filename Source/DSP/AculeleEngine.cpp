@@ -9680,9 +9680,41 @@ void AculeleEngine::mergeRepluckLoop(StringLoop& fresh, StringLoop& previous,
 
 void AculeleEngine::RepluckArrivals::clear() noexcept
 {
-    for (auto& plane : wave) plane.fill(0.0f);
+    for (int index = 0; index < remaining; ++index)
+    {
+        const auto slot = static_cast<std::size_t>((readIndex + index) % capacity);
+        wave[0][slot] = wave[1][slot] = 0.0f;
+    }
     readIndex = remaining = 0;
     overflow = false;
+}
+
+AculeleEngine::RepluckArrivals& AculeleEngine::RepluckArrivals::operator=(
+    const RepluckArrivals& other) noexcept
+{
+    if (this == &other)
+        return *this;
+    if (wave[0].size() != other.wave[0].size())
+    {
+        // Rings of two sizes (a build with rate-sized rings, before
+        // prepare): the whole planes, which carry their size.
+        wave = other.wave;
+    }
+    else
+    {
+        clear();
+        for (int index = 0; index < other.remaining; ++index)
+        {
+            const auto slot = static_cast<std::size_t>(
+                (other.readIndex + index) % capacity);
+            wave[0][slot] = other.wave[0][slot];
+            wave[1][slot] = other.wave[1][slot];
+        }
+    }
+    readIndex = other.readIndex;
+    remaining = other.remaining;
+    overflow = other.overflow;
+    return *this;
 }
 
 void AculeleEngine::RepluckArrivals::add(int offset, float normal,

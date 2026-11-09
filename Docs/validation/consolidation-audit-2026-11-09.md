@@ -189,6 +189,17 @@ largest steps of 5.4-12 dB
   preset (SD 0.3-1.75 dB over the keys); least 7.1-7.75 dB at G#3 on the
   two Low G presets, most 12.0-14.5 dB at the top keys of six presets
   (Soprano Thumb's keys differ least: 9.2-10.7 dB).
+- **Velocity in steps of four.** `--velocities 70,74,...,126` plays the
+  same keys at fifteen velocities, 3,090 notes. Level rises at every step
+  on every key, 0.15-0.71 dB a step (median 0.35-0.39 dB by preset). The
+  centroid of a note's first 0.3 s moves between neighbouring velocities
+  by +1.7% at most and -0.7% at least. The share above 2.5 kHz falls on
+  23 of the 2,884 steps, by 0.18 dB at most: Tenor Picked Melody's G3
+  dulls 0.87 dB in all from velocity 78 to 110 and its A#3 0.40 dB from 90
+  to 106, a slow turn and not a step. Acustra 1.9.36 mended a pick whose
+  attack centroid fell 27-40% between adjacent velocities at B5 and C6;
+  no key here shows such a step. The pick's release code itself was not
+  compared with Acustra's.
 - **Pitch.** The fundamental reads a mean +1.1 cents (SD 1.9) and the
   pitch the partials carry +1.3 to +2.0 cents by preset and velocity; the
   largest is +5.8 cents (Concert Piezo Stage, G5).
@@ -308,7 +319,7 @@ engine:
 | 1.9.28 | A string remembers the tunings of its last eight stops | Not taken: the tuning solve is 0.14 of the heaviest block's 7.64 million instructions here |
 | 1.9.27 | The tuning solve's arithmetic, a sixth off a note start | Not taken: Aculele's solve has since parted from Acustra's (it reads the port at the bent impedance), so it is a re-derivation, not a copy |
 | 1.9.26 | Which member of the coupled pair the string is tuned to | Not taken: audible, and Aculele's rule is its own (Known gaps, "Notes beside the top's main resonance start out of tune") |
-| 1.9.36 | A picked string's release direction | Not compared in this pass |
+| 1.9.36 | A picked string's release direction | Its symptom, a step in brightness between adjacent velocities, is absent on every key (above); the code was not compared |
 | 1.9.29-1.9.35 | The axial force's units and rate, the pickup's load, output headroom, pluck coordinates | Here as 0.4.48-0.4.55, by their entries; not diffed |
 | 1.9.25 and earlier | | Not compared again in this pass |
 
@@ -364,8 +375,8 @@ blocks stand over a tenth of the period on the development machine.
   no measurable cost (above).
 - **F4 on the koa tenor's low G string** reads 13 cents apart at 48 and
   96 kHz in its fundamental's peak; not traced.
-- **Acustra's 1.9.36** (the pick's release direction) was not compared
-  with Aculele's pick.
+- **Acustra's 1.9.36** (the pick's release direction): its symptom is
+  absent here (above), and its code was not compared with Aculele's pick.
 
 ## Not examined
 

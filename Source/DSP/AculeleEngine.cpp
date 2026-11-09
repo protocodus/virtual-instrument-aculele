@@ -1420,19 +1420,6 @@ struct UkuleleStringLoss
     float highMix;
 };
 
-// An open string's nut is lossy even when the finger is off the board.
-// Reuse the former 0.0074 dB round-trip support loss on the open branch.
-// The stopped string keeps the 0.022 dB fitted to the sampled ukuleles.
-// Both the live string and the resting strings in the tuning calculation
-// must have the same loss for the open-string resonance.
-float withStringStopLoss(float t60, float frequency, float fretContact) noexcept
-{
-    constexpr float nutLossDb = 0.0074f;
-    constexpr float fretLossDb = 0.022f;
-    const float lossDb = (1.0f - fretContact) * nutLossDb + fretContact * fretLossDb;
-    return 1.0f / (1.0f / t60 + lossDb / 60.0f * frequency);
-}
-
 UkuleleStringLoss ukuleleStringLoss(const EngineParameters& parameters,
                                     int stringIndex, float tension,
                                     float soundingLength, float frequency) noexcept
@@ -6996,7 +6983,7 @@ AculeleEngine::restingStringModels() noexcept
         model.delay = clamp(rawDelay - bridgePhaseDelay(bridgePortMobility(frequency, string), frequency, string),
             3.0f, static_cast<float>(activeDelaySamples() - 3));
         model.impedance = stringImpedance(parameters_, string, notes[index]) * masterTuneRatio_;
-        const float fundamentalT60 = withStringStopLoss(loss.fundamentalT60, frequency, 0.0f);
+        const float fundamentalT60 = loss.fundamentalT60;
         const float desiredGain = std::pow(0.001f, 1.0f / std::max(fundamentalT60 * frequency, 1.0f));
         const float lossOmega = static_cast<float>(referenceLossOmega(omega, sampleRate_));
         const float filterGain = magnitudeForOnePoleMix(highCoefficient, model.highMix, lossOmega)
@@ -7586,15 +7573,25 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
     // (Docs/validation/sample-pack-benchmark-2026-10-29.md, Open and
     // fretted) the open strings' partials ring 1.15-1.46 times as long as
     // fretted notes' at the same frequency, and C4, open on any ukulele,
-    // 1.17-1.86 times; Aculele's rang 1.01-1.06 times. The extra loss is
-    // fitted to those recordings. In the original calibration the nut had
-    // no loss, and open notes rang 1.15-1.32 times as long on nylon. No
-    // fingertip impedance has been measured. One loss per
-    // round trip takes every partial alike, so the low ones, which the string
-    // itself loses least, lose the most of their ring, as the recordings' do
-    // (1.5 times under 700 Hz, 1.2 above 1.8 kHz). Rates add.
+    // 1.17-1.86 times; Aculele's rang 1.01-1.06 times. That loss replaces
+    // Acustra's authored 0.0074 dB per round trip, which every string, open
+    // or stopped, lost alike. Its size, per round trip at the stop, is
+    // fitted to those recordings (open notes now ring 1.15-1.32 times as
+    // long on nylon); no fingertip impedance has been measured. The nut
+    // takes none of it. 0.4.54 gave the open strings Acustra's 0.0074 dB
+    // back, which cut open C4's and E4's fundamentals' T60 by 19-22%,
+    // where the FreePats tenor's ring longer still (C4 7.6 s, against 5.9 s
+    // with that loss and 7.3 s without; Docs/validation/attack-and-sustain-2026-11-09.md).
+    // One loss per round trip takes every partial alike, so the low ones,
+    // which the string itself loses least, lose the most of their ring, as
+    // the recordings' do (1.5 times under 700 Hz, 1.2 above 1.8 kHz). Rates
+    // add.
+    float fundamentalT60 = ukuleleLoss.fundamentalT60;
+    constexpr float fretStopLossDb = 0.022f;
     const float fretStop = frettingContactWeight(soundingLength, voice.harmonic);
-    float fundamentalT60 = withStringStopLoss(ukuleleLoss.fundamentalT60, frequency, fretStop);
+    if (fretStop > 0.0f)
+        fundamentalT60 = 1.0f / (1.0f / fundamentalT60
+            + fretStop * fretStopLossDb / 60.0f * frequency);
     if (handRate > 0.0f)
         fundamentalT60 = 1.0f / (1.0f / fundamentalT60 + handRate);
     const float rawDelay = static_cast<float>(tunedLoopDelay(

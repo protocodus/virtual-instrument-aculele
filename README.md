@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.4.56 — 2026-11-09 — The whole knock when a pluck lets go, and open strings that ring on
+
+Before a pluck lets go, the saddle carries the string's held force; at the release the top springs back with a knock. Aculele gave back 0.45 of that force, a value chosen by ear on Acustra's guitar, and now gives back all of it. At that size the knock matches a recorded tenor's air-mode knock within 0.2 dB, and the onset's 1-2 kHz click is at its least. Open strings no longer lose Acustra's guitar-era 0.0074 dB per round trip at the nut, which 0.4.54 had brought back over the open/fretted contrast 0.4.33 fitted to five sampled ukuleles. Open C4's fundamental now rings 7.3 s against the recorded tenor's 7.6 (5.9 s before). Unplayed open strings ring on sympathetically for longer too, so key-up tails sit a median 5 dB higher, still 50 dB under the note. Strings that have fallen 40 dB stop summing their stretch, which costs 6.6% fewer instructions on held notes and changes the output 82 dB or more under it. The levels were re-pinned; Tenor Picked Melody's Output moved from -1.0 to -1.2 dB. Both audible changes were adopted under the owner's standing rule to accept candidates; the owner has not heard them yet ([validation](Docs/validation/attack-and-sustain-2026-11-09.md)).
+
 ### 0.4.55 — 2026-11-09 — Plucks keep their physical contact point
 
 Bridgeward and neckward plucks now retain their intended position after conversion to the shorter dispersive delay line. The former second position clamp moved the attack's kink, especially on stiff upper frets. Tension-bent plectrum releases now use wave speed `T/Z`, so their release time agrees with the held force and the string's actual impedance.
@@ -384,6 +388,7 @@ Levels are set on Reason's channel meter, a VU meter read with 0 VU at -12 dBFS 
 - **The wheel's vibrato is measured only at the 1st, 6th and 11th frets.** Rodrigues measured 4-16 cents at the 1st fret against 20-60 at the 6th and 11th; Aculele takes the widest swing at each and draws a straight line between the 1st and the 6th. Its rate does not follow the wheel: his slower vibratos, 0.9-3.2 Hz, are not reachable.
 - **The fingers' slide is authored.** Its speeds and timing are Acustra's hand law, not measured shifts, and its level and its spread from shift to shift were set by ear. The nylon friction band's centre follows from fingerprint ridge spacing, but its level, a quarter of the wound strings', is set by hand. No ukulele shift has been recorded against it. Finger Lookahead predicts a note's string 50 ms early. An event inside the window can change the choice, and the old note is then still let go up to 0.12 s early.
 - There are no rasgueado or triplet-roll strokes, and no palm chuck: a chuck is the fretting hand's.
+- **The attack lacks a recorded tenor's early woody layer.** Over a note's first 20 ms the FreePats tenor carries noise between its partials at 0.5-1 kHz that Aculele's attack stands 16 dB under. The release knock is not its source: with no knock at all the render is still 10 dB under it. The finger's contact and the body's answer to it are the likely sources, and neither is measured ([validation](Docs/validation/attack-and-sustain-2026-11-09.md)).
 - There is no plug-in, editor, screenshot, main build or release yet.
 
 ## Build

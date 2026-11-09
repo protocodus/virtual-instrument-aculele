@@ -5,6 +5,54 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-11-09 — the release gives back the whole held force, and open strings lose nothing at the nut, 0.4.56 (two A/B sets; both B adopted under the owner's standing rule, not yet heard)
+
+**What was decided.** Two audible changes, each with its own set:
+
+- **The release knock.** A pluck's release gives the saddle back the
+  string's held force. Acustra gave back 0.45 of it, a by-ear guitar value
+  that Aculele inherited. The physical value is 1.0. At 1.0 the knock
+  matches the FreePats tenor's air-mode knock within 0.2 dB, and the onset's
+  1-2 kHz click is least, in a sweep from 0 to 1.6. The owner kept the
+  shipping knock over the Knock Finder's cuts at 0.4.17. That choice was
+  between keeping the knock and cutting it, not about its size, so this set
+  asks the size question.
+- **The open-string ring.** 0.4.54 put Acustra's authored 0.0074 dB per
+  round trip back on the open strings. 0.4.33 had removed it when it fitted
+  the open/fretted contrast against five sampled ukuleles. The FreePats
+  tenor's open notes ring longer than either engine's.
+
+**The letters.** Both sets play Concert Strum as it loads, through
+`AculeleProbe` at 48 kHz in 256-sample blocks. Each B is 0.4.55 with that one
+change. Neither set is committed: they are in the project's
+`aculele/listening/2026-11-09-release-knock/` and
+`2026-11-09-open-string-ring/`, each with its `key.md`.
+
+- **Release knock.** Single notes at velocities 45, 85 and 120, 28 s.
+  - A: 0.4.55, 0.45 of the force.
+  - B: the whole force.
+  - B was matched to A on whole-file RMS, -0.02 dB; the null is -27.4 dB.
+- **Open-string ring.** Open C4, E4, A4 and G4 held 3.5 s each, then a C
+  chord let ring, 22 s.
+  - A: 0.4.55, with the nut loss.
+  - B: no nut loss.
+  - B was matched on RMS, -0.46 dB; the null is -21.8 dB.
+
+**What was chosen.** B in both sets, under the owner's standing rule to lean
+toward candidates. The owner has not heard either set; a choice by ear would
+replace this one.
+
+**What it licensed.**
+- The `releaseStepShare` constant is gone: the release gives back the whole
+  force.
+- `withStringStopLoss` is gone: open strings take no stop loss, and
+  `fretStopLossDb` (0.022) stays as fitted.
+- `LevelMatchData.h` was re-pinned, and Tenor Picked Melody's Output moved
+  from -1.0 to -1.2 dB.
+- Neither change fits a number. The quiet-string gate on the stretch sum in
+  the same release changes the output 82 dB or more under it and needed no
+  set ([validation](validation/attack-and-sustain-2026-11-09.md)).
+
 ## 2026-11-08 — owner accepts the physical-model review candidates
 
 The owner instructed: “use all candidates” after receiving the private

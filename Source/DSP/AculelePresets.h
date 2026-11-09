@@ -61,7 +61,7 @@ inline constexpr std::array<FactoryPreset, 7> factoryPresets {{
     { "Tenor Picked Melody", "tenor-picked-melody",
       BodyShape::Tenor, BodyMaterial::Koa, StringMaterial::Fluorocarbon,
       Tuning::LowG, PickingTechnique::Pick, CaptureType::MonoMic,
-      0.10f, 0.30f, 0.60f, 0.82f, 0.62f, 0.0f, 0.10f, 0.10f, -1.0f },
+      0.10f, 0.30f, 0.60f, 0.82f, 0.62f, 0.0f, 0.10f, 0.10f, -1.2f },
     { "Concert Piezo Stage", "concert-piezo-stage",
       BodyShape::Concert, BodyMaterial::Spruce, StringMaterial::Nylon,
       Tuning::Standard, PickingTechnique::Strum, CaptureType::Piezo,

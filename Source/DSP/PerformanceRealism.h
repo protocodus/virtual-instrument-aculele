@@ -63,10 +63,6 @@ struct PerformanceRealism
     // An authored bounded separation for two simultaneous Finger notes,
     // informed by the existing GuitarSet pair analysis (intent is ambiguous).
     bool fingerPairs { true };
-    // Legacy source-compatible flags. This ukulele uses only smooth
-    // monofilaments, so wound-ridge and winding-driven squeak paths are inert.
-    bool woundRidges { true };
-    bool longitudinalSqueak { false };
     // Receiver-specific early-reflection distances and microphone patterns.
     bool directionalRoom { true };
     // Correct the high-rate room conversion's unintended spectral loss.
@@ -124,9 +120,6 @@ struct PerformanceRealism
     // (p(1 - p) / (p0(1 - p0)))^0.22 so stiffer bridgeward contacts unload
     // faster and more compliant soundhole-ward contacts unload more warmly.
     bool pluckBoundaryCompliance { true };
-    // Retained for source compatibility; currently no effect. The former
-    // absolute bridge-wave clip did not represent a local fret contact.
-    bool fretCrownGrazing { true };
 };
 
 } // namespace aculele

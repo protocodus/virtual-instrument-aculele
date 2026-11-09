@@ -1926,10 +1926,9 @@ private:
         const EngineParameters& parameters,
         const PhysicalCalibration& calibration, int index,
         bool playerLoading = true) noexcept;
-    // Top material inputs and higher-plate-mode factors (frequency, Q,
-    // brightness, pressure residue). The coupled A0/T1 modes have their own
+    // The top's higher-plate-mode factors (frequency, Q, brightness,
+    // pressure residue). The coupled A0/T1 modes have their own
     // mass/stiffness and participation calculation; Q and brightness are 1.
-    static WoodPhysicalProperties bodyWoodProperties(BodyMaterial) noexcept;
     static std::array<float, 4> bodyWoodFactors(
         const EngineParameters& parameters) noexcept;
     // The Original's capture voicing (CaptureVoicingData.h) as an amplitude

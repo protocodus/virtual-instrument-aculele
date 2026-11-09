@@ -5538,11 +5538,6 @@ std::array<float, 2> AculeleEngine::radiationModePole(
     return { pole.frequency, loadedRadiationQ(pole, morph, index, playerLoading) };
 }
 
-WoodPhysicalProperties AculeleEngine::bodyWoodProperties(BodyMaterial material) noexcept
-{
-    return woodSpecs[static_cast<std::size_t>(material)].properties;
-}
-
 std::array<float, 4> AculeleEngine::bodyWoodFactors(
     const EngineParameters& parameters) noexcept
 {
@@ -9168,8 +9163,9 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
     // experiment reduces 4-16 kHz in the first 15 ms by a median 1.35 dB,
     // while the 80-1000 Hz attack and total level remain nearly unchanged.
     // This half-amplitude burst is an authored listening candidate, not a
-    // measured plectrum-noise calibration. Finger and Thumb keep their
-    // existing finite-contact bursts.
+    // measured plectrum-noise calibration. Nail strokes take it as a pick's
+    // (nailStroke); the pad strokes, a thumb's downstroke and a strum's
+    // upstroke, keep the whole burst.
     if (pick && performanceRealism_.restrainedPickRoughness)
         voice.excitationEnvelope *= 0.5f;
     voice.excitationEnvelope *= voice.repluckForceGain;

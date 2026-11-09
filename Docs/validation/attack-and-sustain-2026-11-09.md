@@ -4,7 +4,7 @@ The baseline is 0.4.55 (`00f5deb`). The candidate is 0.4.56. Both are Release
 builds from the same compiler and flags (GCC 13.3, Ninja). Every render is
 48 kHz in 256-sample blocks. Two changes are audible and have their own A/B
 sets; the third is a CPU change that leaves the sound in place. Nothing here
-was fitted to a recording, and nobody has listened to the sets yet.
+was fitted to a recording. The owner chose the candidate in both sets.
 
 ## The reference
 

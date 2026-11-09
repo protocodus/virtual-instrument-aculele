@@ -5,7 +5,7 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
-## 2026-11-09 — the release gives back the whole held force, and open strings lose nothing at the nut, 0.4.56 (two A/B sets; both B adopted under the owner's standing rule, not yet heard)
+## 2026-11-09 — the release gives back the whole held force, and open strings lose nothing at the nut, 0.4.56 (two A/B sets; the owner chose B in both)
 
 **What was decided.** Two audible changes, each with its own set:
 
@@ -38,9 +38,10 @@ change. Neither set is committed: they are in the project's
   - B: no nut loss.
   - B was matched on RMS, -0.46 dB; the null is -21.8 dB.
 
-**What was chosen.** B in both sets, under the owner's standing rule to lean
-toward candidates. The owner has not heard either set; a choice by ear would
-replace this one.
+**What was chosen.** B in both sets. They were first adopted under the
+owner's standing rule to lean toward candidates; the owner then chose them on
+2026-11-09 ("take candidate"). The message did not say whether the sets
+were heard, so this is the owner's choice, not recorded as one made by ear.
 
 **What it licensed.**
 - The `releaseStepShare` constant is gone: the release gives back the whole

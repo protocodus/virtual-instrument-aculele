@@ -106,3 +106,52 @@ rapidly re-plucked phrase on every preset.
 **Left.** The strings' own delay lines, 32 KB each, are still cleared and
 copied whole at a note start (18 and about 14 in that block); a ringing
 line has no pending window to bound them by.
+
+## A held chord and an idle instrument (0.4.61)
+
+**Found.** Acustra's pass found it in the string loop the two engines
+share (its 1.9.38, `65648c0`): the idle flush, which clears the instrument
+once everything before the output gain has been under 1e-11 for 80 ms,
+waited for every string to be handed back, so a chord kept under its keys
+or the pedal never reached it. Aculele's 1e-30 floors (the line write, the
+longitudinal ring of 0.4.57) do not cover the loop's filter memories. With
+flush-to-zero off, the open chord G4 C4 E4 A4 held for 130 s on each
+factory preset: the denormal-operand flag raised for good from 15-32 s, a
+block's mean 24-33% of the period from 50-110 s on where it was 4.2-5.0%,
+for as long as the chord was held.
+
+A second site showed in the trace of a chord let go: each string's level
+observer (`finishVoice`) decays from the flushed residue to the smallest
+subnormal float and stays there, a subnormal operand in every sample for as
+long as the engine is awake. `suspend()` zeroes the observers, but nothing
+in this repository calls it: the Performer and the demo renderer leave the
+engine awake.
+
+**Fix.** The flush runs with strings held. A held string's line, loop
+filter memories and slope observers are zeroed in place
+(`StringLoop::settle`) and it stays held; the others are handed back as
+before; every string's level observer is zeroed. Once nothing is held the
+instrument is flushed again as one, so a suspension still keeps exactly
+what an awake engine holds.
+
+**Measured.** At rest 13-27 s into the held open chord on the seven
+presets, exact zero output from then on, no window after it raising the
+flag, and the mean block at its playing level
+(`Docs/benchmarks/cpu-consolidation-2026-11-09.md`). The demos, the stress
+phrase and the body-change and String Age phrases render bit for bit as
+0.4.60. `Aculele.Rest` plays, on every preset as a host with neither flag
+set: a chord of which one string is let go, two are kept by the pedal and
+one by its key, to rest (10.9-15.2 s); a body change under it; a pedal-held
+note struck again; everything let go, to rest again (5.9-12.4 s). At each
+rest every line, loop memory and level is zero, the output is exact
+silence and twelve blocks raise neither the denormal-operand nor the
+underflow flag. Against 0.4.58 it fails at the first step on every preset.
+
+**Left.** Ordinary playing still passes through subnormal numbers in three
+bounded tails (a finished contact's fractional-delay memories, a key-up
+touch's envelopes, the fret motion's 75 ms drain): 4-9% of a demo's
+8-sample blocks take at least one, and turning flush-to-zero on moves no
+demo's mean or worst block outside the timing spread, so they are not
+floored. A body change under a resting held chord sounds the fingers'
+shift along the new scale at -81 to -94 dBFS; that is the fret motion
+model doing what it does under a sounding chord.

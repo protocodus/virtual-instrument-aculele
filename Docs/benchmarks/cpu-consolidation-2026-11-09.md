@@ -69,3 +69,52 @@ The demos do not strike eight strings at once, so their blocks move inside
 the run-to-run spread. Their worst blocks are four-note strums over ringing
 strings (the first block of a run, when it is the worst, is the cold
 start).
+
+## 0.4.61: a held chord comes to rest
+
+Acustra's pass found that a chord which stays held never reaches the idle
+flush, and that its waves then run down into subnormal numbers
+(`consolidation-audit-2026-11-09.md`). Aculele shares the loop. The open
+chord G4 C4 E4 A4 at velocity 110, its keys held for 130 s, flush-to-zero
+and denormals-are-zero off, the mean block of each one-second window as a
+share of the period:
+
+| Preset | 0.4.60, 10-20 s | 0.4.60, 110-130 s | 0.4.61, 110-130 s | 0.4.61 at rest from |
+| --- | --- | --- | --- | --- |
+| Concert Strum | 5.0% | 30.2% | 5.9% | 24 s |
+| Soprano D Tuning | 4.7% | 33.3% | 7.6% | 13 s |
+| Tenor Fluorocarbon Fingerstyle | 4.9% | 31.1% | 5.7% | 27 s |
+| Low G Tenor | 4.8% | 24.4% | 7.5% | 15 s |
+| Soprano Thumb | 4.6% | 32.5% | 7.6% | 24 s |
+| Tenor Picked Melody | 4.7% | 29.8% | 7.1% | 18 s |
+| Concert Piezo Stage | 4.2% | 30.1% | 7.1% | 26 s |
+
+At 0.4.60 the denormal-operand flag is first raised for good at 15-32 s,
+the mean passes 20% at 50-110 s and stays there for as long as the chord is
+held; the pedal in place of the keys gives the same (30.0% and 25.4% on the
+two presets tried). At 0.4.61 the output is exact zero from the time in the
+last column and no window after it raises the flag. Its 110-130 s column
+was taken on a busier machine than the 0.4.60 columns (the same runs' 10-20 s
+windows read 3.8-6.8%), so it shows the slowdown gone, not what silence
+costs.
+
+## Subnormal numbers in ordinary playing
+
+A tracer unmasked the denormal-operand and underflow exceptions for each
+8-sample block and counted the faulting instruction (Acustra's method). Over
+three demos at 0.4.61:
+
+| Demo | Blocks of 8 that hit | Sites, by count |
+| --- | --- | --- |
+| 01 Concert Strum | 4.2% | the contact travel's filter memories 1,808, the key-up touch's envelope 516, the fret motion's drain 448 |
+| 03 Tenor Fluorocarbon Fingerstyle | 6.4% | key-up touch 2,908, fret motion 917, contact travel 557 |
+| 06 Tenor Picked Melody | 9.1% | key-up touch 4,840, contact travel 500, fret motion 460 |
+
+Each is a tail of bounded length that ends in an exact zero: some 8 ms
+of a finished contact's fractional-delay memories
+(`ContactTravel::process`), the last of a key-up touch's two envelopes
+(`renderReleaseNoise`), 75 ms of the fret motion's filters draining
+(`renderFretMotion`). The seven demos with flush-to-zero and
+denormals-are-zero off and on, alternated twice, fastest of five: means
+5.4-6.9% off and 5.5-7.1% on, worst blocks 10.3-14.5% and 10.5-15.0%, no
+difference outside the run-to-run spread. They are left as they are.

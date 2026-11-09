@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.4.61 — 2026-11-09 — A held chord comes to rest
+
+A chord kept under its keys or the sustain pedal never reached the flush that clears an idle instrument, which waited for every string to be handed back. Its waves and their filters' memories decayed into subnormal numbers and stayed there. Where the host does not set flush-to-zero, a 256-sample block then took 5-7 times as long (24-33% of the period on the development machine, from 4-5%) from 50-110 s into the hold, for as long as the chord was held. An idle instrument's level observers stopped at the smallest subnormal the same way wherever the front end does not suspend the engine. The flush now runs with strings held, once everything is under 1e-11 (about 190 dB under a played note, 11-27 s into a held chord): they are cleared where they are and stay held, and every string's level observer is cleared with them. Acustra found it in the string loop Aculele shares (its 1.9.38). Every demo and the stress, body-change and String Age phrases render bit for bit as in 0.4.60 ([audit](Docs/validation/consolidation-audit-2026-11-09.md), [measurement](Docs/benchmarks/cpu-consolidation-2026-11-09.md)).
+
 ### 0.4.60 — 2026-11-09 — Less work in a re-plucked note's block
 
 Each string keeps a ring of the arrivals an earlier contact still has in flight when the string is plucked again, 128 KB at 48 kHz. Every note start cleared the whole ring, and a note that leaves its old sound ringing copied it whole. Both now touch only the arrivals still pending, which is all the ring ever holds besides zeros. Every demo and the stress, body-change and String Age phrases render bit for bit as in 0.4.59. The stress phrase's heaviest block, eight notes struck at once over ringing strings, runs 18% fewer instructions (8.3 million, from 10.1) and takes 10.7-12.9% of the 256-sample period on the development machine, from 12.6-15.6% ([measurement](Docs/benchmarks/cpu-consolidation-2026-11-09.md)).

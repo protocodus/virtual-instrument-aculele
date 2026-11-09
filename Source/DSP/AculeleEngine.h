@@ -1063,6 +1063,10 @@ private:
         } gestureContact {};
 
         void reset() noexcept;
+        // The wave and every filter's memory of it to exact rest. What the
+        // loop is - its delay, losses, dispersion, hand contact and their
+        // transitions - stays (processIdleFlush).
+        void settle() noexcept;
         void setCurrentDelay(float samples) noexcept;
         [[nodiscard]] float readDelay(float samples) noexcept;
         // Switches the second dispersion section in or out under a sounding
@@ -2623,11 +2627,14 @@ private:
     int muteIdleSamples_ {};
     // An idle instrument settles on a rounding-level residue (about 1e-12 at
     // the output) that its strings and bridge hold between them; after
-    // idleFlushSeconds with nothing played and everything under
-    // idleFloor it is cleared once, as All Sound Off clears it, so an idle
-    // instrument reaches exact zero (processIdleFlush).
+    // idleFlushSeconds with nothing let go or about to sound and everything
+    // under idleFloor it is cleared once, as All Sound Off clears it, so an
+    // idle instrument reaches exact zero, held strings included
+    // (processIdleFlush).
     int idleQuietSamples_ { 0 };
     bool idleFlushed_ { true };
+    // The last flush left held strings where they were.
+    bool idleFlushHeld_ { false };
     void processIdleFlush(float samplePeak) noexcept;
     float bodyModelFade_ { 1.0f };
     float bodyModelFadeStep_ { 1.0f / 1920.0f };

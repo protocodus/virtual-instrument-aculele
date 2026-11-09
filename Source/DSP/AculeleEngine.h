@@ -189,7 +189,7 @@ struct EngineParameters
     // damping finger or palm landing on the still-vibrating string, launched
     // into it from where it touches (startReleaseNoise in AculeleEngine.cpp).
     // 0.5 is the nominal level. Sampled at damping onset (after
-    // grace/sustain) and live for stopped-wound sliding. Zero bypasses new
+    // grace/sustain) and live while the fingertip slides on a stopped string. Zero bypasses new
     // noise; waves continue.
     float releaseNoise { 0.0f };
     // The room send around the microphones, 0 none to 1 its maximum level:
@@ -846,8 +846,10 @@ private:
         float y2 { 0.0f };
         float process(float input, float a1, float a2) noexcept
         {
-            const float output = a2 * input + a1 * x1 + x2
-                               - a1 * y1 - a2 * y2;
+            // H(1)=1: a constant travelling potential is an arbitrary
+            // displacement reference, even while dispersion is retuned.
+            // Difference form keeps that invariant exact in float.
+            const float output = x2 + a1 * (x1 - y1) + a2 * (input - y2);
             x2 = x1;
             x1 = input;
             y2 = y1;
@@ -957,8 +959,7 @@ private:
         float bendingLossX2 { 0.0f };
         float bendingLossY1 { 0.0f };
         float bendingLossY2 { 0.0f };
-        // Its constant loss angles, dislocation and a wound string's winding
-        // friction (constantLossSection in AculeleEngine.cpp), in cascade:
+        // Its viscous-air loss (constantLossSection in AculeleEngine.cpp), in cascade:
         // (g + n1 z^-1 + n2 z^-2) / (1 + a1 z^-1 + a2 z^-2), unit gain at
         // DC, run in the same exact form. Inactive leaves the loop exactly as
         // it was.
@@ -1032,8 +1033,6 @@ private:
             int firstAge { 0 };
             int secondAge { 0 };
             std::array<float, 4> spatialWeights { 1.0f, 0.0f, 1.0f, 0.0f };
-            float firstFraction { 0.0f };
-            float secondFraction { 0.0f };
             float coupling { 0.0f };
             float memoryGain { 0.0f };
             float offsetScale { 0.0f };
@@ -1412,45 +1411,8 @@ private:
             float low { 0.0f }, high { 0.0f };
             float leak { 0.0f };
             int remaining { 0 };
-            // Optional wound-contact colour. All state belongs to this
-            // contact; already emitted packets remain in the arrival queue.
-            double ridgePhase { 0.0 };
-            float ridgeIncrement { 0.0f }, ridgeLevel { 0.0f };
-            float ridgePole { 0.0f }, ridgeForce { 0.0f };
-            float forceRms { 0.0f }, axialForce { 0.0f };
-            bool colourPrepared { false };
-            float axialRadius { 0.0f }, axialDrive { 0.0f }, axialSpeed { 0.0f };
-            std::array<float, 3> axialFrequency {}, axialCosine {}, axialSine {};
-            std::array<float, 3> axialQ {}, axialP {}, axialWeight {}, axialAudible {};
         };
         FretMotion fretMotion {};
-        // Axial force packets have their own short physical flight time;
-        // starting a new finger contact cannot recall a previous packet.
-        struct AxialContactArrivals
-        {
-            static constexpr int capacity = 512;
-            std::array<float, capacity> force {};
-            int readIndex { 0 }, remaining { 0 };
-            void clear() noexcept { force.fill(0.0f); readIndex = remaining = 0; }
-            void add(int offset, float value) noexcept
-            {
-                assert(offset >= 0 && offset < capacity);
-                if (value == 0.0f) return;
-                force[static_cast<std::size_t>((readIndex + offset) % capacity)] += value;
-                remaining = std::max(remaining, offset + 1);
-            }
-            float process() noexcept
-            {
-                if (remaining <= 0) return 0.0f;
-                auto& slot = force[static_cast<std::size_t>(readIndex)];
-                const float result = slot;
-                slot = 0.0f;
-                readIndex = (readIndex + 1) % capacity;
-                --remaining;
-                return result;
-            }
-        };
-        AxialContactArrivals axialContactArrivals {};
         // The string's own lengthwise force at the saddle: the stretch its
         // vibration adds, carried there by its longitudinal waves
         // (renderStringAxialForce). The ring holds the longitudinal round
@@ -1591,7 +1553,6 @@ private:
         std::uint32_t frettingPitchState { 1 };
         float noteDetuneCents { 0.0f };
         int lastPluckMidiNote { -1 };
-        int lastPluckMidiChannel { 0 };
         float lastPluckVelocity { 0.0f };
         std::uint64_t lastPluckSample { 0 };
         float pluckForceGain { 1.0f };
@@ -1625,14 +1586,10 @@ private:
         float excitationReleaseCoefficient { 0.0f };
         ContactTravel contactTravel {};
         float contactPeriodSamples { 0.0f };
-        // Where each plane's release shape put its kink, as a share of the
-        // line it was written on (initialisePluck).
-        std::array<float, 2> releaseShapePosition {};
         // Finger applies releaseSlipPole in full and has no inverse
         // reference. Thumb retains its full-velocity reference ratio;
-        // both poles are zero when that ratio leaves the written shape.
+        // this diagnostic is zero when no reference ratio is active.
         double releaseSlipPole { 0.0 };
-        double releaseReferencePole { 0.0 };
         // Routing identity survives transport retirement: a drained contact
         // must not fall back to the former bridge-boundary source write.
         bool contactTravelEnabled { false };
@@ -1646,6 +1603,9 @@ private:
         // and a scale of exactly 1 leaves every product bit-identical to the
         // unbent engine.
         float bendImpedanceScale { 1.0f };
+        // A pluck unloads at F/(2Z), so its wave speed is T/Z. Stretching
+        // lowers mass per length: this ratio differs from the impedance's.
+        float bendWaveSpeedScale { 1.0f };
         float bendImpedanceStage { 1.0f };
         float appliedBendImpedanceScale { 1.0f };
         // The string's tension now, in newtons, bend included. Kept so the
@@ -1684,7 +1644,7 @@ private:
         // inexpensive bending section still follows the physical pitch.
         // Frequency is positive, so an all-zero key cannot be a valid hit.
         DispersionSolve dispersionDesign {};
-        // The string's own bending-loss and constant-loss sections at the
+        // The string's own bending-loss and air-loss sections at the
         // physical playing frequency, including beyond the bounded phase-fit
         // band above; both polarisations carry them.
         float bendingLossGain { 1.0f };
@@ -1695,10 +1655,6 @@ private:
         float constantLossA2 { 0.0f };
         float constantLossN1 { 0.0f };
         float constantLossN2 { 0.0f };
-        // The fraction both polarisation loops were lengthened by so that the
-        // pair of modes they form through a rocking saddle is heard at the
-        // requested pitch (coupledPolarisationDetune); zero elsewhere.
-        float polarisationDetune { 0.0f };
         // Common saddle tuning is a nominal-pitch calibration. The string's
         // small attack glide does not change its frozen reference load.
         std::uint64_t commonTuningGeneration { 0 };
@@ -2659,10 +2615,6 @@ private:
     bool bridgeCouplingEnabled_ { true };
     bool sympatheticStringsEnabled_ { true };
     bool portObserversEnabled_ { true };
-    // Off only where a test audits the strings' own waves at the junction:
-    // the released static force (initialisePluck) is an external force,
-    // outside their wave-norm identity and the piezo's weighting.
-    bool releaseStepEnabled_ { true };
     // The share of the held string's static force that its release gives
     // back to the junction (initialisePluck says how it was chosen).
     static constexpr float releaseStepShare = 0.45f;

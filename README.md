@@ -11,6 +11,12 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.4.55 — 2026-11-09 — Plucks keep their physical contact point
+
+Bridgeward and neckward plucks now retain their intended position after conversion to the shorter dispersive delay line. The former second position clamp moved the attack's kink, especially on stiff upper frets. Tension-bent plectrum releases now use wave speed `T/Z`, so their release time agrees with the held force and the string's actual impedance.
+
+The fractional-delay and dispersion recurrences preserve a constant travelling-wave reference exactly while retuning. An absolute bridge-wave clip, previously labelled fret-crown grazing, has been removed because it could turn that arbitrary reference into motion; a physical fret contact needs both local waves. The existing air-loss approximation remains after a more accurate fit failed the unchanged construction-transition check. [Review and validation](Docs/validation/realism-review-2026-11-09.md)
+
 ### 0.4.54 — 2026-11-08 — Hand gestures and shorter ringing tails
 
 Four velocity-sensitive keyswitches add a string brush, a fret-hand shift, a body tap and a full-string mute. The mute stops the strings even with Sustain engaged and sounds a soft hand landing. The body and room finish their existing resonance.

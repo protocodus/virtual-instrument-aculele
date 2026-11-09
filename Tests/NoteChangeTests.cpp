@@ -25,6 +25,17 @@
 #include <memory>
 #include <vector>
 
+namespace aculele
+{
+struct AculeleEngineTestAccess
+{
+    static std::uint64_t lastPluck(const AculeleEngine& engine, int string)
+    {
+        return engine.voices_[static_cast<std::size_t>(string)].lastPluckSample;
+    }
+};
+}
+
 namespace
 {
 constexpr double rate = 48000.0;
@@ -120,6 +131,51 @@ struct Player
 int main()
 {
     using Technique = aculele::PickingTechnique;
+    {
+        // A delayed stroke belongs to the string's current owner. Replacing
+        // its pitch before contact must cancel the old onset, whether that
+        // string is silent or already ringing, and whether the replacement
+        // arrives before or after the old pick's scheduled time.
+        for (const bool alreadySounding : { false, true })
+            for (const bool oldStrum : { false, true })
+                for (const int replacementDelay : { 0, 512, 6144 })
+                {
+                    auto engine = std::make_unique<aculele::AculeleEngine>();
+                    engine->prepare(rate, 64);
+                    engine->setStringPerChannelMode(true);
+                    std::array<float, 64> left {}, right {};
+                    if (alreadySounding)
+                        engine->noteOn(69, 0.7f, 4);
+                    engine->process(left.data(), right.data(), 64);
+                    engine->process(left.data(), right.data(), 64);
+                    engine->beginStrum(4096);
+                    engine->noteOn(69, 0.7f, 4, 4096, oldStrum);
+                    for (int n = 0; n < 8; ++n)
+                        engine->process(left.data(), right.data(), 64);
+                    auto last = aculele::AculeleEngineTestAccess::lastPluck(*engine, 3);
+                    int attacks = 0;
+                    engine->noteOn(72, 0.8f, 4, replacementDelay);
+                    // The superseded note's eventual key-up is not the new
+                    // pitch's key-up and cannot cancel its pending contact.
+                    engine->noteOff(69, 4);
+                    for (int n = 0; n < 129; ++n)
+                    {
+                        const auto current = aculele::AculeleEngineTestAccess::lastPluck(*engine, 3);
+                        if (current != last)
+                        {
+                            ++attacks;
+                            check(current == static_cast<std::uint64_t>(640 + replacementDelay),
+                                  "a replaced delayed note fired at the old contact time");
+                            last = current;
+                        }
+                        const auto activity = engine->getStringActivity()[3];
+                        check(activity.midiNote == 72 && activity.keyDown,
+                              "a stale delayed stroke or key-up reclaimed a replaced string");
+                        engine->process(left.data(), right.data(), 64);
+                    }
+                    check(attacks == 1, "a replaced delayed stroke did not sound exactly once");
+                }
+    }
     {
         // C, Am, F, G, C and Am again, each chord's keys up on the next one's
         // sample: the same full shapes as with the key-ups a block before.

@@ -1261,10 +1261,6 @@ constexpr std::array<std::array<std::array<float, 4>, 3>, 2> standardStringGauge
        {{ 0.5690e-3f, 0.7391e-3f, 0.6604e-3f, 0.5690e-3f }} }}
 }};
 constexpr float lowGStringGauge = 0.9093e-3f;
-// Strings below this index are wound: none on a ukulele. Acustra's
-// winding-noise paths (the release brush, sliding ridges) stay in the source
-// behind it, silent.
-constexpr int woundStringCount = 0;
 
 struct StringConstruction
 {
@@ -2037,17 +2033,13 @@ double mixedOnePolePhase(double coefficient, double mix,
 // Weinreich, Springer 1995, pp. 115-183) and the bending-loss term of
 // Woodhouse's (J. Woodhouse, "On the synthesis of guitar plucks", Acta
 // Acustica united with Acustica 90 (2004) 928-944, Sec. 2). Of those models'
-// other terms, air damping is left to the loop's fundamental T60 and the
-// constant loss angles have a section of their own (constantLossSection
-// below); replacing the loop's shelves by Woodhouse's published three-term
-// law over-damped 3-6.8 kHz (Docs/decisions.md, 2026-09-04). Its
-// decay rate sigma_n = omega_n / (2 Q_n) grows as the cube of frequency until
+// other terms, air damping is carried by the loop's fundamental T60 and
+// constantLossSection below. The bending decay rate sigma_n = omega_n / (2 Q_n)
+// grows as the cube of frequency until
 // B n^2 nears one, which is how a string's highest partials die in tens of
-// milliseconds while its first dozen ring for seconds. A plain string's eta
-// is the plain steel's (steelPlainBendingLoss). A wound string's is its own
-// (steelWoundBendingLoss): its core's loss and its turns sliding as it
-// flexes. On a wound string the section carries eta less the winding
-// friction the tension takes over there (constantLossSection).
+// milliseconds while its first dozen ring for seconds. This ukulele's
+// monofilaments use their measured E''/E' at the tuned stress; none has a
+// wound string's inter-turn friction term.
 //
 // Per round trip of the loop, one fundamental period, partial n therefore
 // loses L_n = sigma_n / f0 = pi (f_n / f0) eta B n^2 / (1 + B n^2) nepers.
@@ -2202,25 +2194,14 @@ BendingLossSection bendingLossSection(double factor, double inharmonicity,
     return section;
 }
 
-// A string's constant loss angles (Paté, Le Carrou and Fabre, "Predicting
-// the decay time of solid body electric guitar tones", JASA 135(5) (2014)
-// 3045-3055, Sec. III.A, after Valette). Besides air friction and the visco-
-// and thermo-elastic bending loss above, an isolated string loses a constant
-// 1/Q_disl to dislocation in its metal, "constant over the audio frequency
-// range", and a wound string also loses to dry friction between successive
-// turns, which "comes out as a delay between the slope dz/dx and the shear
-// force T(dz/dx) in the string, hence the effect is the same as that of a
-// complex tension T(1 + j delta_W)". A complex tension loses delta_W on the
-// tension's share 1/(1 + B n^2) of a mode's potential energy, as the bending
-// loss loses eta on the rest, so partial n decays at
-//     sigma_n = pi f_n [delta_disl + (delta_W + eta B n^2) / (1 + B n^2)]
-//             = pi f_n [delta_disl + delta_W
-//                       + (eta - delta_W) B n^2 / (1 + B n^2)],
-// a constant Q where the bending share is small. The second form is two
-// sections in cascade, each following a law it can: this one the constant
-// loss angle delta_disl + delta_W, and the bending section above the factor
-// eta - delta_W (configureVoice). Paté et al. measured the isolated string
-// alike in both polarisations (Sec. III.D), so both loops carry both.
+// The monofilament's air-loss rise, represented by the shipped linear-
+// frequency approximation delta=0.284*eta_air(f0) (ukuleleStringLoss).
+// This two-relaxation topology originated as a metal-string constant-angle
+// loss section; Aculele has no dislocation or inter-turn friction term.
+// A direct square-root-law fit was evaluated during the 2026-11-09 review,
+// but exposed a construction-retune transient above the existing acceptance
+// gate. Keep this accepted approximation until that transition is resolved
+// (Docs/research/square-root-air-loss-2026-11-09.md).
 //
 // A constant loss angle is a loss per round trip L_n = sigma_n / f0 that
 // grows as the first power of frequency, which no all-pole section follows:
@@ -4165,9 +4146,14 @@ float AculeleEngine::StringLoop::readDelay(float samples) noexcept
     // for a line-read section is exactly this signal-valued state.
     const float first = thiranFirst;
     const float second = thiranSecond;
-    const float output = second * at(whole) + first * at(whole + 1)
-                       + at(whole + 2)
-                       - first * allpassY1 - second * allpassY2;
+    // H(1)=1: a constant travelling-wave potential is not string motion.
+    // Pair equal input/history terms before multiplying, so that gauge is
+    // preserved exactly even when the fractional coefficients or anchor
+    // change. The expanded four-product form introduced rounding impulses
+    // from its large cancelling terms during an otherwise quiet retune.
+    const float output = at(whole + 2)
+                       + first * (at(whole + 1) - allpassY1)
+                       + second * (at(whole) - allpassY2);
     allpassY2 = allpassY1;
     allpassY1 = output;
     return output;
@@ -4250,10 +4236,10 @@ void AculeleEngine::StringLoop::switchLeadingDispersion(
         float following = allpassY2;
         if (whole >= 2)
         {
-            next = second * at(whole) + first * at(whole + 1) + at(whole + 2)
-                 - first * allpassY1 - second * allpassY2;
-            following = second * at(whole - 1) + first * at(whole)
-                      + at(whole + 1) - first * next - second * allpassY1;
+            next = at(whole + 2) + first * (at(whole + 1) - allpassY1)
+                 + second * (at(whole) - allpassY2);
+            following = at(whole + 1) + first * (at(whole) - next)
+                      + second * (at(whole - 1) - allpassY1);
         }
         section.x1 = following;
         section.x2 = next;
@@ -4620,8 +4606,6 @@ void AculeleEngine::StringLoop::beginGestureContact(
     gestureContact.secondAge = static_cast<int>(second);
     const float a = first - static_cast<float>(gestureContact.firstAge);
     const float b = second - static_cast<float>(gestureContact.secondAge);
-    gestureContact.firstFraction = a;
-    gestureContact.secondFraction = b;
     // Interpolate the physical contact and distribute its reaction with
     // the transpose of the same operator. Normalizing the signed spatial
     // vector to squared norm 2 retains the two-port velocity-energy proof,
@@ -5050,7 +5034,6 @@ void AculeleEngine::reset() noexcept
         auto& voice = voices_[static_cast<std::size_t>(string)];
         voice.openMidi = notes[static_cast<std::size_t>(string)];
         voice.lastPluckMidiNote = -1;
-        voice.lastPluckMidiChannel = 0;
         voice.lastPluckVelocity = 0.0f;
         voice.lastPluckSample = 0;
         voice.pluckForceGain = 1.0f;
@@ -5100,7 +5083,6 @@ void AculeleEngine::resetSoundState() noexcept
     room_.reset();
     for (auto& voice : voices_)
     {
-        voice.axialContactArrivals.clear();
         voice.stringAxialForce.clear();
         voice.releaseStepAge = -1;
         voice.releaseStepRise = voice.releaseStepForce
@@ -7489,9 +7471,9 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
     // The broad one-pole shelf that stood in for the strings' frequency-
     // proportional loss - an authored 72 x 1.65e-4 (1 + 1.35 age) x
     // frequencyLossScale per round trip above 14.3 f0, not a measured law -
-    // is retired: the string's constant-loss section below carries that loss
-    // as the constant loss angle it is (constantLossSection), in both
-    // planes. Its zero mix leaves the loop's broad one-pole out
+    // is retired: the measured monofilament air and bending losses below
+    // carry the intrinsic loss in both planes. Its zero mix leaves the broad
+    // one-pole out
     // (StringLoop::advance) and adds no lag to the tuning and dispersion
     // designs.
     constexpr float broadLoss = 0.0f;
@@ -7534,8 +7516,8 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
         || exact::abs(voice.dispersionDesignFrequencyLossScale
                     - physical.frequencyLossScale) > 1.0e-5f;
     // The string's own loss sections, for the physical frequency and tension
-    // the dispersion is designed for: the air term's rise as a constant loss
-    // angle and the material's bending loss (ukuleleStringLoss).
+    // the dispersion is designed for: the existing linear-frequency air-loss
+    // approximation and the material's bending loss (ukuleleStringLoss).
     const float constantLoss = ukuleleLoss.constantLoss;
     const float bendingFactor = ukuleleLoss.bendingFactor;
     // A dispersion design for these complete arguments, from the solves
@@ -7696,7 +7678,6 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
                 + (bentTension - tension) / std::max(axialRigidity, 1.0f))),
         lossDesignFrequency, nominalPeriodGain,
         nominalPeriodGain);
-    voice.polarisationDetune = coupledDetune;
     const float lossOmega = static_cast<float>(referenceLossOmega(omega, sampleRate_));
     const float filterGain = magnitudeForOnePoleMix(
         broadLossCoefficient, broadLoss, lossOmega)
@@ -7863,6 +7844,7 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
     voice.tensionNewtons = bentTension;
     voice.bendImpedanceScale = exact::sqrt((bentTension / tension)
                                          / stretchedMass);
+    voice.bendWaveSpeedScale = (bentTension / tension) / voice.bendImpedanceScale;
     if (clearDelay)
         voice.appliedBendImpedanceScale = voice.bendImpedanceStage
             = voice.bendImpedanceScale;
@@ -8556,7 +8538,6 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
         }
     }
     voice.lastPluckMidiNote = voice.midiNote;
-    voice.lastPluckMidiChannel = voice.midiChannel;
     voice.lastPluckVelocity = v;
     voice.lastPluckSample = sampleClock_;
     // A hand lets the string go at the force it can hold, not at a set
@@ -8769,7 +8750,6 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
     double unslipPole = 0.0;
     double roughnessSlipPole = 0.0;
     voice.releaseSlipPole = 0.0;
-    voice.releaseReferencePole = 0.0;
     // A nail's or plectrum's edge is the same size however hard it plays,
     // so a pick's slip goes as 1/v with the force alone. Scaled by
     // releaseGestureScale as well, as Acustra's is, the slip went as 1/v^2:
@@ -8823,7 +8803,6 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
             }
         }
         voice.releaseSlipPole = unslipPole > 0.0 ? slipPole : 0.0;
-        voice.releaseReferencePole = fullSoftSlip ? 0.0 : unslipPole;
     }
 
     // The caller has already retained any preceding wave. This full-period
@@ -8848,13 +8827,15 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
         // then sat that much bridgeward of p on the string, and its partials
         // 6-9 dB rms off the rest pluck's law. Scaled by the period over the
         // written length it lands at p of the string, which a blind listener
-        // preferred on 2026-09-30 (Docs/decisions.md); the bound leaves room
-        // for that scale past the 0.48 the position itself stops at.
+        // preferred on 2026-09-30 (Docs/decisions.md). The bound here is the
+        // triangle's numerical domain, not the hand's physical band: a
+        // physical point at 0.46 can be beyond 0.60 of a short, stiff line.
+        // Clamping at handLimit moved neckward plucks bridgeward; the old
+        // 0.05 floor also moved the normal plane's authored 0.044 contact.
         const float frameScale = voice.contactPeriodSamples > 0.0f
             ? voice.contactPeriodSamples / static_cast<float>(length) : 1.0f;
         const float localPosition = clamp((position
-            + (polarisation == 0 ? -0.006f : 0.009f)) * frameScale, 0.05f, handLimit);
-        voice.releaseShapePosition[static_cast<std::size_t>(polarisation)] = localPosition;
+            + (polarisation == 0 ? -0.006f : 0.009f)) * frameScale, 0.01f, 0.95f);
         const float polarisationGain = polarisation == 0
             ? exact::sqrt(voice.polarisationMix)
             : voice.pluckParallelSign * exact::sqrt(1.0f - voice.polarisationMix);
@@ -8893,7 +8874,7 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
         // again in no time put back the force it had let go, so the rise
         // still waiting is replaced, not added to. Added, a doubled note
         // thumped 6 dB harder than the one pluck it sounds as.
-        if (polarisation == 0 && releaseStepEnabled_)
+        if (polarisation == 0)
         {
             const float rise = releaseStepShare * releasedAmplitude
                 * polarisationGain
@@ -9335,7 +9316,6 @@ void AculeleEngine::returnToOpenString(Voice& voice, int stringIndex,
     if (clearDelay)
     {
         voice.repluckArrivals.clear();
-        voice.axialContactArrivals.clear();
     }
     voice.releaseAfterPluck = false;
     voice.pedalHeldAtKeyUp = false;
@@ -10194,11 +10174,13 @@ double AculeleEngine::plectrumSlipPole(const Voice& voice,
     // c = 2 L0 f0 of the open string: fretting shortens the string, not the
     // wave speed.
     const float unbentWaveSpeed = 2.0f * scaleLength * tunedMidiFrequency(voice.openMidi);
-    // A member's lateral bend raises wave speed at the same stopped length.
-    // This is the same sqrt(T/mu) ratio already used by the junction, with
-    // stretched mass included; a slide leaves the ratio exactly one.
-    const float waveSpeed = voice.bendImpedanceScale == 1.0f
-        ? unbentWaveSpeed : unbentWaveSpeed * voice.bendImpedanceScale;
+    // The held shape's force is T*y*(1/a + 1/(L-a)); release splits it
+    // between two travelling waves, each at F/(2Z). Therefore c=T/Z,
+    // not the junction's impedance ratio Z/Z0: Grimes' stretched mass
+    // makes c/c0=sqrt((T/T0)*(1+strain)) while Z/Z0 divides by that strain.
+    // A slide leaves both ratios one; this changes only tension bends.
+    const float waveSpeed = voice.bendWaveSpeedScale == 1.0f
+        ? unbentWaveSpeed : unbentWaveSpeed * voice.bendWaveSpeedScale;
     const float heldMetres = exact::abs(releasedAmplitude)
         * std::max(physicalCalibration_.steelDisplacementScaleMetres, 1.0e-4f);
     const float a = clamp(heldDistance, 1.0e-3f, 0.999f * soundingLength);
@@ -10399,9 +10381,10 @@ void AculeleEngine::releaseOverPeriod(StringLoop& loop, int length, float period
     for (int ago = 2 * n; ago >= 1; --ago)
     {
         const int tap = whole - 1 + ago;
-        const float output = static_cast<float>(second) * history(tap)
-            + static_cast<float>(first) * history(tap + 1) + history(tap + 2)
-            - static_cast<float>(first) * y1 - static_cast<float>(second) * y2;
+        // Warm the same DC-exact recurrence the live readDelay uses.
+        const float output = history(tap + 2)
+            + static_cast<float>(first) * (history(tap + 1) - y1)
+            + static_cast<float>(second) * (history(tap) - y2);
         y2 = y1;
         y1 = output;
         if (ago <= n)
@@ -10434,7 +10417,7 @@ void AculeleEngine::writePickRelease(StringLoop& loop, int length, float height,
 {
     // As the shape's own bound (initialisePluck): p of the written line.
     // The reference grid below moves it (setApex) and puts it back.
-    float p = clamp(position, 0.05f, 0.60f);
+    float p = clamp(position, 0.01f, 0.95f);
     double apex = static_cast<double>(p);
     const auto bridgeFraction = [] (double phase)
     {
@@ -10678,7 +10661,7 @@ void AculeleEngine::writePickRelease(StringLoop& loop, int length, float height,
         // the same point on the string is its own share of the 48 kHz line.
         const float hostShare = p;
         setApex(clamp(static_cast<float>(static_cast<double>(hostShare) * length
-            * (48000.0 / sampleRate_) / grid), 0.05f, 0.60f));
+            * (48000.0 / sampleRate_) / grid), 0.01f, 0.95f));
         const auto reference = energiesOn(grid, true);
         referenceSolved = true;
         if (reference.velocity > 0.0)
@@ -10720,7 +10703,7 @@ void AculeleEngine::writePickRelease(StringLoop& loop, int length, float height,
     }
 
     if (referenceSolved)
-        setApex(clamp(position, 0.05f, 0.60f));
+        setApex(clamp(position, 0.01f, 0.95f));
 
     // Kept for the write pass below, which reads the same phases.
     const bool kept = length >= 1
@@ -13151,34 +13134,6 @@ int AculeleEngine::drainReleaseNoiseTravel(Voice& voice) noexcept
     return samples;
 }
 
-namespace
-{
-// Range-reduced eleventh-order sine. Error on the reduced [-pi/2,pi/2]
-// interval is below 6e-8; unlike an impulse/waveshaper this leaves only a
-// negligible approximation residue outside the explicitly retained partials.
-// No audio-rate trig or static lazy-initialisation guard is needed.
-float woundContactSine(double cycles) noexcept
-{
-    double x = cycles - exact::floor(cycles + 0.5);
-    if (x > 0.25) x = 0.5 - x;
-    if (x < -0.25) x = -0.5 - x;
-    x *= 6.2831853071795864769;
-    const double xx = x * x;
-    return static_cast<float>(x * (1.0 + xx * (-1.0 / 6.0
-        + xx * (1.0 / 120.0 + xx * (-1.0 / 5040.0
-        + xx * (1.0 / 362880.0 - xx / 39916800.0))))));
-}
-
-float woundContactBand(float cyclesPerSample) noexcept
-{
-    // Reserve a transition band for the moving contact's modulation. Above
-    // the range, restore broadband energy rather than pinning a false tone
-    // to a frequency cap or folding the winding rate through Nyquist.
-    const float x = std::clamp((cyclesPerSample - 0.25f) / 0.15f, 0.0f, 1.0f);
-    return 1.0f - x * x * (3.0f - 2.0f * x);
-}
-}
-
 void AculeleEngine::primeFretMotion(Voice& voice) noexcept
 {
     // A planned shift survives the pluck's own re-priming (firePluck).
@@ -13431,7 +13386,6 @@ void AculeleEngine::renderFretMotion(Voice& voice, int stringIndex) noexcept
     // on its way to the next note's fret, after its own note let go.
     const auto& anticipation = anticipations_[static_cast<std::size_t>(stringIndex)];
     const bool anticipated = anticipation.moving;
-    const bool wound = woundStringCount > 0 && stringIndex < woundStringCount;
     // It follows the path from the start, but rubs only once it touches.
     const bool touching = voice.harmonic == 1
         && ((voice.played && voice.keyDown && voice.attackFired)
@@ -13472,8 +13426,6 @@ void AculeleEngine::renderFretMotion(Voice& voice, int stringIndex) noexcept
         // arrival queue continue naturally; they cannot be recalled.
         motion.low = motion.high = motion.sourceWave = 0.0f;
         motion.remaining = 0;
-        motion.ridgeLevel = motion.ridgeForce = motion.axialForce = 0.0f;
-        motion.axialQ = motion.axialP = {};
         return;
     }
     const float speed = exact::abs(motion.speed);
@@ -13484,24 +13436,13 @@ void AculeleEngine::renderFretMotion(Voice& voice, int stringIndex) noexcept
     float input = 0.0f;
     if (moving)
     {
-        // Pakarinen/Penttinen/Bank (2007), "Analysis of handling noises on
-        // wound strings": ridge-crossing rate and approximately RMS follow
-        // sliding speed. Their normalized measurements do not identify this
-        // string set's winding pitch or absolute noise level. Reuse the
-        // release brush's representative spectral progression at an authored
-        // 0.5 m/s reference; do not infer winding diameter from fitted EI.
-        //
         // A smooth monofilament has no wraps to cross. A fingertip sliding
         // on a smooth surface vibrates mostly at v/lambda, its fingerprint
         // ridges' period lambda of about 0.45 mm passing over the contact
         // (Scheibert, Leurent, Prevost and Debregeas, Science 323 (2009)
-        // 1503), so the same broad band is centred there: 1.1 kHz at
-        // 0.5 m/s, beside the wound centres' 2-3.5 kHz.
-        constexpr std::array<float, 4> referenceCentres { 2000, 2400, 2900, 3500 };
+        // 1503), so the roughness band is centred there: 1.1 kHz at 0.5 m/s.
         constexpr float fingerprintRidgesPerMetre = 1.0f / 0.45e-3f;
-        const float centre = clamp((wound
-                ? referenceCentres[static_cast<std::size_t>(stringIndex)] / 0.5f
-                : fingerprintRidgesPerMetre) * speed, 150.0f,
+        const float centre = clamp(fingerprintRidgesPerMetre * speed, 150.0f,
             std::min(6000.0f, 0.15f * static_cast<float>(sampleRate_)));
         // Two passive RC lowpasses form a broad roughness band. Exact
         // discrete impulse energy normalizes its white-noise RMS at each
@@ -13544,11 +13485,10 @@ void AculeleEngine::renderFretMotion(Voice& voice, int stringIndex) noexcept
             shift = motion.gesture * unitPowerGain(shiftWanderSpreadDb, wander);
         }
         const float rms = (motion.arriving ? arrivalShare * shift : slideShare)
-            * (wound ? 1.0f : smoothShare)
+            * smoothShare
             * voice.peakLevel * (amount / 0.5f)
             * contact * speedLevel;
         motion.forceGain = rms * static_cast<float>(exact::sqrt(3.0 / energy));
-        motion.forceRms = rms;
         const float leakFrequency = clamp(voice.pitchGeometry.value.lossDesignFrequency, 20.0f, 500.0f);
         motion.leak = 1.0f / (1.0f + twoPi * leakFrequency * inverseSampleRate_);
         motion.remaining = static_cast<int>(0.12 * sampleRate_);
@@ -13559,8 +13499,6 @@ void AculeleEngine::renderFretMotion(Voice& voice, int stringIndex) noexcept
     else if (--motion.remaining == 0)
     {
         motion.low = motion.high = motion.sourceWave = 0.0f;
-        motion.ridgeLevel = motion.ridgeForce = motion.axialForce = 0.0f;
-        motion.axialQ = motion.axialP = {};
         return;
     }
     // Key-up stops new roughness; the short stored filter/displacement tail
@@ -13568,125 +13506,6 @@ void AculeleEngine::renderFretMotion(Voice& voice, int stringIndex) noexcept
     motion.low += motion.lowCoefficient * (input - motion.low);
     motion.high += motion.highCoefficient * (input - motion.high);
     motion.emittedForce = motion.forceGain * (motion.high - motion.low);
-    if (wound && (performanceRealism_.woundRidges || performanceRealism_.longitudinalSqueak))
-    {
-        if (!motion.colourPrepared)
-        {
-            // Fixed nut-to-saddle axial boundary: a sliding soft pad is not
-            // assumed to clamp axial motion like a capo. The effective core
-            // is already a bending fit, so these are frequency priors, not
-            // measured longitudinal modes of this string set. Tension bends
-            // never enter this calculation. Pakarinen et al., JASA (2007),
-            // doi:10.1121/1.2786607; Puputti et al., NIME (2008), pp.49-52.
-            const float length = scaleLengthFor(parameters_.shape);
-            const float linearMass = stringLinearMass(
-                stringConstruction(parameters_, stringIndex));
-            const float fundamental = exact::sqrt(stringAxialRigidity(parameters_,
-                stringIndex, voice.openMidi) / linearMass) / (2.0f * length);
-            motion.axialSpeed = 2.0f * length * fundamental;
-            // JASA 2007 Eq.4: EA/(mu L^2) * k/f_k = 4 f_1.
-            // Sample its force impulse response with dt=1/Fs. The source
-            // and resulting saddle tension are both forces, not displacement
-            // waves; there is no loudness multiplier or transverse pitch here.
-            motion.axialDrive = 4.0f * fundamental * inverseSampleRate_;
-            // Authored 35 ms T60. The rotation form contracts its state norm
-            // with zero input, without the time-varying direct-form pole
-            // energy problem. Coefficients are prepared once per contact.
-            motion.axialRadius = static_cast<float>(std::exp(-6.907755278982137
-                / (0.035 * sampleRate_)));
-            motion.ridgePole = static_cast<float>(std::exp(-1.0 / (0.001 * sampleRate_)));
-            for (std::size_t mode = 0; mode < motion.axialQ.size(); ++mode)
-            {
-                const float frequency = fundamental * static_cast<float>(mode + 1);
-                motion.axialFrequency[mode] = frequency;
-                const float cycles = frequency * inverseSampleRate_;
-                motion.axialAudible[mode] = woundContactBand(cycles);
-                const double angle = twoPi * static_cast<double>(cycles);
-                motion.axialCosine[mode] = static_cast<float>(std::cos(angle));
-                motion.axialSine[mode] = static_cast<float>(std::sin(angle));
-            }
-            motion.colourPrepared = true;
-        }
-        if (performanceRealism_.woundRidges)
-        {
-            if (moving)
-            {
-                // Authored wrap pitches preserving the old 0.5 m/s spectral
-                // anchors: 0.250/0.208/0.172/0.143 mm. No extra RNG draws.
-                constexpr std::array<float, 4> crossingsPerMetre { 4000, 4800, 5800, 7000 };
-                motion.ridgeIncrement = speed * inverseSampleRate_
-                    * crossingsPerMetre[static_cast<std::size_t>(stringIndex)];
-            }
-            motion.ridgeLevel = motion.ridgePole * motion.ridgeLevel
-                + (1.0f - motion.ridgePole) * (moving ? motion.forceRms : 0.0f);
-            motion.ridgePhase += motion.ridgeIncrement;
-            motion.ridgePhase -= exact::floor(motion.ridgePhase);
-            const float sine = woundContactSine(motion.ridgePhase);
-            const float cosine = woundContactSine(motion.ridgePhase + 0.25);
-            float last = 0.0f, current = sine;
-            float periodic = 0.0f, retainedEnergy = 0.0f;
-            constexpr float fullEnergy = 1.0f + 0.25f + 1.0f / 9.0f + 0.0625f;
-            for (int harmonic = 1; harmonic <= 4; ++harmonic)
-            {
-                const float weight = woundContactBand(
-                    harmonic * motion.ridgeIncrement) / harmonic;
-                periodic += weight * current;
-                retainedEnergy += weight * weight;
-                const float next = 2.0f * cosine * current - last;
-                last = current;
-                current = next;
-            }
-            // Ten percent of the stationary force variance is redistributed
-            // into structured crossings. Faded partials return their budget
-            // to roughness; no post-fade renormalisation or blanket boost.
-            constexpr float periodicGain = 0.3748170285f; // sqrt(0.2/fullEnergy)
-            motion.ridgeForce = periodicGain * motion.ridgeLevel * periodic;
-            motion.emittedForce = static_cast<float>(exact::sqrt(
-                1.0f - 0.1f * retainedEnergy / fullEnergy)) * motion.emittedForce
-                + motion.ridgeForce;
-        }
-        if (performanceRealism_.longitudinalSqueak)
-        {
-            if (moving)
-            {
-                const float position = clamp((static_cast<float>(motion.length) - 0.018f)
-                    / scaleLengthFor(parameters_.shape), 0.0f, 1.0f);
-                for (std::size_t mode = 0; mode < motion.axialWeight.size(); ++mode)
-                {
-                    motion.axialWeight[mode] = motion.axialAudible[mode]
-                        * woundContactSine(0.5 * static_cast<double>(mode + 1) * position);
-                }
-            }
-            float colour = 0.0f;
-            for (std::size_t mode = 0; mode < motion.axialQ.size(); ++mode)
-            {
-                const float q = motion.axialQ[mode];
-                const float p = motion.axialP[mode]
-                    + motion.axialDrive * motion.axialWeight[mode] * motion.emittedForce;
-                motion.axialQ[mode] = motion.axialRadius
-                    * (motion.axialCosine[mode] * q + motion.axialSine[mode] * p);
-                motion.axialP[mode] = motion.axialRadius
-                    * (motion.axialCosine[mode] * p - motion.axialSine[mode] * q);
-                colour += motion.axialQ[mode];
-            }
-            // Weight new excitation, not stored modal energy: a moving pad
-            // cannot change the gain of a wave it already launched. Each
-            // mode contracts by r without input, with bounded drive 4f1/Fs.
-            // A truncated modal sum lacks the exact causal cancellation of
-            // infinitely many axial modes. Give this reduced observer an
-            // explicit contact-to-saddle flight before it reaches the body.
-            motion.axialForce = colour;
-            const float distance = clamp(static_cast<float>(motion.length) - 0.018f,
-                                         0.0f, scaleLengthFor(parameters_.shape));
-            const float delay = distance * static_cast<float>(sampleRate_) / motion.axialSpeed;
-            const int whole = static_cast<int>(delay);
-            const float fraction = delay - whole;
-            // At 768 kHz the slowest axial speed needs fewer than 260
-            // samples. The fixed 512-slot queue also covers the final tap.
-            voice.axialContactArrivals.add(whole, (1.0f - fraction) * colour);
-            voice.axialContactArrivals.add(whole + 1, fraction * colour);
-        }
-    }
     const float impedance = voice.characteristicImpedance
         * voice.appliedBendImpedanceScale;
     if (!(impedance > 0.0f))
@@ -14301,16 +14120,13 @@ void AculeleEngine::finishVoice(Voice& voice, int stringIndex,
     // The local-contact paths have already entered incident waves before
     // the junction solve. Writing this source again would duplicate energy.
     const float boundaryExcitation = voice.contactTravelEnabled ? 0.0f : excitation;
-    float normalOut = verticalIncident - bridgeDisplacement
-                    + 0.76f * boundaryExcitation;
-    if (performanceRealism_.fretCrownGrazing && voice.speakingFret > 0
-        && voice.harmonic <= 1 && normalOut < -0.052f)
-    {
-        constexpr float clearance = 0.052f;
-        constexpr float knee = 0.040f;
-        const float excess = -normalOut - clearance;
-        normalOut = -(clearance + knee * std::tanh(excess / knee));
-    }
+    // A single travelling-wave potential has an arbitrary constant offset.
+    // Clipping it at an alleged fret clearance manufactured motion from a
+    // physically silent common offset and was not a local crown collision.
+    // A future contact must gather both waves at the fret and scatter their
+    // velocities causally; an absolute bridge-wave clamp cannot stand in.
+    const float normalOut = verticalIncident - bridgeDisplacement
+                          + 0.76f * boundaryExcitation;
     voice.loops[0].write(normalOut);
     // The crown's sideways motion is (h/a) times the rocking; on a bridge
     // whose rocking was not measured it never moves, and the parallel loop
@@ -15599,22 +15415,6 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
                     axialPiezoForce += piezoStringWeights_[static_cast<std::size_t>(string)] * force;
                 }
             }
-            if (voice.axialContactArrivals.remaining > 0)
-            {
-                // Reduced external-force observation, with an authored
-                // 12-degree rear break angle and equal tension around the
-                // saddle: dFz=sin(12deg)*dT. Break angle resolves axial
-                // tension into saddle down-force (Kemp, PLoS ONE 2023,
-                // doi:10.1371/journal.pone.0292515). The angle and equality
-                // assumption are not measured for the archive guitar.
-                // Only this vertical component and its across-saddle moment
-                // have measured capture paths. No unmeasured neck-axis
-                // rocking, axial feedback or extra acoustic gain is claimed.
-                const float force = breakAngleProjection * voice.axialContactArrivals.process();
-                axialBodyForce += force;
-                axialBodyMoment += saddleLeverArm(string) * force;
-                axialPiezoForce += piezoStringWeights_[static_cast<std::size_t>(string)] * force;
-            }
             if (voice.repluckArrivals.remaining > 0)
             {
                 const auto arrivals = voice.repluckArrivals.process();
@@ -16750,7 +16550,6 @@ void AculeleEngine::processIdleFlush(float samplePeak) noexcept
             && !voice.tailContactTravel.active
             && voice.repluckArrivals.remaining == 0
             && voice.tailRepluckArrivals.remaining == 0
-            && voice.axialContactArrivals.remaining == 0
             && !voice.stringAxialForce.ringing
             && !voice.legatoContactTravel.active && voice.legatoContactSamples == 0
             && !voice.tailLegatoContactTravel.active && voice.tailLegatoContactSamples == 0;

@@ -4962,6 +4962,14 @@ void AculeleEngine::prepare(double sampleRate, int)
     prepared_ = true;
     restartRandomDraws();
     reset();
+    // Every fresh pluck's design, made here rather than a step every 5.3 ms
+    // of audio, so a prepared engine is ready (ready()) and its first notes
+    // sound. 20-110 ms of a factory preset at 48 kHz on the development
+    // machine. Each call checks slots or takes one step of a bounded
+    // search; the bound only keeps a design that never settles from
+    // holding prepare() for ever.
+    for (int step = 0; !dispersionReady_ && step < 64 * preparedDispersionCount; ++step)
+        prepareDispersion();
 }
 
 void AculeleEngine::reset() noexcept
@@ -4992,7 +5000,16 @@ void AculeleEngine::reset() noexcept
     noteOnSeen_.fill(false);
     plannedCount_ = 0;
     controlCounter_ = 0;
+    // A reset keeps every design, so one that adopts no new string, body
+    // size, tuning or age stays ready and plays the next notes as a fresh
+    // instance does (Aculele.Reset); see the end.
+    const auto previous = parameters_;
+    const bool wasReady = ready();
     parameters_ = sanitise(targetParameters_);
+    const bool keepsReady = wasReady && previous.shape == parameters_.shape
+        && previous.strings == parameters_.strings
+        && previous.tuning == parameters_.tuning
+        && exact::bits(previous.stringAge) == exact::bits(parameters_.stringAge);
     ++voiceConfigurationGeneration_;
     bodyAmount_ = parameters_.bodyAmount;
     width_ = parameters_.stereoWidth;
@@ -5052,6 +5069,8 @@ void AculeleEngine::reset() noexcept
             impedance += voice.characteristicImpedance
                        * voice.appliedBendImpedanceScale;
     updatePiezoSaddle(impedance);
+    if (keepsReady)
+        dispersionReadyGeneration_ = voiceConfigurationGeneration_;
 }
 
 void AculeleEngine::resetSoundState() noexcept
@@ -6874,28 +6893,52 @@ bool AculeleEngine::preparedDispersionArguments(
 }
 
 // One step of the designs made ahead of their notes, every 5.3 ms of audio
-// (process): a stale slot's search begun, or one start of the search under
-// way. On the development machine a step takes a median 0.3 ms and at most
-// about 2 ms, and once every slot is ready, about 10 us to check one. All of
-// a factory preset's slots are ready 0.8-3.5 s after it loads at 48 kHz (up
-// to 7 s at 44.1 kHz with nail strokes, which add the 48 kHz reference),
-// at about 10% of real time on top of the engine's own. A note that comes
-// first runs its search itself.
+// (process), and all of them in prepare(): a stale slot's search begun, or
+// one start of the search under way. On the development machine a step
+// takes a median 0.3 ms and at most about 2 ms, and once every slot is
+// ready, about 10 us to check one. After a Shape change the factory presets'
+// slots are made again 0.6-2.4 s later at 48 kHz (Aculele.Ready); until then
+// the Performer ignores note-ons (ready()).
 void AculeleEngine::prepareDispersion() noexcept
 {
+    // Every input of a slot's arguments moves the configuration generation
+    // or the need for a 48 kHz reference; either change starts the count of
+    // made slots again.
+    const bool reference = picksAtReferenceRate();
+    if (dispersionReadyGeneration_ != voiceConfigurationGeneration_
+        || dispersionReadyReference_ != reference)
+    {
+        dispersionReadyGeneration_ = voiceConfigurationGeneration_;
+        dispersionReadyReference_ = reference;
+        dispersionReady_ = false;
+        dispersionReadySlots_ = 0;
+    }
     auto& progress = preparingDispersionProgress_;
     if (!preparingDispersion_)
     {
-        const auto& prepared = preparedDispersion_[static_cast<std::size_t>(
-            preparedDispersionSlot_)];
+        // A ready engine checks one slot a step. An unready one checks up to
+        // unreadyChecks, so a change that leaves every design as it was (a
+        // Wood change) is ready again within ten steps rather than a whole
+        // pass of one slot a step, 0.8 s.
+        constexpr int unreadyChecks = 16;
         std::array<double, 13> arguments {};
-        if (!preparedDispersionArguments(preparedDispersionSlot_, arguments)
-            || (prepared.valid && prepared.arguments == arguments))
+        for (int check = 1;; ++check)
         {
+            const auto& prepared = preparedDispersion_[static_cast<std::size_t>(
+                preparedDispersionSlot_)];
+            if (preparedDispersionArguments(preparedDispersionSlot_, arguments)
+                && !(prepared.valid && prepared.arguments == arguments))
+                break;
             preparedDispersionSlot_ = (preparedDispersionSlot_ + 1)
                 % preparedDispersionCount;
-            return;
+            if (dispersionReadySlots_ < preparedDispersionCount
+                && ++dispersionReadySlots_ == preparedDispersionCount)
+                dispersionReady_ = true;
+            if (dispersionReady_ || check == unreadyChecks)
+                return;
         }
+        dispersionReady_ = false;
+        dispersionReadySlots_ = 0;
         preparingDispersionArguments_ = arguments;
         progress = {};
         preparingDispersion_ = true;
@@ -6918,6 +6961,9 @@ void AculeleEngine::prepareDispersion() noexcept
     solve.valid = true;
     preparingDispersion_ = false;
     preparedDispersionSlot_ = (preparedDispersionSlot_ + 1) % preparedDispersionCount;
+    // Not counted made: the inputs may have moved while it was searched.
+    // The next pass checks it again.
+    dispersionReadySlots_ = 0;
 }
 
 const std::array<AculeleEngine::RestingStringModel, AculeleEngine::stringCount>&

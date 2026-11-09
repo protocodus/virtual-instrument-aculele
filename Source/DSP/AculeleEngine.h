@@ -250,6 +250,19 @@ public:
     // grid steps under 18 kHz.
     static constexpr int radiationContinuationSlots = 19;
     void reset() noexcept;
+    // Whether every string's fresh pluck at every fret finds its dispersion
+    // design made (prepareDispersion). prepare() makes them all, so a
+    // prepared engine is ready; a Shape, String Set, Tuning, String Age,
+    // master tune or rate change makes it unready until the designs it
+    // changed are made again, 0.8-3.5 s at 48 kHz. Until then a note would
+    // run its own search, 3.5-9 ms on the development machine, in its
+    // note-on block, so front ends ignore note-ons (Performer).
+    [[nodiscard]] bool ready() const noexcept
+    {
+        return dispersionReady_
+            && dispersionReadyGeneration_ == voiceConfigurationGeneration_
+            && dispersionReadyReference_ == picksAtReferenceRate();
+    }
     void setParameters(const EngineParameters& parameters) noexcept;
     // A host that suspended rendering after inaudible sleep can adopt its
     // final construction without a fade that would resume on the next strike.
@@ -2281,6 +2294,13 @@ private:
     std::array<double, 13> preparingDispersionArguments_ {};
     detail::DispersionProgress preparingDispersionProgress_ {};
     int preparedDispersionCountdown_ { 0 };
+    // ready(): every slot found made in a row since the inputs to the
+    // slots' arguments last changed (the configuration generation and
+    // whether a 48 kHz reference is needed).
+    bool dispersionReady_ { false };
+    int dispersionReadySlots_ { 0 };
+    std::uint64_t dispersionReadyGeneration_ { 0 };
+    bool dispersionReadyReference_ { false };
     [[nodiscard]] bool preparedDispersionArguments(
         int slot, std::array<double, 13>& arguments) const noexcept;
     void prepareDispersion() noexcept;

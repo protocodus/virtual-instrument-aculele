@@ -13573,9 +13573,11 @@ namespace
 // back and the returning wave at its own age, and adds the square of the two
 // waves' slopes over the cell. `outgoing`, `returning` and `sum` carry the
 // previous cell's reads and the running sum in and out. Four cells go at once
-// where the compiler has 4-wide float vectors; each cell's reads and slope are
-// the one-at-a-time arithmetic, and only the order the squares are added in
-// differs (four partial sums, joined last), a change in the sum's last bits.
+// on x86-64 and under the Jukebox SDK, whose compiler vectorises no loop
+// itself; each cell's reads and slope are the one-at-a-time arithmetic. Under
+// the SDK the squares join the sum in the scalar order, so its samples are
+// the scalar loop's, bit for bit, as in Acustra. Native x86-64 adds them in
+// four partial sums, joined last, a change in the sum's last bits.
 void sumAxialCells(const float* line, unsigned mask, unsigned newest,
                    int stride, int first, int end, float period,
                    float returningSpan, float outgoingScale,
@@ -13592,7 +13594,8 @@ void sumAxialCells(const float* line, unsigned mask, unsigned newest,
         return a + part * (b - a);
     };
     int cell = first;
-#if defined(__SSE2__) && defined(__x86_64__) && (defined(__clang__) || defined(__GNUC__))
+#if (defined(JUKEBOX_SDK) || (defined(__SSE2__) && defined(__x86_64__))) \
+    && (defined(__clang__) || defined(__GNUC__))
     typedef float Floats __attribute__((vector_size(16)));
     typedef int Ints __attribute__((vector_size(16)));
     if (end - cell >= 4)
@@ -13607,7 +13610,19 @@ void sumAxialCells(const float* line, unsigned mask, unsigned newest,
         const Floats four = { 4.0f, 4.0f, 4.0f, 4.0f };
         Floats cells = { static_cast<float>(cell), static_cast<float>(cell + 1),
                          static_cast<float>(cell + 2), static_cast<float>(cell + 3) };
+#if defined(JUKEBOX_SDK)
+        const auto addSquares = [&sum] (Floats slope)
+        {
+            const Floats squares = slope * slope;
+            sum += squares[0];
+            sum += squares[1];
+            sum += squares[2];
+            sum += squares[3];
+        };
+#else
         Floats partial = { 0.0f, 0.0f, 0.0f, 0.0f };
+        const auto addSquares = [&partial] (Floats slope) { partial += slope * slope; };
+#endif
         // Most sums read a stretch of the ring that does not wrap: the
         // newest sample sits at least a period and the outgoing wave's last
         // read past its start. There the reads are plain offsets back from
@@ -13638,7 +13653,7 @@ void sumAxialCells(const float* line, unsigned mask, unsigned newest,
                                                    nextReturning[1], nextReturning[2] };
                 const Floats slope = (nextOutgoing - previousOutgoing) * outgoingScaleV
                     + (nextReturning - previousReturning) * returningScaleV;
-                partial += slope * slope;
+                addSquares(slope);
                 outgoing = nextOutgoing[3];
                 returning = nextReturning[3];
                 cells += four;
@@ -13669,12 +13684,14 @@ void sumAxialCells(const float* line, unsigned mask, unsigned newest,
                                                nextReturning[1], nextReturning[2] };
             const Floats slope = (nextOutgoing - previousOutgoing) * outgoingScaleV
                 + (nextReturning - previousReturning) * returningScaleV;
-            partial += slope * slope;
+            addSquares(slope);
             outgoing = nextOutgoing[3];
             returning = nextReturning[3];
             cells += four;
         }
+#if !defined(JUKEBOX_SDK)
         sum += (partial[0] + partial[1]) + (partial[2] + partial[3]);
+#endif
     }
 #endif
     for (; cell < end; ++cell)

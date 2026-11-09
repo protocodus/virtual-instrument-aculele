@@ -138,7 +138,11 @@ A callgrind profile of Concert Strum's demo, 4 s on 0.4.55, by self cost:
 | `process` | 11.1% |
 | `BridgeLoad::advanceModes` | 7.4% |
 | `RoomAmbience::step` | 4.8% |
-| Dispersion design at note-on (`atan2`) | 4.4% |
+| `atan2` in the dispersion designs made ahead of the notes | 4.4% |
+
+The designs made ahead are a warm-up, one search step a block, that ends
+once every fret of every string is designed ([CPU at 0.4.46](../benchmarks/cpu-2026-11-07.md));
+they are not a note-on cost.
 
 The stretch sums every string's squared slopes at every sample, across two
 lines of about a hundred cells each. Its force goes as the square of the
@@ -160,6 +164,30 @@ its first 300 ms. At the gate it is 69 dB or more under it.
   held notes differ by 82 dB or more under each note's RMS.
 - **A 30 dB gate.** It would save 8.0% and leave 72 dB under the note. It was
   not taken.
+
+### In Reason's build
+
+The stretch sum's four-wide path was compiled only for x86-64. The Jukebox
+SDK's compiler vectorises no loop itself, so in Reason the sum ran one cell
+at a time on every machine. It now takes the four-wide path under the SDK
+too, adding the squares in the scalar order, as Acustra's does (`d86e59d`).
+The SDK is not in this session, so two stand-ins were built from the same
+source before and after, each with `JUKEBOX_SDK` defined, no
+auto-vectorisation, no FP contraction and `-fno-builtin`:
+
+- **Clang 18, x86-64, `__SSE2__` undefined.** The output is the same bit for
+  bit on Concert Strum's demo (6 s) and the 13 tenor notes (53 s). Concert
+  Strum's 4 s take 5.69 G instructions against 6.70 G, 15% fewer; the stretch
+  sum takes 1.96 G against 2.97 G. The 13 held notes take 35.57 G against
+  36.65 G, 2.9% fewer, since the quiet-string gate already skips most of
+  their sum.
+- **Clang 18, ARM64, under qemu.** The output is the same bit for bit on both
+  renders, and the stretch sum now runs on NEON four-lane arithmetic
+  (`fmul`, `fsub`, `fadd` and `fcvtzs` on `.4s`), where before it had none.
+
+Native builds take the path they took before, and their samples are
+unchanged bit for bit. `build45.py compile-only` and a CPU reading in Recon,
+with the SDK, are still to do.
 
 ## Clean-up
 
@@ -188,6 +216,9 @@ from -1.0 to -1.2 dB, as `--report` suggests. The other presets read within
 - **Audio:** `Aculele.AudioDemos` and `Aculele.Levels` pass.
 - **Perf:** `Aculele.CpuBudget` passes.
 - **C++17:** `AculeleDSPCxx17` builds.
+- **ARM64:** `AculeleEngine.cpp` compiles with Clang 18 for aarch64 under
+  `-std=c++17 -Wall -Wextra -Werror -fno-builtin`, with and without
+  `JUKEBOX_SDK`.
 - **Listening sets.** Rendered, not committed:
   - `aculele/listening/2026-11-09-release-knock/`
   - `aculele/listening/2026-11-09-open-string-ring/`

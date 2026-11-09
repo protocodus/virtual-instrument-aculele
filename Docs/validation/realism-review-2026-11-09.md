@@ -93,6 +93,8 @@ longitudinal arrival queue and associated state are removed. The separate
 physical `StringAxialForce` model remains. Public ablation fields keep their
 layout and documented no-op behavior. Other removed private state had no
 readers, including the always-true release-step switch.
+On the native 64-bit build, `sizeof(AculeleEngine)` falls from 2,990,144 to
+2,981,168 bytes, a reduction of 8,976 bytes per engine.
 
 A cross-instrument audit prompted a delayed-strike ownership check. Aculele
 already stores its countdown on the current physical voice and overwrites
@@ -125,6 +127,12 @@ pass the level checks without regeneration.
 The native C++17 warning-as-error build passes. A separate Clang 19 Release
 build with ASan/UBSan passes NoteChange, ConstructionChange, PluckPhysics
 and the 300-input fuzz replay, including leak detection.
+An independently built native authored Rack wrapper passes its full contract
+suite against the frozen wrapper revision `7b0fa5be`. All final DSP translation
+units also compile for x86-64 and AArch64 under Clang 19 with C++17, `-O3`,
+warnings as errors, exceptions disabled, builtins disabled and floating-point
+contraction disabled. AArch64 is a compile check; these results do not claim
+timing or execution inside Reason.
 
 The complete factory matrix covers 1,030 ordinary-key renders at velocities
 20/60/90/110/127 and 1,064 string/fret renders at 60/110. Each reset note is
@@ -195,9 +203,84 @@ perfectly even keyboard volume is made.
 ## Profiling and review audio
 
 Profiling is the final implementation stage, after the sound changes and
-range checks are frozen. The numerical allpass multiplication reduction is
-part of that acoustic/numerical baseline, not a later exact-optimization
-claim. Final CPU, exactness and matched A/B evidence will be recorded here.
+range checks are frozen at `5d3b4eb`. The numerical allpass multiplication
+reduction is part of that acoustic/numerical baseline, not a later
+bit-identical optimization claim.
+
+Callgrind 3.24 measured a three-second Concert Strum excerpt through the real
+Performer at 48 kHz and 256-sample blocks, excluding setup, allocation, hashing
+and file writes. Of 3,830,526,676 instructions, axial string force accounts
+for 37.13%, the body bank for 14.94%, the main processing loop for 10.50% and
+bridge modes for 7.49%. The axial quadrature already has a four-lane SSE2 path
+and a contiguous-ring fast path. There is no evidence here that replacing
+its physical model with a lower-quality approximation is justified.
+
+One exact candidate replaced adjacent scalar gathers with four alias-safe
+eight-byte pair loads and lane shuffles. Independently extracted old/new
+kernels agree bit for bit across 100,000 geometry/ring cases under GCC 14
+and Clang 19; the whole rendered phrase also matches exactly. Strict builds
+show no out-of-line memory-copy calls or MMX transitions. However, GCC lowers
+the candidate to the same effective work: the whole Callgrind instruction
+count is exactly unchanged. The candidate is rejected as extra complexity
+without a measured gain. The restored final DSP archive has the same SHA-256
+as the frozen acoustic archive; no CPU-only source change is retained.
+
+### Final native CPU measurements
+
+The coordinated serial window ran from 09:11 to 09:15 UTC on an AMD EPYC 9V74
+cloud host with a four-core quota and five visible hardware threads. GCC 14.2
+Release DSP archives use the same `-O3` build configuration. This is native
+development-machine evidence, not Reason or AArch64 runtime performance.
+
+The paired matrix uses all seven complete factory MIDI phrases and an
+eight-second gesture sequence at 48 kHz/64 samples and 96 kHz/256 samples.
+Three rounds alternate A/B, B/A, A/B: 96 renders in total, with 541.92 seconds
+of audio and 304,845 callbacks measured for each build. A is `8fd6d61`; B is
+the frozen acoustic result `5d3b4eb`. The benchmark uses each fixture's
+authored initial tempo, independently checked by parsing its MIDI events,
+the real factory controls and the production Performer. The gesture case
+includes held strings, pedal, body/fret gestures, vibrato, bends and mute.
+Repeated audio hashes are consistent within each build.
+
+Unadjusted `CLOCK_THREAD_CPUTIME_ID` and `CLOCK_MONOTONIC_RAW` retain
+calling-thread CPU and callback wall time separately. MIDI dispatch is
+inside the timed callback; setup, hashing, analysis and file writes are
+outside it. The following totals include all phrases and all three rounds:
+
+| Rate/block | Baseline CPU share | Final CPU share | Baseline wall share | Final wall share |
+| --- | ---: | ---: | ---: | ---: |
+| 48 kHz / 64 | 8.50% | 8.27% | 8.52% | 8.29% |
+| 96 kHz / 256 | 17.86% | 17.48% | 17.88% | 17.50% |
+
+Aggregate calling-thread CPU time is 71.4303 seconds before and 69.7700
+seconds after, a measured 2.32% reduction. The geometric mean of the sixteen
+case-median ratios is −2.64%; individual median changes range from −5.98%
+to +1.32%. These are whole-change measurements, not a claimed gain from the
+rejected gather optimization or proof of a small gain on other hardware.
+
+Callback tails remain visible. Final wall-time p99 is 27.98% of the block
+deadline at 48 kHz/64 and 39.18% at 96 kHz/256; p99.9 is 60.40% and 86.22%.
+There are nevertheless 99 observed wall-deadline overruns among 203,226
+64-sample callbacks and 59 among 101,619 256-sample callbacks. The baseline
+has 81 and 111 respectively. The largest final callback is 19.19 ms, while
+the identical deterministic block takes 0.596 and 0.466 ms in the other two
+repeats. A baseline outlier likewise takes 13.22 ms once and 0.436/0.423 ms
+in its other repeats. These maxima are not repeatable DSP bursts; their
+environmental cause is not established here. This cloud measurement does
+not establish a hard real-time deadline guarantee.
+
+The unchanged `Aculele.CpuBudget` gate also passes at 48 kHz/256 samples in
+28.62 seconds. Its seven factory-preset median real-time factors span
+0.07242–0.09324 against the existing 0.35 budget. That gate checks average
+render cost; it does not eliminate the callback-tail limitation above.
+
+The evidence directory is `/workspace/scratch/aculele-20261109/cpu/`:
+`quiet-baseline-final/` contains the fixture/executable manifest, all per-block
+CSVs, per-render JSON, paired summaries, callback tails and matched-block
+outlier observations. `final-cpu-gate.log` and `final-cpu-gate.json` retain
+the required gate result. `profile-review.md` records the rejected exact
+candidate and the immutable archive hashes.
+
 Generated WAVs and large CSVs remain outside the checkout; no listening
 preference is invented from numerical differences.
 

@@ -118,9 +118,14 @@ Each paired difference is 0.4.56 minus 0.4.55:
 - **Highest frets.** On Tenor Picked Melody's A-string fret 18 that bin was
   already over the note's own harmonics. It now stands +5.9 dB over them at
   velocity 50, against -2.0.
-- **Velocity.** The level law, 20 log10(v), holds from velocity 50 up, as at
-  0.4.55 ([dynamics](dynamics-2026-10-29.md)). Soft notes fall under it as the
-  plectrum's slip makes them, with no kink.
+- **Velocity.** Against each key's velocity-127 level, velocities 50-115 sit
+  a median 0.11 dB under the 20 log10(v) law on both engines (10-90%: -1.0
+  to +0.1 dB). Velocity 20 sits 2.6 dB under it, where the plectrum's slip
+  makes soft notes quieter. From 127 to 50 a note's share above 2.5 kHz
+  falls a median 0.49 dB for every dB it is played softer, on both (0.48 on
+  0.4.55; the Kai pack's velocity layers fall 0.29, and 0.43 over C5-C6;
+  [dynamics](dynamics-2026-10-29.md)). Neither change moves the keyboard's
+  response to velocity.
 
 ## CPU: quiet strings skip the stretch sum
 

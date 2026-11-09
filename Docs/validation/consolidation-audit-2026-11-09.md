@@ -1,11 +1,16 @@
 # Consolidation audit, 2026-11-09
 
-An end-to-end review of the engine ahead of release: what was checked, what
-was found and what each fix measured. It starts from 0.4.58 (`0bfe1a1`).
-48 kHz and 256-sample blocks unless a rate is named; timings are from a
-4-core Intel Xeon VM at 2.10 GHz shared with other work, GCC 13.3 `-O3`,
-each block's fastest of three runs, and are development-machine figures,
-never Reason's CPU meter.
+A review of the engine ahead of release, by what a player and a host meet:
+notes around a construction change, the heaviest blocks, a held chord and
+an idle instrument, every key at three velocities, decay against the
+sample rate, library calls in Reason's build, and Acustra's changes since
+the fork. Each section says what was checked, what was found and what a
+fix measured; what was not examined is listed at the end. It starts from
+0.4.58 (`0bfe1a1`). 48 kHz and 256-sample blocks unless a rate is named;
+timings are from a 4-core Intel Xeon VM at 2.10 GHz shared with other
+work, GCC 13.3 `-O3` unless the Reason-like build is named, each block's
+fastest of three or five runs, and are development-machine figures, never
+Reason's CPU meter.
 
 ## Notes during a body, strings, tuning or age change (0.4.59)
 
@@ -155,3 +160,219 @@ demo's mean or worst block outside the timing spread, so they are not
 floored. A body change under a resting held chord sounds the fingers'
 shift along the new scale at -81 to -94 dBFS; that is the fret motion
 model doing what it does under a sounding chord.
+
+## Every key at three velocities
+
+**Checked.** `AculeleNoteSurvey --velocities 40,80,120` plays every key of
+each factory preset alone after a reset, 206 keys and 618 notes, through
+the preset as shipped. Each note's K-weighted level over its first second,
+over C4-C6, less a straight line through them:
+
+| Preset | SD at 40, 80, 120 | Largest step between neighbours | Furthest from the line |
+| --- | --- | --- | --- |
+| Concert Strum | 2.76, 2.54, 2.42 | 4.8-5.0 | -6.8 to -7.5 at D5 |
+| Soprano D Tuning | 3.50, 3.42, 3.35 | 4.0-4.3 | -7.9 to -8.4 at F#5 |
+| Tenor Fluorocarbon Fingerstyle | 3.00, 2.71, 2.55 | 9.4-10.0 | -6.2 to -6.7 at C6 |
+| Low G Tenor | 2.59, 2.29, 2.16 | 6.3-6.4 | -5.8 to -6.7 at B4 |
+| Soprano Thumb | 3.16, 3.09, 3.07 | 3.8-4.5 | -8.1 to -8.4 at F#5 |
+| Tenor Picked Melody | 1.83, 1.65, 1.57 | 5.3-6.1 | -4.4 to -5.2 at A#4 |
+| Concert Piezo Stage | 2.31, 2.04, 1.88 | 3.2-3.7 | -4.2 to -5.5 at B4 |
+
+dB. Every preset spreads least at velocity 120 and 0.1-0.45 dB more at 40.
+Four sampled ukulele packs spread 2.2-3.7 dB over the same keys with
+largest steps of 5.4-12 dB
+([benchmark](sample-pack-benchmark-2026-10-29.md)).
+
+- **Velocity.** No note's distance from its preset's line moves more than
+  2 dB between velocity 40 and 120, so no key is an outlier at one
+  velocity only. From 40 to 120 a note gains a median 9.7-11.9 dB by
+  preset (SD 0.3-1.75 dB over the keys); least 7.1-7.75 dB at G#3 on the
+  two Low G presets, most 12.0-14.5 dB at the top keys of six presets
+  (Soprano Thumb's keys differ least: 9.2-10.7 dB).
+- **Pitch.** The fundamental reads a mean +1.1 cents (SD 1.9) and the
+  pitch the partials carry +1.3 to +2.0 cents by preset and velocity; the
+  largest is +5.8 cents (Concert Piezo Stage, G5).
+- **The furthest keys are the ones the 2026-11-07 survey found**
+  ([note survey](note-survey-2026-11-07.md)), the same key on six presets:
+  A#4-F#5, most of them on the A string's first nine frets, where the top
+  radiates little between and above its first modes (README, Known gaps).
+  On the spruce tenor (Tenor Fluorocarbon Fingerstyle) C5 was the furthest
+  and reads -5.9 to -6.5 dB now; C6 reads -6.2 to -6.7 dB and stands
+  9.4-10.0 dB under B5 beside it, the largest step in the bank (9.3-9.6 dB
+  at 0.4.46). The strings survey places C6 in the body, not the string: on
+  the G string's 17th fret it reads 6-8 dB under its neighbours too, with
+  a peak within 2 dB of theirs and a decay rate between theirs, and the
+  koa tenor has no such key. It lies in the plate band, 17 cents over a
+  mode the tenor's bank holds at 1,036 Hz (`AculeleBodyModes`); the band's
+  level within a third of an octave is a draw (largest 9-13 dB, Known
+  gaps), and whether a spruce tenor has such a key would take a measured
+  body.
+- **Above the line:** G#3 and A3 on Tenor Picked Melody, +5.2 to +6.9 dB
+  over the whole range's line, either side of the tenor's air mode at
+  211 Hz. Its top key, D#6, has a component off its harmonics 3.9-6.4 dB
+  over its strongest partial (`spike_db`), the only key in the bank where
+  one stands above the partials at every velocity.
+
+**Found.** No key whose level, decay, brightness or pitch the model gets
+wrong by a cause this pass could name. Each outlier follows a pitch on its
+body across strings, as a body resonance does; none is trimmed.
+
+**Before and after.** The survey's 618 rows at 0.4.61 are those of 0.4.58,
+byte for byte: a single note after a reset meets none of this pass's three
+changes.
+
+## Decay up the neck against the sample rate
+
+**Checked.** Acukoto's pass found its loss sections over-damping the
+fundamental of a short loop, more at a lower rate. Aculele's loop gain
+already divides both loss sections' magnitude at the playing frequency out
+of the period's gain (`loopGain = desiredPeriodGain / filterGain`,
+`configureVoice`), and the 0.4.46 survey at 44.1, 48 and 96 kHz read no
+direction in decay ([rates](note-survey-rates-2026-11-07.md)). Measured
+again at 0.4.61 where it would show most: `AculeleNoteSurvey --mode
+strings`, every string of every preset from open to the 18th fret at
+velocity 80 (532 notes), at 48 and at 96 kHz. Each note's 96 kHz reading
+less its 48 kHz reading:
+
+| Frets | Notes | Decay, dB/s: mean, SD | Level over 200 ms, dB: mean, SD | Partials' pitch, cents: mean, SD |
+| --- | --- | --- | --- | --- |
+| Open | 28 | +0.22, 0.59 | -0.19, 0.37 | +0.03, 0.11 |
+| 1-5 | 140 | +0.45, 1.03 | -0.29, 0.41 | +0.07, 0.19 |
+| 6-11 | 168 | +0.46, 1.27 | -0.07, 0.49 | +0.11, 0.32 |
+| 12-14 | 84 | +0.49, 1.17 | +0.05, 0.39 | +0.04, 0.62 |
+| 15-18 | 112 | +0.16, 0.94 | +0.09, 0.43 | +0.04, 0.21 |
+
+At the 15th-18th frets the notes decay at a mean 49.0 dB/s at 48 kHz and
+their 96 kHz decay is 1.003 times that (median 1.001, 0.91-1.07 over the
+112 notes; by preset the mean difference is -0.3 to +0.6 dB/s). The decay
+does not depend on the rate, up the neck or anywhere else; nothing to fix.
+
+One reading moved further: the fundamental's peak of F4 on the koa
+tenor's low G string (10th fret) reads -9.9 cents at 48 kHz and +3.1 at
+96 kHz, while the pitch its partials carry reads +2.9 and +5.1. That key
+sits where the note's two polarisations part (Known gaps, "Notes beside
+the top's main resonance start out of tune"); which of the pair the peak
+reading lands on was not traced.
+
+## Library calls in Reason's build (0.4.62)
+
+**Checked.** Reason compiles the engine at `-fno-builtin` for x86-64 with
+SSE3, so a `std::` maths function on the sample path is a call into its
+library, and so is `floor`, which has no SSE3 instruction. The engine's
+square roots, absolute values and finiteness tests on that path already
+go through compiler builtins (`exact::`). A Clang build with those flags,
+profiled over one ringing block
+(`Docs/benchmarks/cpu-consolidation-2026-11-09.md`), made about 1,200
+calls to `floor` and 400 to `expf`: one each whenever a string's delay
+moved, which in that block, 0.23 s after an eight-note strike, was on
+about a third of the loops' delay reads.
+
+**Fix.** `delayAnchor` takes the floor by truncation and a step down for a
+negative fraction, the same integer for every delay a `double` holds
+within an `int`'s range. The `expf` (the slope observer's coefficient,
+`finishVoice`) has no exact replacement and stays.
+
+**Measured.** The seven demos and the stress, body-change, String Age and
+bridge-hand phrases through seven presets (35 float renders) are those of
+0.4.61 bit for bit. No `floor` call is left in the ringing block; on glibc
+that is 0.2% of its instructions, and what Reason's own library saves is
+not known here.
+
+**Left.** A note start's design work is library maths for about 0.7 of its
+7.6 million instructions (`atan2`, `log1p`, complex division); the control
+period's `configureVoice` makes some 50,000 instructions of it a ringing
+block.
+
+## The bridge hand
+
+**Checked.** A moving bridge hand (CC2) reconfigures every sounding string
+each control period, and Acustra's 1.9.37 found its own doing a whole
+tuning solve each time. Profiled over a 4.5 s phrase on Soprano D Tuning:
+265 million of 6.09 billion instructions under the hand's `configureVoice`,
+about 1.1 million a block (+18%) while the hand moves, and no whole
+dispersion search in any block. **Not changed:** Acustra's remedy tunes
+the pair on the hand's target, which moves the sound while the hand moves,
+for a block that is not this instrument's heaviest.
+
+## Acustra since the fork
+
+Aculele forked from Acustra 1.9.0. Its later versions, against this
+engine:
+
+| Acustra | What | Here |
+| --- | --- | --- |
+| 1.9.38-1.9.39 | A held chord and the level observers come to rest | Taken: 0.4.61 |
+| 1.9.40 | The re-pluck arrival rings | 0.4.60's change, taken there |
+| 1.9.37 | The palm's tuning solve | Measured (above), not taken |
+| 1.9.33 | The axial ring's loss stays passive | Here since 0.4.43. Acustra also tests the single-precision coefficients the loop runs on; over 45,144 designs (every shape, string set, tuning, string and fret at String Age 0, 0.5 and 1, eleven rates from 8 to 192 kHz) none stored here reaches one, the nearest 5.6e-5 under it, so the second test is not added |
+| 1.9.28 | A string remembers the tunings of its last eight stops | Not taken: the tuning solve is 0.14 of the heaviest block's 7.64 million instructions here |
+| 1.9.27 | The tuning solve's arithmetic, a sixth off a note start | Not taken: Aculele's solve has since parted from Acustra's (it reads the port at the bent impedance), so it is a re-derivation, not a copy |
+| 1.9.26 | Which member of the coupled pair the string is tuned to | Not taken: audible, and Aculele's rule is its own (Known gaps, "Notes beside the top's main resonance start out of tune") |
+| 1.9.36 | A picked string's release direction | Not compared in this pass |
+| 1.9.29-1.9.35 | The axial force's units and rate, the pickup's load, output headroom, pluck coordinates | Here as 0.4.48-0.4.55, by their entries; not diffed |
+| 1.9.25 and earlier | | Not compared again in this pass |
+
+Acukoto's fundamental-exact loop gain is not needed: see the decay check
+above.
+
+## Every control reaches held and new notes
+
+`Aculele.ParameterReach` is another branch's test
+(`claude/project-thread-ad7las`, `84ac9b3`), not yet on this one. At
+0.4.58 it failed on Body shape, String age and Tuning, whose notes were
+lost while the designs were made again, and on Strings, whose held notes
+moved 0.47 dB against the 0.5 dB it asks. This branch's four commits
+apply on top of that commit without conflict, and there the test passes:
+20 parameters, 42 changes, none failed.
+
+| Change | New chord apart | Held notes moved |
+| --- | --- | --- |
+| Body shape, tenor to soprano | 7.04 dB | 8.00 dB |
+| Body shape, tenor to concert | 4.77 dB | 5.65 dB |
+| Tuning, Low G to Standard | 7.87 dB | 2.05 dB |
+| Tuning, Low G to D | 9.47 dB | 4.17 dB |
+| String age, 0.2 to 1 | 2.53 dB | 1.70 dB |
+| Strings, nylon to fluorocarbon | 2.40 dB | 0.55 dB |
+
+Strings passes its held-note threshold by 0.05 dB. Restringing under a
+ringing chord changes little of a wave already on the string, so the
+margin is thin and a later change could cross it.
+
+## Known gaps, checked
+
+Each of the README's gaps was read against 0.4.62. All still hold. "A
+stiff note can still overrun a small buffer now and then" was rewritten at
+0.4.59 and stands as written. One is added: the heaviest note-start
+blocks stand over a tenth of the period on the development machine.
+
+## Found and not fixed
+
+- **The heaviest blocks are over 10% of a 256-sample period.** Eight notes
+  struck at once over ringing strings take 10.5-11.6% on the Reason-like
+  build (12.0-14.1% at 0.4.58), the demos' worst strums 10.5-12.9%
+  (11.2-15.7%). What is left, with what each reduction would cost, is in
+  the benchmark document; the one that costs nothing in sound (bounding
+  the delay lines' clears and copies) needs a proof over some 35 read
+  sites.
+- **C6 on the spruce tenor** stands 9.4-10.0 dB under B5 (above). It was
+  there at 0.4.46. Moving it means redrawing the plate band, which every
+  note above 1 kHz on that body would hear.
+- **A ready engine still searches in full at the note** for about one
+  re-pluck in 36 of a stiff note (Known gaps), and a String Age sweep
+  still designs each sounding string again at every step.
+- **Subnormal numbers in three bounded tails** of ordinary playing, with
+  no measurable cost (above).
+- **F4 on the koa tenor's low G string** reads 13 cents apart at 48 and
+  96 kHz in its fundamental's peak; not traced.
+- **Acustra's 1.9.36** (the pick's release direction) was not compared
+  with Aculele's pick.
+
+## Not examined
+
+This pass did not read the engine line by line. Not examined: the units
+and signs of each block of How it works beyond what its existing tests
+hold; the Performer's voicing and strum scheduling; the room and the
+output stage; rates other than 48 and 96 kHz in the surveys (the Rest and
+Ready tests run at 48 kHz); MPE; and Acustra's changes before 1.9.26
+against this engine's own versions of them.
+

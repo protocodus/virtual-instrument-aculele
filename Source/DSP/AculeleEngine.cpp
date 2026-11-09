@@ -8849,17 +8849,16 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
         // parallel plane's acts along it. A natural harmonic is held aside
         // by the picking hand as any note is - the finger on its node damps
         // what the node does not share only once the string is let go - so
-        // its saddle sheds the same force. A listener liked the thump and
-        // chose it at 80% of the full release (Docs/decisions.md,
-        // 2026-10-01), by ear, through a junction whose saddle anchors took
-        // their share of it (applied past them, that entry measured, the step
-        // rang 8-9 dB over the recordings). With the anchors retired
-        // (2026-10-10) the same 0.8 reached the body 5.0 dB stronger: the
-        // step's own part of the 60-180 Hz band over the first 300 ms of E4
-        // and A4, Dreadnought, Finger at velocity 0.6, 4.8-5.1 dB for every
-        // Picking. So the step is given back at 0.45 of the force, 0.8 x
-        // 10^(-5.0/20), the thump that was heard (releaseStepShare;
-        // Docs/research/saddle-termination-2026-10-10.md). A
+        // its saddle sheds the same force. Acustra gave it back at 0.45
+        // (0.8 by ear on a guitar, then 5 dB less once its saddle anchors
+        // were retired; Acustra's Docs/decisions.md, 2026-10-01). Aculele
+        // gives back the whole force, the physical value. Against the
+        // FreePats tenor's single notes the full force's knock matches the
+        // recording's air-mode knock within 0.2 dB, where 0.45 stood about
+        // 7 dB under it; and swept from 0 to 1.6 of the force, the 1-2 kHz
+        // click within 4 ms of the onset is least at 1.0, where the release
+        // is continuous in force
+        // (Docs/validation/attack-and-sustain-2026-11-09.md). A
         // re-pluck adds its step to what an earlier one has still to give
         // back rather than cutting it off: cut, the earlier step's net
         // impulse is no longer zero and the bridge keeps a low kick. Two
@@ -8871,8 +8870,7 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
         // thumped 6 dB harder than the one pluck it sounds as.
         if (polarisation == 0)
         {
-            const float rise = releaseStepShare * releasedAmplitude
-                * polarisationGain
+            const float rise = releasedAmplitude * polarisationGain
                 / (localPosition * static_cast<float>(length));
             if (rise != 0.0f)
             {

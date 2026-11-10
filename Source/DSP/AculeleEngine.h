@@ -914,9 +914,11 @@ private:
         float processAcrossStep(float input, float sampleRateRatio) noexcept;
     };
 
-    struct StringLoop
+    // A string loop apart from its delay line, so that a retained wave can
+    // take the state whole and only the part of the line its reads reach
+    // (StringLoop::captureFrom).
+    struct StringLoopState
     {
-        DelayHistory<maximumDelaySamples> delay {};
         int writeIndex { 0 };
         float currentDelay { 128.0f };
         float targetDelay { 128.0f };
@@ -1000,9 +1002,6 @@ private:
         IntrinsicCoefficients intrinsicCoefficientTarget {};
         IntrinsicCoefficients intrinsicCoefficientStep {};
         int intrinsicCoefficientSamples { 0 };
-        void setIntrinsicCoefficients(const IntrinsicCoefficients& target,
-                                      bool transition,
-                                      int transitionSamples = 0) noexcept;
         OnePole broadLossFilter {};
         OnePole lossFilter {};
         SecondOrderAllpass dispersion {};
@@ -1061,7 +1060,21 @@ private:
             void withdraw(int remainingSamples) noexcept;
             void scatter(float& first, float& second) noexcept;
         } gestureContact {};
+    };
 
+    struct StringLoop : StringLoopState
+    {
+        DelayHistory<maximumDelaySamples> delay {};
+        // Becomes other as an assignment would, copying of the line only
+        // what this loop can read if nothing sets its delay or begins a hand
+        // contact on it again: a retained wave (captureTail). Returns how
+        // many samples behind the write position that is. poisonTheRest
+        // writes unreachedLinePoison over the samples it did not copy.
+        int captureFrom(const StringLoop& other, bool poisonTheRest = false) noexcept;
+        static constexpr float unreachedLinePoison = 3.0e6f;
+        void setIntrinsicCoefficients(const IntrinsicCoefficients& target,
+                                      bool transition,
+                                      int transitionSamples = 0) noexcept;
         void reset() noexcept;
         // The wave and every filter's memory of it to exact rest. What the
         // loop is - its delay, losses, dispersion, hand contact and their
@@ -2691,6 +2704,10 @@ private:
     std::array<FingerAnticipation, stringCount> anticipations_ {};
     // Reused synchronously by one note-on; never a second bridge-loaded string.
     std::array<StringLoop, 2> repluckOldLoops_ {};
+    // A test's switch (Aculele.TailReach): a retained wave's lines hold a
+    // value no string takes wherever captureFrom did not copy, so a read
+    // past its reach shows in the output.
+    bool poisonUnreachedLines_ { false };
     std::array<std::uint64_t, midiChannelCount> lastNoteOnSample_ {};
     std::array<std::uint64_t, midiChannelCount> chordStartSample_ {};
     std::array<bool, midiChannelCount> noteOnSeen_ {};

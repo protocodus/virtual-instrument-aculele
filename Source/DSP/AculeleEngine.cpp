@@ -3957,6 +3957,68 @@ void AculeleEngine::StringLoop::reset() noexcept
     intrinsicCoefficientSamples = 0;
 }
 
+int AculeleEngine::StringLoop::captureFrom(const StringLoop& other,
+                                           bool poisonTheRest) noexcept
+{
+    static_cast<StringLoopState&>(*this) = other;
+    // How far behind the write position this loop can read from here on,
+    // given that nothing sets its delay or lands a hand on it again, which
+    // is a retained wave's case: captureTail's two loops are touched only by
+    // advance, write, applyGestureContact, bridgeVelocity, setLoopGain and
+    // reset, and no configureVoice, release fall, bend, retune or
+    // construction change reaches them.
+    //  - advance reads through readDelay(currentDelay) alone, whose deepest
+    //    tap is whole + 2 samples back, whole = floor(bounded - 1.1)
+    //    (delayAnchor) and bounded the delay or 3 if that is more: at most
+    //    0.9 beyond it. Its follower moves currentDelay between itself and
+    //    targetDelay, never past either, and each of the two dispersion
+    //    sections that can still retire gives its two samples back to both
+    //    once (retireSecondDispersion, retireThirdDispersion), a float sum
+    //    that rounds by under 0.01: at most 4.91 beyond the longer of the
+    //    two delays, so floor(longest) + 5. The first can retire on the very
+    //    next sample; the second waits two more.
+    //  - applyGestureContact, which runs after the sample's write, reads and
+    //    rewrites 1 and 2 samples beyond each of the two ages the landing
+    //    froze (beginGestureContact, on a voice's own loops only).
+    //  - write stores at the write position; bridgeVelocity and setLoopGain
+    //    do not touch the line; reset clears all of it.
+    // Every sample written adds one to what holds, so a reach that covers
+    // the first read covers every later one. A delay that is no number, or
+    // one as long as the line, keeps the whole line, and so does a line of
+    // another ring size (extended rates; prepare gives a voice's lines one
+    // size), which only the whole copy carries.
+    const int size = static_cast<int>(other.delay.size());
+    int reach = size;
+    if (delay.size() == other.delay.size()
+        && currentDelay >= 0.0f && targetDelay >= 0.0f
+        && std::max(currentDelay, targetDelay) < static_cast<float>(size))
+        reach = std::max(
+            static_cast<int>(std::max(currentDelay, targetDelay)) + 5,
+            std::max(gestureContact.firstAge, gestureContact.secondAge) + 2);
+    if (reach >= size)
+    {
+        delay = other.delay;
+        return size;
+    }
+    // The line's own power-of-two ring, as renderStringAxialForce reads it:
+    // the reach samples that end at the newest.
+    const auto mask = static_cast<unsigned>(size) - 1u;
+    const auto begin = static_cast<int>(
+        static_cast<unsigned>(writeIndex - reach) & mask);
+    const int head = std::min(reach, size - begin);
+    std::copy_n(other.delay.begin() + begin, head, delay.begin() + begin);
+    std::copy_n(other.delay.begin(), reach - head, delay.begin());
+    if (poisonTheRest)
+    {
+        // Everything left of the line, from just past the newest sample
+        // round to just before the reach.
+        const auto end = static_cast<unsigned>(writeIndex) & mask;
+        for (int index = 0; index < size - reach; ++index)
+            delay[(end + static_cast<unsigned>(index)) & mask] = unreachedLinePoison;
+    }
+    return reach;
+}
+
 void AculeleEngine::StringLoop::settle() noexcept
 {
     delay.fill(0.0f);
@@ -4554,7 +4616,7 @@ void AculeleEngine::StringLoop::addSectionStates(const StringLoop& other,
     }
 }
 
-void AculeleEngine::StringLoop::GestureContact::configure(
+void AculeleEngine::StringLoopState::GestureContact::configure(
     float strength, int relaxationSamples) noexcept
 {
     const double r = AculeleEngine::clamp(strength, 0.0f, 0.22f);
@@ -4568,7 +4630,7 @@ void AculeleEngine::StringLoop::GestureContact::configure(
     active = r > 0.0;
 }
 
-void AculeleEngine::StringLoop::GestureContact::withdraw(int remainingSamples) noexcept
+void AculeleEngine::StringLoopState::GestureContact::withdraw(int remainingSamples) noexcept
 {
     // The bridge can keep driving a released string, so its contact storage
     // need not be zero at the fixed return-to-open deadline. Lift the hand
@@ -4580,7 +4642,7 @@ void AculeleEngine::StringLoop::GestureContact::withdraw(int remainingSamples) n
     withdrawalScale = x * x * (3.0f - 2.0f * x);
 }
 
-void AculeleEngine::StringLoop::GestureContact::scatter(
+void AculeleEngine::StringLoopState::GestureContact::scatter(
     float& first, float& second) noexcept
 {
     if (!seeded)
@@ -9863,8 +9925,10 @@ void AculeleEngine::captureTail(Voice& voice) noexcept
         voice.tailCharacteristicImpedance = 0.0f;
         return;
     }
-    voice.tailLoop = voice.loops[0];
-    voice.tailParallelLoop = voice.loops[1];
+    // A retained wave keeps its own delay (updateTailHandLoss), so it takes
+    // only as much of each line as it can read.
+    voice.tailLoop.captureFrom(voice.loops[0], poisonUnreachedLines_);
+    voice.tailParallelLoop.captureFrom(voice.loops[1], poisonUnreachedLines_);
     voice.tailExcitationParallelGain = voice.excitationParallelGain;
     voice.tailRepluckArrivals = voice.repluckArrivals;
     voice.repluckArrivals.clear();

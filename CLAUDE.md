@@ -20,7 +20,9 @@ Protocodus portfolio standard kept in the project, not in this repository.
   `CMakeLists.txt`. Any DSP or behaviour change bumps it, and versions only go
   up; a Rack device takes the same `X.Y.Z` plus its own stage suffix.
 - `Source/DSP/` is JUCE-free and C++17 (the Rack toolchain); the
-  `AculeleDSPCxx17` target proves it with `-Werror`. No allocation, file I/O,
+  `AculeleDSPCxx17` target proves it with `-Werror`, in the Rack's layout
+  (`ACULELE_EXTENDED_SAMPLE_RATES`), which `Aculele.SampleRateLayoutParity`
+  holds to this build's bytes. No allocation, file I/O,
   locks or exceptions on the audio thread.
 - `Source/DSP/AculelePresets.h` is the factory bank the demo renderer and
   every front end read. When a plug-in is added, its `BUNDLE_ID` and CLAP id

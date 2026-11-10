@@ -13872,17 +13872,31 @@ void sumAxialCells(const float* line, unsigned mask, unsigned newest,
         if (newest <= mask && newest >= oldest)
         {
             const float* const now = line + newest;
+            const int newestIndex = static_cast<int>(newest);
+            const Ints newestV = { newestIndex, newestIndex, newestIndex, newestIndex };
+            // A lane's two samples sit side by side, the older first: one
+            // eight-byte read each, at an index that is never negative here,
+            // two lanes to a vector.
+            const auto pairs = [line] (int first, int second)
+            {
+                Floats both;
+                __builtin_memcpy(&both, line + static_cast<unsigned>(first) - 1,
+                                 2 * sizeof(float));
+                __builtin_memcpy(reinterpret_cast<char*>(&both) + 2 * sizeof(float),
+                                 line + static_cast<unsigned>(second) - 1,
+                                 2 * sizeof(float));
+                return both;
+            };
             for (; end - cell >= 4; cell += 4)
             {
                 const Floats age = periodV - spanV * cells;
                 const Ints whole = __builtin_convertvector(age, Ints);
                 const Floats part = age - __builtin_convertvector(whole, Floats);
-                const float* const r0 = now - whole[0];
-                const float* const r1 = now - whole[1];
-                const float* const r2 = now - whole[2];
-                const float* const r3 = now - whole[3];
-                const Floats a = { r0[0], r1[0], r2[0], r3[0] };
-                const Floats b = { r0[-1], r1[-1], r2[-1], r3[-1] };
+                const Ints at = newestV - whole;
+                const Floats low = pairs(at[0], at[1]);
+                const Floats high = pairs(at[2], at[3]);
+                const Floats a = { low[1], low[3], high[1], high[3] };
+                const Floats b = { low[0], low[2], high[0], high[2] };
                 const Floats nextReturning = a + part * (b - a);
                 const float* const o = now - cell * stride;
                 const Floats nextOutgoing = { o[0], o[-stride], o[-2 * stride],
@@ -14183,10 +14197,14 @@ float AculeleEngine::renderStringAxialForce(Voice& voice, int stringIndex) noexc
             for (const auto& loop : voice.loops)
             {
                 // displacementAt's read, age 0 the newest sample, on the
-                // line's own power-of-two ring.
+                // line's own power-of-two ring. writeIndex counts around the
+                // largest ring the build allows, four times the 48 kHz one
+                // under extended rates, so the newest sample's place on this
+                // ring is its low bits: unmasked, three sums in four fell
+                // off sumAxialCells' unwrapped reads there.
                 const float* line = loop.delay.data();
                 const auto mask = static_cast<unsigned>(loop.delay.size()) - 1u;
-                const auto newest = static_cast<unsigned>(loop.writeIndex - 1);
+                const auto newest = static_cast<unsigned>(loop.writeIndex - 1) & mask;
                 const auto sample = [line, mask, newest] (int samplesAgo)
                 {
                     return line[(newest - static_cast<unsigned>(samplesAgo)) & mask];

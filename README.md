@@ -434,7 +434,7 @@ python3 Tools/analyse_probe.py <out.wav> <midi>:<start-seconds> ...
 ./build-dsp/AculeleNoteSurvey [--mode keys|strings] [--velocities 60,110] [--jobs N] [--out note-survey.csv]
 ```
 
-CMake 3.22 and a C++20 compiler build the engine; `AculeleDSPCxx17` compiles it as C++17 with `-Werror`, as the Rack toolchain does. `Tools/analyse_probe.py` needs NumPy and SciPy. A demo renders at about 10x real time on one 2.8 GHz Xeon core, about 10% of that core; these are development-machine figures, not a DAW's.
+CMake 3.22 and a C++20 compiler build the engine; `AculeleDSPCxx17` compiles it as C++17 with `-Werror` and the Rack device's longer delay lines (`ACULELE_EXTENDED_SAMPLE_RATES`), as the Rack toolchain does, and `Aculele.SampleRateLayoutParity` holds that build's output to this one's bytes. `Tools/analyse_probe.py` needs NumPy and SciPy. A demo renders at about 10x real time on one 2.8 GHz Xeon core, about 10% of that core; these are development-machine figures, not a DAW's.
 
 ## Licensing
 

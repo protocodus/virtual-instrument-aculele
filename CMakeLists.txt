@@ -59,6 +59,9 @@ if(NOT MSVC)
     set_target_properties(AculeleDSPCxx17 PROPERTIES
         CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
     target_compile_options(AculeleDSPCxx17 PRIVATE -Wall -Wextra -Werror)
+    # The Rack's layout too: four times the delay line, for 192 kHz. No other
+    # target here builds it; Aculele.SampleRateLayoutParity plays it.
+    target_compile_definitions(AculeleDSPCxx17 PUBLIC ACULELE_EXTENDED_SAMPLE_RATES=1)
 endif()
 
 if(ACULELE_BUILD_TOOLS)
@@ -156,6 +159,24 @@ if(BUILD_TESTING)
     add_executable(AculelePlateBandTests Tests/PlateBandTests.cpp)
     target_link_libraries(AculelePlateBandTests PRIVATE AculeleDSP)
     add_test(NAME Aculele.PlateBand COMMAND AculelePlateBandTests)
+
+    # The Rack's layout renders the bytes this library's does.
+    if(NOT MSVC)
+        add_executable(AculeleNormalLayoutParity Tests/SampleRateLayoutParity.cpp)
+        target_link_libraries(AculeleNormalLayoutParity PRIVATE AculeleDSP)
+        add_executable(AculeleExtendedLayoutParity Tests/SampleRateLayoutParity.cpp)
+        target_link_libraries(AculeleExtendedLayoutParity PRIVATE AculeleDSPCxx17)
+        target_include_directories(AculeleExtendedLayoutParity
+            PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Source")
+        set_target_properties(AculeleExtendedLayoutParity PROPERTIES
+            CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+        add_test(NAME Aculele.SampleRateLayoutParity
+            COMMAND "${CMAKE_COMMAND}"
+                "-Dnormal=$<TARGET_FILE:AculeleNormalLayoutParity>"
+                "-Dextended=$<TARGET_FILE:AculeleExtendedLayoutParity>"
+                "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/sample-rate-layout-parity"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/Tests/CheckSampleRateLayoutParity.cmake")
+    endif()
 
     add_executable(AculeleConstructionChangeTests Tests/ConstructionChangeTests.cpp)
     target_link_libraries(AculeleConstructionChangeTests PRIVATE AculeleDSP)

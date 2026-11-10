@@ -1616,7 +1616,8 @@ ModalPole steelOwnBridgePole(std::size_t index,
     {
         auto pole = radiationPole(detail::measuredSteelBodyModes, twin, anchor,
                                   morph, wood, calibration);
-        pole.q = detail::playerLoadedBodyQ(pole.frequency, pole.q, playerLoading);
+        pole.q = detail::playerLoadedBodyQ(pole.frequency, pole.q, playerLoading,
+            twin == morph.t1Index ? morph.t1BridgeLevel : 1.0f);
         return pole;
     }
     const float lowModeMorph = anchorModeFactor(anchor, source.frequency,
@@ -1868,7 +1869,8 @@ void visitSteelBlendBridge(float a0, float t1, float plate, float t1UpperHz,
                 anchor, jointMorph, wood, calibration);
             auto placed = steelJointBridgeModes[index];
             placed.frequency = pole.frequency;
-            placed.q = detail::playerLoadedBodyQ(pole.frequency, pole.q, playerLoading);
+            placed.q = detail::playerLoadedBodyQ(pole.frequency, pole.q, playerLoading,
+                source == jointMorph.t1Index ? jointMorph.t1BridgeLevel : 1.0f);
             // The class radiationPole gave the twin; a plate mode takes the
             // top's mass as B's do (shapeBridgeMode).
             if (steelJointRadiationModes[static_cast<std::size_t>(source)].frequency
@@ -5526,7 +5528,8 @@ std::array<float, 2> AculeleEngine::radiationModePole(
     const auto pole = radiationPole(bank, index, anchor, morph,
         woodFactorsFor(parameters.bodyMaterial), calibration);
     return { pole.frequency,
-             detail::playerLoadedBodyQ(pole.frequency, pole.q, playerLoading) };
+             detail::playerLoadedBodyQ(pole.frequency, pole.q, playerLoading,
+                index == morph.t1Index ? morph.t1BridgeLevel : 1.0f) };
 }
 
 WoodPhysicalProperties AculeleEngine::bodyWoodProperties(BodyMaterial material) noexcept
@@ -5713,7 +5716,8 @@ void AculeleEngine::buildBodyConfiguration(BodyConfiguration& configuration,
         // A body stays against the player throughout a held note and its
         // release. This fixed passive loss is not a key-up envelope.
         const float q = detail::playerLoadedBodyQ(engine.frequency, engine.q,
-                                                 performanceRealism_.playerBodyLoading);
+                                                 performanceRealism_.playerBodyLoading,
+            index == morph.t1Index ? morph.t1BridgeLevel : 1.0f);
         const auto pole = radiationDigitalPole(frequency, q, static_cast<float>(sampleRate));
         mode.poleReal = pole.real();
         mode.poleImaginary = audibleAtThisRate ? pole.imag() : 0.0f;

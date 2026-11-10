@@ -342,7 +342,7 @@ void Performer::endBlock() noexcept
         anticipateHeldNotes();
         // Gather Chords: a hand's chord reaches the keys spread over the
         // gathering window (see chordGatherSeconds), in whatever order the
-        // fingers land. The allocator can only fret it as a guitarist would
+        // fingers land. The allocator can only fret it as a player would
         // if it sees the whole chord as one wrist event, as it does a
         // sequencer's same-sample chord, so every event is held back by the
         // window; a Note On that comes due takes along the Note Ons its
@@ -554,7 +554,7 @@ int Performer::releasedNote(int note, int channel) noexcept
 }
 
 // Hosts may store simultaneous chord members in any insertion order. A
-// physical six-string allocator must see one canonical wrist event, or the
+// physical four-string allocator must see one canonical wrist event, or the
 // same MIDI chord can land on different strings in different hosts.
 void Performer::flushNoteGroup() noexcept
 {
@@ -879,7 +879,7 @@ void Performer::flushNoteGroup() noexcept
             // earliest string, which can now be any the stroke reaches,
             // sounds at the note-on, and no string is taken past the next
             // stroke's predicted start, which the speed draw keeps clear.
-            // Six draws a stroke, one per string, whatever the chord.
+            // Four draws a stroke, one per string, whatever the chord.
             if (completePlan && engine_.performanceRealism().strumScatter)
             {
                 std::array<float, AculeleEngine::stringCount> scatter {};
@@ -1369,14 +1369,11 @@ void Performer::dispatchMidiData(const std::uint8_t* data, int size) noexcept
         {
             // MIDI 1.0's own Mono Mode On channel-mode message on the basic
             // channel: value is how many consecutive channels become
-            // monophonic voices. M=6 is the standard spelling of "six
-            // channels, one voice each", which is why it is the toggle here
-            // -- not a message either Roland's GK or Fishman's TriplePlay is
-            // documented to transmit (their own manuals describe only the
-            // resulting one-string-per-channel layout, not a message that
-            // requests it), so today nothing sends this on those rigs; a
-            // future control surface or the host's own MIDI editor can. Any
-            // other value, including 0, turns the mode back off.
+            // monophonic voices. M=4 spells "four channels, one voice
+            // each", one per string, which is why it is the toggle here: the
+            // demo phrases and a host's own MIDI editor send it (a guitar
+            // controller's M=6 does not ask for a ukulele's four). Any other
+            // value, including 0, turns the mode back off.
             if (controller == 126u && midiChannel == 1)
                 engine_.setStringPerChannelMode(
                     value == static_cast<unsigned>(AculeleEngine::stringCount));

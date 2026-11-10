@@ -85,15 +85,14 @@ public:
     // hand: it alternates with the strums and other picked notes by the same
     // rule, as a plectrum's down-up picking does. One that comes within the
     // chord window (chordGatherSeconds) of the hand's last stroke continues
-    // that stroke, so a chord whose keys or a guitar controller's strings
+    // that stroke, so a chord whose keys or a string controller's strings
     // arrive a few milliseconds apart is one direction, not a flip per note.
     // Finger and Thumb pluck every single note toward the palm. Under
     // Finger a chord of three or four strings is not a stroke at all: the
     // thumb and fingers pluck it together, a few milliseconds apart and in
     // no fixed order (AculeleEngine::fingerChordOffsetSamples), unless a
-    // keyswitch has latched a direction; five or six strings are brushed
-    // as a strum.
-    // The direction keyswitches, below the guitar's range, latch a direction
+    // keyswitch has latched a direction.
+    // The direction keyswitches, below the ukulele's range, latch a direction
     // on every channel until the next direction key, reset or prepare: C0
     // makes every stroke a downstroke, C#0 an upstroke, D0 returns to automatic. D#0
     // toggles global sustain independently of the panel switch and pedals.

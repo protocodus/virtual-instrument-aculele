@@ -5815,16 +5815,28 @@ void AculeleEngine::buildBodyConfiguration(BodyConfiguration& configuration,
         const auto engine = radiationPole(measured, index, anchor, morph,
             woodFactors, physicalCalibration_);
         float frequency = engine.frequency;
-        const float highestMode = 0.46f * static_cast<float>(sampleRate);
+        // The bank was fitted, and the instrument voiced, at 48 kHz, where
+        // the modes the ukulele's scale carries above 0.46 x 48 kHz are
+        // silent. They are silent at every rate: 88.2 kHz and above sounded
+        // them, and their tails moved the body's lowest third octaves 13-16
+        // dB from the 48 kHz response (Aculele.RadiationRates). A mode the
+        // 48 kHz bank sounds and this rate cannot reach (20.3-22.1 kHz at
+        // 44.1 kHz) leaves its static part, what it adds far below its
+        // resonance, as a pole at zero: dropped whole, 44.1 kHz stood up to
+        // 19 dB off there. The static term below gathers those parts.
+        const float bankTop = 0.46f * 48000.0f;
+        const float highestMode = std::min(0.46f * static_cast<float>(sampleRate), bankTop);
         const bool audibleAtThisRate = frequency < highestMode;
-        frequency = clamp(frequency, 45.0f, highestMode);
+        const bool staticAtThisRate = !audibleAtThisRate && frequency < bankTop;
+        frequency = clamp(frequency, 45.0f, staticAtThisRate ? bankTop : highestMode);
 
         const float upper = clamp(std::log2(std::max(frequency, 120.0f)
             / 120.0f) / 6.0f, 0.0f, 1.0f);
         // A body stays against the player throughout a held note and its
         // release. This fixed passive loss is not a key-up envelope.
         const float q = loadedRadiationQ(engine, morph, index, performanceRealism_.playerBodyLoading);
-        const auto pole = radiationDigitalPole(frequency, q, static_cast<float>(sampleRate));
+        const auto pole = staticAtThisRate ? std::complex<float>()
+            : radiationDigitalPole(frequency, q, static_cast<float>(sampleRate));
         mode.poleReal = pole.real();
         mode.poleImaginary = audibleAtThisRate ? pole.imag() : 0.0f;
 
@@ -5839,12 +5851,16 @@ void AculeleEngine::buildBodyConfiguration(BodyConfiguration& configuration,
         const float residueTilt = std::exp2(
             physicalCalibration_.residueTiltDbPerOctave
             * std::log2(frequency / 1000.0f) / 6.02059991f);
-        const float drive = audibleAtThisRate
+        float drive = audibleAtThisRate || staticAtThisRate
             ? anchor.volume * shapeLevel
                 * materialRadiation
                 * bassTilt * brilliance
                 * residueTilt
             : 0.0f;
+        // The microphones' tilt reads a mode's frequency from its pole, and
+        // a static part has none left: it takes its mode's tilt here.
+        if (staticAtThisRate)
+            drive *= detail::microphoneTiltGain(frequency);
         const float playedDrive = drive * share;
         // The stored residues drive unit-input discrete states fitted at
         // 48 kHz. A continuous input residue c gives the discrete residue
@@ -5858,13 +5874,15 @@ void AculeleEngine::buildBodyConfiguration(BodyConfiguration& configuration,
         // That hold droops by sinc(pi f / rate) at the mode, which the 48 kHz
         // fit absorbed at 48 kHz; keep the 48 kHz level at other rates rather
         // than the 48 kHz droop (+0.36 dB at 9 kHz at 96 kHz). One exactly
-        // at 48 kHz.
+        // at 48 kHz, and for a static part, which has no resonance to level:
+        // with the pole at zero the scale below is the 48 kHz mode's value
+        // at 0 Hz.
         const auto holdGain = [frequency] (double rate)
         {
             const double x = static_cast<double>(pi) * static_cast<double>(frequency) / rate;
             return x == 0.0 ? 1.0 : std::sin(x) / x;
         };
-        const float holdDroop = sampleRate == 48000.0 ? 1.0f
+        const float holdDroop = sampleRate == 48000.0 || staticAtThisRate ? 1.0f
             : static_cast<float>(holdGain(48000.0) / holdGain(sampleRate));
         std::complex<float> residueRateScale
             = (pole - 1.0f) / (referencePole - 1.0f) * holdDroop;
@@ -6397,6 +6415,54 @@ void AculeleEngine::buildBodyConfiguration(BodyConfiguration& configuration,
                 &mode.rightMomentReal, &mode.rightMomentImaginary })
             *residue *= gain;
     }
+    // The static term. Each mode above keeps its 48 kHz level at its
+    // resonance (place's hold droop), which leaves its value far below the
+    // resonance, where the hold does not droop, off by that factor: 0.75 at
+    // 22 kHz at 96 kHz. One mode's error is small, but the high modes' tails
+    // nearly cancel under 1 kHz and their errors do not: with the same modes
+    // sounding, the left microphone at 96 kHz still stood 4-6 dB off its
+    // 48 kHz self in a third octave there. So each sounding mode's
+    // shortfall at 0 Hz, (1/droop - 1) of its value there, and the static
+    // parts place left whole, gather in one last mode with its pole at
+    // zero, which passes the input straight to the microphones: 2 Re[R] x
+    // input, no state. The 48 kHz bank needs none and has none.
+    if (sampleRate != 48000.0 && bandEnd < bodyModeCount)
+    {
+        std::array<std::complex<double>, 4> remainder {};
+        for (int index = 0; index < bandEnd; ++index)
+        {
+            auto& mode = configuration.modes[static_cast<std::size_t>(index)];
+            const bool sounding = mode.poleImaginary != 0.0f;
+            std::complex<double> part { 1.0, 0.0 };
+            if (sounding)
+            {
+                const std::complex<double> pole(mode.poleReal, mode.poleImaginary);
+                const auto hold = [] (double x) { return std::sin(x) / x; };
+                const double x = 0.5 * std::arg(pole);
+                const double droop = hold(x * sampleRate / 48000.0) / hold(x);
+                part = (1.0 / droop - 1.0) / (1.0 - pole);
+            }
+            float* const residues[8] { &mode.leftReal, &mode.leftImaginary,
+                &mode.rightReal, &mode.rightImaginary,
+                &mode.leftMomentReal, &mode.leftMomentImaginary,
+                &mode.rightMomentReal, &mode.rightMomentImaginary };
+            for (std::size_t output = 0; output < remainder.size(); ++output)
+            {
+                remainder[output] += part * std::complex<double>(
+                    *residues[2 * output], *residues[2 * output + 1]);
+                // A static part's own slot falls silent: the term carries it.
+                if (!sounding)
+                    *residues[2 * output] = *residues[2 * output + 1] = 0.0f;
+            }
+        }
+        auto& mode = configuration.modes[static_cast<std::size_t>(bandEnd++)];
+        mode = {};
+        mode.leftReal = static_cast<float>(remainder[0].real());
+        mode.rightReal = static_cast<float>(remainder[1].real());
+        mode.leftMomentReal = static_cast<float>(remainder[2].real());
+        mode.rightMomentReal = static_cast<float>(remainder[3].real());
+        configuration.count = bandEnd;
+    }
     // The mid-band pair is a physical frequency, but under 44.1 kHz the
     // modes dropped above 0.46 fs are among those whose cancellation forms
     // the hole: at 8-10 kHz it moved to another mode and the dip with it.
@@ -6426,8 +6492,7 @@ double AculeleEngine::summedMicrophoneMagnitude(const BodyConfiguration& configu
     for (int index = 0; index < configuration.count; ++index)
     {
         const auto& mode = configuration.modes[static_cast<std::size_t>(index)];
-        if (mode.poleImaginary == 0.0f)
-            continue;
+        // A silent mode's residues are zero; the static term's pole is.
         const std::complex<double> pole(mode.poleReal, mode.poleImaginary);
         const auto direct = 1.0 / (1.0 - pole * inverseZ);
         const auto mirror = 1.0 / (1.0 - std::conj(pole) * inverseZ);

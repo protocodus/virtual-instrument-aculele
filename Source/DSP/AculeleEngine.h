@@ -46,15 +46,18 @@
 #endif
 
 // Asks the compiler to inline a function at every call it can see, whatever
-// its size (the hot string-loop and bridge-derivative recurrences).
+// its size (the hot string-loop and bridge-derivative recurrences). GCC
+// refuses to inline a position-independent build's exported function that
+// the dynamic linker could replace, so there the function is hidden, and
+// it is forced inline at its definition (ACULELE_FORCED_INLINE in
+// AculeleEngine.cpp), where the engine's calls see it; a test calling one
+// from its own translation unit links to the out-of-line copy.
 #if defined(__clang__)
 #define ACULELE_ALWAYS_INLINE __attribute__((always_inline))
-#elif defined(__GNUC__)
-// GCC honours always_inline only on a function declared inline. These are
-// defined, and called, only in AculeleEngine.cpp.
-#define ACULELE_ALWAYS_INLINE inline __attribute__((always_inline))
 #elif defined(_MSC_VER)
 #define ACULELE_ALWAYS_INLINE __forceinline
+#elif defined(__GNUC__)
+#define ACULELE_ALWAYS_INLINE __attribute__((visibility("hidden")))
 #else
 #define ACULELE_ALWAYS_INLINE
 #endif

@@ -45,6 +45,22 @@
 #define ACULELE_NOINLINE
 #endif
 
+// The definition of each ACULELE_ALWAYS_INLINE function. GCC forces it
+// inline here, not at the declaration, so only this file's calls (which
+// follow the definition) must inline it, and silences its warning that an
+// always_inline function not declared inline "might not be inlinable".
+// Clang and MSVC take the attribute from the declaration (AculeleEngine.h).
+#if defined(__GNUC__) && !defined(__clang__)
+#define ACULELE_FORCED_INLINE_BEGIN _Pragma("GCC diagnostic push") \
+    _Pragma("GCC diagnostic ignored \"-Wattributes\"")
+#define ACULELE_FORCED_INLINE __attribute__((always_inline))
+#define ACULELE_FORCED_INLINE_END _Pragma("GCC diagnostic pop")
+#else
+#define ACULELE_FORCED_INLINE_BEGIN
+#define ACULELE_FORCED_INLINE
+#define ACULELE_FORCED_INLINE_END
+#endif
+
 // The bridge's modes step their two lanes as one vector pair
 // (BridgeLoad::advanceModes) wherever the compiler has vector extensions,
 // the Rack SDK's own target included; elsewhere each lane steps on its own.
@@ -1504,7 +1520,8 @@ static_assert(detail::stereoMicLevel.size() == 3 * woodSpecs.size() * 4);
 // A float follower otherwise stops one rounding cell short of its target;
 // the cell depends on its approach direction. Every settled control and
 // construction reference must recover the same exact final value.
-ACULELE_ALWAYS_INLINE float settlingGlide(float value, float target, float smoothing) noexcept
+ACULELE_FORCED_INLINE_BEGIN
+ACULELE_ALWAYS_INLINE ACULELE_FORCED_INLINE inline float settlingGlide(float value, float target, float smoothing) noexcept
 {
     if (value == target)
         return target;
@@ -1512,6 +1529,7 @@ ACULELE_ALWAYS_INLINE float settlingGlide(float value, float target, float smoot
     return next == value || exact::abs(target - next) < 1.0e-4f
         ? target : next;
 }
+ACULELE_FORCED_INLINE_END
 
 // Retain the established output scale as the piezo's independent reference.
 // Microphone level matching must never change its circuit drive or output.
@@ -4106,7 +4124,8 @@ void AculeleEngine::StringLoop::setLoopGain(float gain, bool transition,
         loopGain = gain;
 }
 
-float AculeleEngine::StringLoop::bridgeVelocity(
+ACULELE_FORCED_INLINE_BEGIN
+ACULELE_FORCED_INLINE float AculeleEngine::StringLoop::bridgeVelocity(
     float incident, float sampleRateRatio) noexcept
 {
     if (derivativeNeedsPriming)
@@ -4135,7 +4154,7 @@ float AculeleEngine::StringLoop::bridgeVelocity(
     return bridgeDerivative.process(incident, sampleRateRatio);
 }
 
-float AculeleEngine::FixedDerivative::process(float input,
+ACULELE_FORCED_INLINE float AculeleEngine::FixedDerivative::process(float input,
                                               float sampleRateRatio) noexcept
 {
     history[static_cast<std::size_t>(index)] = input;
@@ -4164,6 +4183,7 @@ float AculeleEngine::FixedDerivative::process(float input,
     index = static_cast<int>((static_cast<unsigned>(index) + 1) & historyMask);
     return input - delayed;
 }
+ACULELE_FORCED_INLINE_END
 
 float AculeleEngine::FixedDerivative::processAcrossRelease(
     float input, float sampleRateRatio) noexcept
@@ -4196,7 +4216,8 @@ float AculeleEngine::FixedDerivative::processAcrossStep(
     return process(input, sampleRateRatio);
 }
 
-float AculeleEngine::StringLoop::readDelay(float samples) noexcept
+ACULELE_FORCED_INLINE_BEGIN
+ACULELE_FORCED_INLINE float AculeleEngine::StringLoop::readDelay(float samples) noexcept
 {
     const auto sampleBits = exact::bits(samples);
     if (!readDelayValid || sampleBits != readDelayBits)
@@ -4259,6 +4280,7 @@ float AculeleEngine::StringLoop::readDelay(float samples) noexcept
     allpassY1 = output;
     return output;
 }
+ACULELE_FORCED_INLINE_END
 
 float AculeleEngine::StringLoop::displacementAt(float fraction) const noexcept
 {
@@ -4396,7 +4418,8 @@ ACULELE_NOINLINE void AculeleEngine::StringLoop::advanceIntrinsicCoefficients() 
     step(constantLossN2, 13);
 }
 
-float AculeleEngine::StringLoop::advanceDelayAndRead(
+ACULELE_FORCED_INLINE_BEGIN
+ACULELE_FORCED_INLINE float AculeleEngine::StringLoop::advanceDelayAndRead(
     float delaySmoothing) noexcept
 {
     // A float follower's increment rounds to zero while a physically
@@ -4423,7 +4446,7 @@ float AculeleEngine::StringLoop::advanceDelayAndRead(
     return readDelay(currentDelay);
 }
 
-void AculeleEngine::StringLoop::advanceReleaseGain(
+ACULELE_FORCED_INLINE void AculeleEngine::StringLoop::advanceReleaseGain(
     float releaseGain) noexcept
 {
     if (releaseGain != requestedReleaseGain)
@@ -4440,7 +4463,7 @@ void AculeleEngine::StringLoop::advanceReleaseGain(
                                       appliedReleaseGain - releaseGainStep);
 }
 
-float AculeleEngine::StringLoop::advance(float delaySmoothing,
+ACULELE_FORCED_INLINE float AculeleEngine::StringLoop::advance(float delaySmoothing,
                                          float releaseGain) noexcept
 {
     // Reaching zero coefficients alone does not make y1/y2 delay-only:
@@ -4551,7 +4574,7 @@ float AculeleEngine::StringLoop::advance(float delaySmoothing,
     return reflected * loopGain * appliedReleaseGain;
 }
 
-void AculeleEngine::StringLoop::advancePair(
+ACULELE_FORCED_INLINE void AculeleEngine::StringLoop::advancePair(
     StringLoop& normal, StringLoop& parallel, float delaySmoothing,
     float releaseGain, float& normalOut, float& parallelOut) noexcept
 {
@@ -4699,7 +4722,7 @@ void AculeleEngine::StringLoop::advancePair(
     parallelOut = parallel.advance(delaySmoothing, releaseGain);
 }
 
-void AculeleEngine::StringLoop::write(float value) noexcept
+ACULELE_FORCED_INLINE void AculeleEngine::StringLoop::write(float value) noexcept
 {
     if ((exact::bits(value) & 0x7fffffffu) - 0x0da24260u
         >= (0x7f800000u - 0x0da24260u))
@@ -4707,6 +4730,7 @@ void AculeleEngine::StringLoop::write(float value) noexcept
     delay[static_cast<std::size_t>(writeIndex)] = value;
     writeIndex = wrapDelayIndex(writeIndex + 1);
 }
+ACULELE_FORCED_INLINE_END
 
 void AculeleEngine::StringLoop::warmSections(const float* reads,
                                              int count) noexcept

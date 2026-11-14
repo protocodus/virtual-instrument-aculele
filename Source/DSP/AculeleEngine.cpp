@@ -4396,6 +4396,50 @@ ACULELE_NOINLINE void AculeleEngine::StringLoop::advanceIntrinsicCoefficients() 
     step(constantLossN2, 13);
 }
 
+float AculeleEngine::StringLoop::advanceDelayAndRead(
+    float delaySmoothing) noexcept
+{
+    // A float follower's increment rounds to zero while a physically
+    // significant delay difference remains. Preserve its sub-ULP progress
+    // instead of snapping that whole difference on one sample. Explicit
+    // prescription/reset/switch writes to the published delay start here;
+    // copies retain the precise progress of an already moving string.
+    // A delay already at its target stays there: the follower below would
+    // add zero and store the same values, so it is not run.
+    const auto currentBits = exact::bits(currentDelay);
+    if (currentBits != delayProgressBits || currentBits != exact::bits(targetDelay)
+        || delayProgress != static_cast<double>(targetDelay))
+    {
+        if (currentBits != delayProgressBits)
+            delayProgress = currentDelay;
+        const double nextDelay = delayProgress + static_cast<double>(delaySmoothing)
+            * (static_cast<double>(targetDelay) - delayProgress);
+        delayProgress = nextDelay == delayProgress
+            || exact::abs(static_cast<double>(targetDelay) - nextDelay) < 1.0e-4
+            ? static_cast<double>(targetDelay) : nextDelay;
+        currentDelay = static_cast<float>(delayProgress);
+        delayProgressBits = exact::bits(currentDelay);
+    }
+    return readDelay(currentDelay);
+}
+
+void AculeleEngine::StringLoop::advanceReleaseGain(
+    float releaseGain) noexcept
+{
+    if (releaseGain != requestedReleaseGain)
+    {
+        requestedReleaseGain = releaseGain;
+        releaseGainStep = exact::abs(releaseGain - appliedReleaseGain)
+                        / std::max(currentDelay, 1.0f);
+    }
+    if (appliedReleaseGain < requestedReleaseGain)
+        appliedReleaseGain = std::min(requestedReleaseGain,
+                                      appliedReleaseGain + releaseGainStep);
+    else if (appliedReleaseGain > requestedReleaseGain)
+        appliedReleaseGain = std::max(requestedReleaseGain,
+                                      appliedReleaseGain - releaseGainStep);
+}
+
 float AculeleEngine::StringLoop::advance(float delaySmoothing,
                                          float releaseGain) noexcept
 {
@@ -4428,28 +4472,7 @@ float AculeleEngine::StringLoop::advance(float delaySmoothing,
     }
     if (intrinsicCoefficientSamples > 0)
         advanceIntrinsicCoefficients();
-    // A float follower's increment rounds to zero while a physically
-    // significant delay difference remains. Preserve its sub-ULP progress
-    // instead of snapping that whole difference on one sample. Explicit
-    // prescription/reset/switch writes to the published delay start here;
-    // copies retain the precise progress of an already moving string.
-    // A delay already at its target stays there: the follower below would
-    // add zero and store the same values, so it is not run.
-    const auto currentBits = exact::bits(currentDelay);
-    if (currentBits != delayProgressBits || currentBits != exact::bits(targetDelay)
-        || delayProgress != static_cast<double>(targetDelay))
-    {
-        if (currentBits != delayProgressBits)
-            delayProgress = currentDelay;
-        const double nextDelay = delayProgress + static_cast<double>(delaySmoothing)
-            * (static_cast<double>(targetDelay) - delayProgress);
-        delayProgress = nextDelay == delayProgress
-            || exact::abs(static_cast<double>(targetDelay) - nextDelay) < 1.0e-4
-            ? static_cast<double>(targetDelay) : nextDelay;
-        currentDelay = static_cast<float>(delayProgress);
-        delayProgressBits = exact::bits(currentDelay);
-    }
-    float delayed = readDelay(currentDelay);
+    float delayed = advanceDelayAndRead(delaySmoothing);
     if (thirdDispersionActive)
         delayed = thirdDispersion.process(delayed, thirdDispersionA1,
                                           thirdDispersionA2);
@@ -4524,19 +4547,156 @@ float AculeleEngine::StringLoop::advance(float delaySmoothing,
         reflected -= taken;
     }
     reflected = dispersion.process(reflected, dispersionA1, dispersionA2);
-    if (releaseGain != requestedReleaseGain)
-    {
-        requestedReleaseGain = releaseGain;
-        releaseGainStep = exact::abs(releaseGain - appliedReleaseGain)
-                        / std::max(currentDelay, 1.0f);
-    }
-    if (appliedReleaseGain < requestedReleaseGain)
-        appliedReleaseGain = std::min(requestedReleaseGain,
-                                      appliedReleaseGain + releaseGainStep);
-    else if (appliedReleaseGain > requestedReleaseGain)
-        appliedReleaseGain = std::max(requestedReleaseGain,
-                                      appliedReleaseGain - releaseGainStep);
+    advanceReleaseGain(releaseGain);
     return reflected * loopGain * appliedReleaseGain;
+}
+
+void AculeleEngine::StringLoop::advancePair(
+    StringLoop& normal, StringLoop& parallel, float delaySmoothing,
+    float releaseGain, float& normalOut, float& parallelOut) noexcept
+{
+#if defined(__clang__) || defined(__GNUC__)
+    if (normal.loopGainTransitionSamples == 0
+        && parallel.loopGainTransitionSamples == 0
+        && normal.intrinsicCoefficientSamples == 0
+        && parallel.intrinsicCoefficientSamples == 0
+        && !normal.thirdDispersionRetiring && !parallel.thirdDispersionRetiring
+        && !normal.secondDispersionRetiring && !parallel.secondDispersionRetiring
+        && !normal.bendingLossSeed && !parallel.bendingLossSeed
+        && !normal.constantLossSeed && !parallel.constantLossSeed
+        && normal.broadLossMix == 0.0f && parallel.broadLossMix == 0.0f
+        && normal.thirdDispersionActive == parallel.thirdDispersionActive
+        && normal.secondDispersionActive == parallel.secondDispersionActive
+        && normal.bendingLossActive == parallel.bendingLossActive
+        && normal.constantLossActive == parallel.constantLossActive
+        && normal.lossFilter.remapped == parallel.lossFilter.remapped)
+    {
+        typedef float Float2 __attribute__((vector_size(8), aligned(4), may_alias));
+        const auto allpass = [] (SecondOrderAllpass& s0, SecondOrderAllpass& s1,
+                                 Float2 input, Float2 a1, Float2 a2) noexcept
+        {
+            const Float2 x1 = { s0.x1, s1.x1 };
+            const Float2 x2 = { s0.x2, s1.x2 };
+            const Float2 y1 = { s0.y1, s1.y1 };
+            const Float2 y2 = { s0.y2, s1.y2 };
+            const Float2 output = x2 + a1 * (x1 - y1) + a2 * (input - y2);
+            s0.x2 = x1[0];
+            s1.x2 = x1[1];
+            s0.x1 = input[0];
+            s1.x1 = input[1];
+            s0.y2 = y1[0];
+            s1.y2 = y1[1];
+            s0.y1 = output[0];
+            s1.y1 = output[1];
+            return output;
+        };
+
+        Float2 delayed = { normal.advanceDelayAndRead(delaySmoothing),
+                           parallel.advanceDelayAndRead(delaySmoothing) };
+        if (normal.thirdDispersionActive)
+            delayed = allpass(
+                normal.thirdDispersion, parallel.thirdDispersion, delayed,
+                Float2 { normal.thirdDispersionA1, parallel.thirdDispersionA1 },
+                Float2 { normal.thirdDispersionA2, parallel.thirdDispersionA2 });
+        if (normal.secondDispersionActive)
+            delayed = allpass(
+                normal.secondDispersion, parallel.secondDispersion, delayed,
+                Float2 { normal.secondDispersionA1, parallel.secondDispersionA1 },
+                Float2 { normal.secondDispersionA2, parallel.secondDispersionA2 });
+        normal.thirdDispersionZeroHistory = 0;
+        parallel.thirdDispersionZeroHistory = 0;
+        normal.secondDispersionZeroHistory = 0;
+        parallel.secondDispersionZeroHistory = 0;
+
+        Float2 reflected = delayed;
+        Float2 lowState = { normal.lossFilter.state, parallel.lossFilter.state };
+        if (normal.lossFilter.remapped)
+        {
+            const Float2 prev = { normal.lossFilter.previousInput,
+                                  parallel.lossFilter.previousInput };
+            const Float2 ratePole = { normal.lossFilter.ratePole,
+                                      parallel.lossFilter.ratePole };
+            const Float2 delayedGain = { normal.lossFilter.delayedInputGain,
+                                         parallel.lossFilter.delayedInputGain };
+            lowState = reflected + ratePole * (lowState - reflected)
+                     + delayedGain * (prev - reflected);
+            normal.lossFilter.previousInput = reflected[0];
+            parallel.lossFilter.previousInput = reflected[1];
+        }
+        else
+        {
+            const Float2 coeff = { normal.lowpassCoefficient,
+                                   parallel.lowpassCoefficient };
+            lowState = reflected + coeff * (lowState - reflected);
+        }
+        normal.lossFilter.state = lowState[0];
+        parallel.lossFilter.state = lowState[1];
+        const Float2 highMix = { normal.highLossMix, parallel.highLossMix };
+        reflected += highMix * (lowState - reflected);
+
+        constexpr Float2 one = { 1.0f, 1.0f };
+        if (normal.bendingLossActive)
+        {
+            const Float2 bx1 = { normal.bendingLossX1, parallel.bendingLossX1 };
+            const Float2 bx2 = { normal.bendingLossX2, parallel.bendingLossX2 };
+            const Float2 by1 = { normal.bendingLossY1, parallel.bendingLossY1 };
+            const Float2 by2 = { normal.bendingLossY2, parallel.bendingLossY2 };
+            const Float2 bgain = { normal.bendingLossGain, parallel.bendingLossGain };
+            const Float2 ba1 = { normal.bendingLossA1, parallel.bendingLossA1 };
+            const Float2 ba2 = { normal.bendingLossA2, parallel.bendingLossA2 };
+            const Float2 difference = reflected - bx1;
+            const Float2 taken = (one - bgain) * difference
+                - ba2 * bx2 - ba1 * by1 - ba2 * by2;
+            normal.bendingLossX1 = reflected[0];
+            parallel.bendingLossX1 = reflected[1];
+            normal.bendingLossX2 = difference[0];
+            parallel.bendingLossX2 = difference[1];
+            normal.bendingLossY2 = by1[0];
+            parallel.bendingLossY2 = by1[1];
+            normal.bendingLossY1 = taken[0];
+            parallel.bendingLossY1 = taken[1];
+            reflected -= taken;
+        }
+        if (normal.constantLossActive)
+        {
+            const Float2 cx1 = { normal.constantLossX1, parallel.constantLossX1 };
+            const Float2 cx2 = { normal.constantLossX2, parallel.constantLossX2 };
+            const Float2 cy1 = { normal.constantLossY1, parallel.constantLossY1 };
+            const Float2 cy2 = { normal.constantLossY2, parallel.constantLossY2 };
+            const Float2 cgain = { normal.constantLossGain, parallel.constantLossGain };
+            const Float2 ca1 = { normal.constantLossA1, parallel.constantLossA1 };
+            const Float2 ca2 = { normal.constantLossA2, parallel.constantLossA2 };
+            const Float2 cn2 = { normal.constantLossN2, parallel.constantLossN2 };
+            const Float2 difference = reflected - cx1;
+            const Float2 taken = (one - cgain) * difference
+                + (cn2 - ca2) * cx2 - ca1 * cy1 - ca2 * cy2;
+            normal.constantLossX1 = reflected[0];
+            parallel.constantLossX1 = reflected[1];
+            normal.constantLossX2 = difference[0];
+            parallel.constantLossX2 = difference[1];
+            normal.constantLossY2 = cy1[0];
+            parallel.constantLossY2 = cy1[1];
+            normal.constantLossY1 = taken[0];
+            parallel.constantLossY1 = taken[1];
+            reflected -= taken;
+        }
+        reflected = allpass(
+            normal.dispersion, parallel.dispersion, reflected,
+            Float2 { normal.dispersionA1, parallel.dispersionA1 },
+            Float2 { normal.dispersionA2, parallel.dispersionA2 });
+        normal.advanceReleaseGain(releaseGain);
+        parallel.advanceReleaseGain(releaseGain);
+        const Float2 gains = { normal.loopGain, parallel.loopGain };
+        const Float2 release = { normal.appliedReleaseGain,
+                                 parallel.appliedReleaseGain };
+        const Float2 scaled = reflected * gains * release;
+        normalOut = scaled[0];
+        parallelOut = scaled[1];
+        return;
+    }
+#endif
+    normalOut = normal.advance(delaySmoothing, releaseGain);
+    parallelOut = parallel.advance(delaySmoothing, releaseGain);
 }
 
 void AculeleEngine::StringLoop::write(float value) noexcept
@@ -4773,6 +4933,7 @@ void AculeleEngine::BridgeLoad::reset() noexcept
     mainIntegratedMoment = 0.0f;
     bodyIntegratedForce = 0.0f;
     bodyIntegratedMoment = 0.0f;
+    silent = true;
     for (auto& mode : modes)
         mode.reset();
 }
@@ -4780,6 +4941,13 @@ void AculeleEngine::BridgeLoad::reset() noexcept
 void AculeleEngine::BridgeLoad::advanceModes(float bodyForce,
                                              float bodyMoment) noexcept
 {
+    if (silent && bodyForce == 0.0f && bodyMoment == 0.0f)
+    {
+        pastHeave = 0.0f;
+        pastRock = 0.0f;
+        return;
+    }
+    silent = false;
     double nextPastHeave = 0.0;
     double nextPastRock = 0.0;
     const int count = activeModeCount;
@@ -4895,6 +5063,18 @@ void AculeleEngine::BridgeLoad::process(const BridgeDrive& drive) noexcept
     const float g11 = drive.impedance2;
     const float b0 = drive.incidentHeave;
     const float b1 = drive.incidentRock;
+    if (silent && pastHeave == 0.0f && pastRock == 0.0f
+        && b0 == 0.0f && b1 == 0.0f
+        && exact::isfinite(g00) && exact::isfinite(g01) && exact::isfinite(g11))
+    {
+        displacement = 0.0f;
+        rotation = 0.0f;
+        mainIntegratedForce = 0.0f;
+        mainIntegratedMoment = 0.0f;
+        bodyIntegratedForce = 0.0f;
+        bodyIntegratedMoment = 0.0f;
+        return;
+    }
 
     // (I + Y G) [x; theta] = Y b + past
     const float m00 = 1.0f + immediateHeave * g00 + immediateCross * g01;
@@ -6707,6 +6887,7 @@ void AculeleEngine::configureBridge(bool keepModalState) noexcept
     {
         bridgeLoad_.pastHeave = 0.0f;
         bridgeLoad_.pastRock = 0.0f;
+        bridgeLoad_.silent = true;
     }
     // A slot whose sections and residues are all zero returns +-0 and adds
     // +-0 to sums that start at +0, so leaving it out changes no bit.
@@ -6907,7 +7088,42 @@ AculeleEngine::PortMobility AculeleEngine::bridgePortMobility(
         const float k = table.scale * w;
         float heaveRe = 0.0f, heaveIm = 0.0f, crossRe = 0.0f, crossIm = 0.0f;
         float rockRe = 0.0f, rockIm = 0.0f;
-        for (int index = table.ordered; index < table.count; ++index)
+        int index = table.ordered;
+#if defined(__clang__) || defined(__GNUC__)
+        typedef float Float4 __attribute__((vector_size(16), aligned(4), may_alias));
+        const Float4 wV = { w, w, w, w };
+        const Float4 kV = { k, k, k, k };
+        for (; index + 3 < table.count; index += 4)
+        {
+            const auto& m0 = table.modes[static_cast<std::size_t>(index)];
+            const auto& m1 = table.modes[static_cast<std::size_t>(index + 1)];
+            const auto& m2 = table.modes[static_cast<std::size_t>(index + 2)];
+            const auto& m3 = table.modes[static_cast<std::size_t>(index + 3)];
+            const Float4 omega = { m0.omega, m1.omega, m2.omega, m3.omega };
+            const Float4 damping = { m0.damping, m1.damping, m2.damping, m3.damping };
+            const Float4 heave = { m0.heave, m1.heave, m2.heave, m3.heave };
+            const Float4 cross = { m0.cross, m1.cross, m2.cross, m3.cross };
+            const Float4 rock = { m0.rock, m1.rock, m2.rock, m3.rock };
+            const Float4 a = omega * omega - wV * wV;
+            const Float4 b = 2.0f * damping * wV;
+            const Float4 gain = kV / (a * a + b * b);
+            const Float4 re = gain * b;
+            const Float4 im = gain * a;
+#if defined(__clang__)
+#pragma unroll
+#endif
+            for (int lane = 0; lane < 4; ++lane)
+            {
+                heaveRe += heave[lane] * re[lane];
+                heaveIm += heave[lane] * im[lane];
+                crossRe += cross[lane] * re[lane];
+                crossIm += cross[lane] * im[lane];
+                rockRe += rock[lane] * re[lane];
+                rockIm += rock[lane] * im[lane];
+            }
+        }
+#endif
+        for (; index < table.count; ++index)
         {
             const auto& mode = table.modes[static_cast<std::size_t>(index)];
             const float a = mode.omega * mode.omega - w * w;
@@ -13941,6 +14157,7 @@ void sumAxialCells(const float* line, unsigned mask, unsigned newest,
      || (defined(__SSE2__) && defined(__x86_64__))) \
     && (defined(__clang__) || defined(__GNUC__))
     typedef float Floats __attribute__((vector_size(16), aligned(4), may_alias));
+    typedef float Float2 __attribute__((vector_size(8), aligned(4), may_alias));
     typedef int Ints __attribute__((vector_size(16), aligned(4), may_alias));
     if (end - cell >= 4)
     {
@@ -13954,6 +14171,8 @@ void sumAxialCells(const float* line, unsigned mask, unsigned newest,
         const Floats four = { 4.0f, 4.0f, 4.0f, 4.0f };
         Floats cells = { static_cast<float>(cell), static_cast<float>(cell + 1),
                          static_cast<float>(cell + 2), static_cast<float>(cell + 3) };
+        Floats outgoingCarry = { 0.0f, 0.0f, 0.0f, outgoing };
+        Floats returningCarry = { 0.0f, 0.0f, 0.0f, returning };
 #if defined(JUKEBOX_SDK) || defined(__aarch64__) || defined(_M_ARM64)
         const auto addSquares = [&sum] (Floats slope)
         {
@@ -13982,13 +14201,12 @@ void sumAxialCells(const float* line, unsigned mask, unsigned newest,
             // two lanes to a vector.
             const auto pairs = [line] (int firstIndex, int secondIndex)
             {
-                Floats both;
-                __builtin_memcpy(&both, line + static_cast<unsigned>(firstIndex) - 1,
-                                 2 * sizeof(float));
-                __builtin_memcpy(reinterpret_cast<char*>(&both) + 2 * sizeof(float),
-                                 line + static_cast<unsigned>(secondIndex) - 1,
-                                 2 * sizeof(float));
-                return both;
+                Float2 firstPair, secondPair;
+                __builtin_memcpy(&firstPair, line + static_cast<unsigned>(firstIndex) - 1,
+                                 sizeof(firstPair));
+                __builtin_memcpy(&secondPair, line + static_cast<unsigned>(secondIndex) - 1,
+                                 sizeof(secondPair));
+                return __builtin_shufflevector(firstPair, secondPair, 0, 1, 2, 3);
             };
             for (; end - cell >= 4; cell += 4)
             {
@@ -13998,8 +14216,8 @@ void sumAxialCells(const float* line, unsigned mask, unsigned newest,
                 const Ints at = newestV - whole;
                 const Floats low = pairs(at[0], at[1]);
                 const Floats high = pairs(at[2], at[3]);
-                const Floats a = { low[1], low[3], high[1], high[3] };
-                const Floats b = { low[0], low[2], high[0], high[2] };
+                const Floats a = __builtin_shufflevector(low, high, 1, 3, 5, 7);
+                const Floats b = __builtin_shufflevector(low, high, 0, 2, 4, 6);
                 const Floats nextReturning = a + part * (b - a);
                 const float* const o = now - cell * stride;
                 Floats nextOutgoing;
@@ -14020,15 +14238,15 @@ void sumAxialCells(const float* line, unsigned mask, unsigned newest,
                 {
                     nextOutgoing = { o[0], o[-stride], o[-2 * stride], o[-3 * stride] };
                 }
-                const Floats previousOutgoing = { outgoing, nextOutgoing[0],
-                                                  nextOutgoing[1], nextOutgoing[2] };
-                const Floats previousReturning = { returning, nextReturning[0],
-                                                   nextReturning[1], nextReturning[2] };
+                const Floats previousOutgoing = __builtin_shufflevector(
+                    outgoingCarry, nextOutgoing, 3, 4, 5, 6);
+                const Floats previousReturning = __builtin_shufflevector(
+                    returningCarry, nextReturning, 3, 4, 5, 6);
                 const Floats slope = (nextOutgoing - previousOutgoing) * outgoingScaleV
                     + (nextReturning - previousReturning) * returningScaleV;
                 addSquares(slope);
-                outgoing = nextOutgoing[3];
-                returning = nextReturning[3];
+                outgoingCarry = nextOutgoing;
+                returningCarry = nextReturning;
                 cells += four;
             }
         }
@@ -14051,17 +14269,19 @@ void sumAxialCells(const float* line, unsigned mask, unsigned newest,
             };
             const Floats nextOutgoing = { out(cell), out(cell + 1),
                                           out(cell + 2), out(cell + 3) };
-            const Floats previousOutgoing = { outgoing, nextOutgoing[0],
-                                              nextOutgoing[1], nextOutgoing[2] };
-            const Floats previousReturning = { returning, nextReturning[0],
-                                               nextReturning[1], nextReturning[2] };
+            const Floats previousOutgoing = __builtin_shufflevector(
+                outgoingCarry, nextOutgoing, 3, 4, 5, 6);
+            const Floats previousReturning = __builtin_shufflevector(
+                returningCarry, nextReturning, 3, 4, 5, 6);
             const Floats slope = (nextOutgoing - previousOutgoing) * outgoingScaleV
                 + (nextReturning - previousReturning) * returningScaleV;
             addSquares(slope);
-            outgoing = nextOutgoing[3];
-            returning = nextReturning[3];
+            outgoingCarry = nextOutgoing;
+            returningCarry = nextReturning;
             cells += four;
         }
+        outgoing = outgoingCarry[3];
+        returning = returningCarry[3];
 #if !defined(JUKEBOX_SDK) && !defined(__aarch64__) && !defined(_M_ARM64)
         sum += (partial[0] + partial[1]) + (partial[2] + partial[3]);
 #endif
@@ -14936,6 +15156,9 @@ void AculeleEngine::BodyBank::load(const std::array<BodyMode, bodyModeCount>& mo
 // summed; lanes past it are zero padding.
 AculeleEngine::BodyOutput AculeleEngine::BodyBank::render(float force, float moment) noexcept
 {
+    if (silent && force == 0.0f && moment == 0.0f)
+        return {};
+    silent = false;
     BodyOutput output;
 #if defined(__clang__) || defined(__GNUC__)
     typedef float Vector __attribute__((vector_size(16), aligned(4), may_alias));
@@ -15063,19 +15286,19 @@ AculeleEngine::BodyOutput AculeleEngine::BodyBank::render(float force, float mom
     };
     // Runs of sounding and of silent groups, each in its own loop. A group
     // index is its first mode's over lanes.
-    const auto run = [this] (int index, int limit, bool& silent)
+    const auto run = [this] (int index, int limit, bool& groupSilent)
     {
         const auto slot = static_cast<std::size_t>(index) / lanes;
-        silent = silentGroup[slot];
+        groupSilent = silentGroup[slot];
         return std::min(static_cast<int>(runEnd[slot]) * lanes, limit);
     };
     const int fullOrdered = soundingOrdered / lanes * lanes;
     int index = 0;
     while (index < fullOrdered)
     {
-        bool silent = false;
-        const int end = run(index, fullOrdered, silent);
-        if (silent)
+        bool groupSilent = false;
+        const int end = run(index, fullOrdered, groupSilent);
+        if (groupSilent)
             for (; index < end; index += lanes)
                 rest(index);
         else
@@ -15092,9 +15315,9 @@ AculeleEngine::BodyOutput AculeleEngine::BodyBank::render(float force, float mom
         const int fullCount = count / lanes * lanes;
         while (index < fullCount)
         {
-            bool silent = false;
-            const int end = run(index, fullCount, silent);
-            if (silent)
+            bool groupSilent = false;
+            const int end = run(index, fullCount, groupSilent);
+            if (groupSilent)
                 for (; index < end; index += lanes)
                     rest(index);
             else
@@ -15148,6 +15371,39 @@ AculeleEngine::BodyOutput AculeleEngine::BodyBank::render(float force, float mom
     }
 #endif
     captureFilter.render(output);
+    if (force == 0.0f && moment == 0.0f && output.left == 0.0f && output.right == 0.0f)
+    {
+        bool quiet = true;
+        for (int i = 0; i < count; ++i)
+        {
+            if (i >= soundingOrdered && i < ordered)
+                continue;
+            const auto slot = static_cast<std::size_t>(i);
+            if (real[slot] != 0.0f || imaginary[slot] != 0.0f
+                || momentReal[slot] != 0.0f || momentImaginary[slot] != 0.0f)
+            {
+                quiet = false;
+                break;
+            }
+        }
+        if (quiet && captureFilter.enabled)
+        {
+            for (int i = 0; i < captureFilter.activeCount; ++i)
+            {
+                const auto slot = static_cast<std::size_t>(
+                    captureFilter.active[static_cast<std::size_t>(i)]);
+                if (captureFilter.stateLeft[slot][0] != 0.0
+                    || captureFilter.stateLeft[slot][1] != 0.0
+                    || captureFilter.stateRight[slot][0] != 0.0
+                    || captureFilter.stateRight[slot][1] != 0.0)
+                {
+                    quiet = false;
+                    break;
+                }
+            }
+        }
+        silent = quiet;
+    }
     // The mono microphone's sum is the right channel's: configureBody gives
     // them the same residues.
     output.upper = output.right;
@@ -15417,6 +15673,7 @@ void AculeleEngine::resetPiezo() noexcept
     piezoStage_.fill(0.0);
     piezoOutputVolts_ = 0.0;
     lastPiezoOpen_ = lastPiezoVoltage_ = lastPiezoInput_ = lastPiezoDrive_ = 0.0f;
+    piezoSilent_ = true;
 }
 
 
@@ -15523,6 +15780,12 @@ float AculeleEngine::renderPiezo(float force) noexcept
         return 0.0f;
     }
     const float input = exact::abs(force) < forceFloor ? 0.0f : force;
+    if (piezoSilent_ && input == 0.0f)
+    {
+        piezoTrim_ = settlingGlide(piezoTrim_, targetPiezoTrim_, parameterSmoothing_);
+        return 0.0f;
+    }
+    piezoSilent_ = false;
     // 1. The saddle on its element (designPiezoSaddle), direct form I.
     const auto& saddle = piezoSaddle_;
     auto& x = piezoSaddleInput_;
@@ -15817,7 +16080,8 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
                 else
                     --voice.pluckDelay;
             }
-            processPendingRelease(voice, string);
+            if (voice.releaseJoinPending)
+                processPendingRelease(voice, string);
             const float releaseGain = !voice.played
                 ? (muteIdleStrings ? voice.muteIdleDamping : 1.0f)
                 : ((voice.keyDown || voice.pedalHeld || voice.releaseJoinPending
@@ -15841,11 +16105,11 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
                 * (voice.bendImpedanceStage
                    - voice.appliedBendImpedanceScale);
             excitation[static_cast<std::size_t>(string)]
-                = renderExcitation(voice);
-            verticalIncident[static_cast<std::size_t>(string)]
-                = voice.loops[0].advance(delaySmoothing_, releaseGain);
-            horizontalIncident[static_cast<std::size_t>(string)]
-                = voice.loops[1].advance(delaySmoothing_, releaseGain);
+                = voice.excitationEnvelope > 1.0e-8f ? renderExcitation(voice) : 0.0f;
+            StringLoop::advancePair(
+                voice.loops[0], voice.loops[1], delaySmoothing_, releaseGain,
+                verticalIncident[static_cast<std::size_t>(string)],
+                horizontalIncident[static_cast<std::size_t>(string)]);
             if (voice.contactTravelEnabled
                 && (voice.contactTravel.active
                     || excitation[static_cast<std::size_t>(string)] != 0.0f))
@@ -15899,7 +16163,16 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
                 addReleaseNoise(voice);
             if (anticipations_[static_cast<std::size_t>(string)].pending)
                 advanceAnticipation(voice, string);
-            renderFretMotion(voice, string);
+            if (!anticipations_[static_cast<std::size_t>(string)].moving
+                && voice.fretMotion.remaining <= 0
+                && voice.fretMotion.length == static_cast<double>(voice.speakingLengthMetres)
+                && !voice.fretMotion.arriving)
+            {
+                voice.fretMotion.speed = 0.0f;
+                voice.fretMotion.emittedForce = 0.0f;
+            }
+            else
+                renderFretMotion(voice, string);
             if (performanceRealism_.stringAxialForce)
             {
                 const float force = renderStringAxialForce(voice, string);
@@ -15920,11 +16193,10 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
             }
             if (voice.tailActive)
             {
-                tailIncident[static_cast<std::size_t>(string)]
-                    = voice.tailLoop.advance(delaySmoothing_, voice.tailDamping);
-                tailParallelIncident[static_cast<std::size_t>(string)]
-                    = voice.tailParallelLoop.advance(delaySmoothing_,
-                                                     voice.tailDamping);
+                StringLoop::advancePair(
+                    voice.tailLoop, voice.tailParallelLoop, delaySmoothing_, voice.tailDamping,
+                    tailIncident[static_cast<std::size_t>(string)],
+                    tailParallelIncident[static_cast<std::size_t>(string)]);
                 if (voice.tailRepluckArrivals.remaining > 0)
                 {
                     const auto arrivals = voice.tailRepluckArrivals.process();

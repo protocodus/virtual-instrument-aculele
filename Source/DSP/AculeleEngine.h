@@ -1103,8 +1103,14 @@ private:
         // called instead, four times per string per sample, it cost about a
         // tenth of the engine there, and inlining gains a few percent on the
         // host, which never did.
+        ACULELE_ALWAYS_INLINE float advanceDelayAndRead(
+            float delaySmoothing) noexcept;
+        ACULELE_ALWAYS_INLINE void advanceReleaseGain(float releaseGain) noexcept;
         ACULELE_ALWAYS_INLINE float advance(float delaySmoothing,
                                             float releaseGain) noexcept;
+        static ACULELE_ALWAYS_INLINE void advancePair(
+            StringLoop& normal, StringLoop& parallel, float delaySmoothing,
+            float releaseGain, float& normalOut, float& parallelOut) noexcept;
         // A transition lasts one round trip, or transitionSamples if longer.
         void setLoopGain(float gain, bool transition = false,
                          int transitionSamples = 0) noexcept;
@@ -1199,6 +1205,7 @@ private:
         float mainIntegratedMoment { 0.0f };
         float bodyIntegratedForce { 0.0f };
         float bodyIntegratedMoment { 0.0f };
+        bool silent { true };
         std::array<BridgeMode, bridgeModeCount + 1> modes {};
 
         void reset() noexcept;
@@ -1891,6 +1898,7 @@ private:
         // Scaled down from a guitar, the soprano's bank puts 64 of 160 modes
         // there at 48 kHz.
         int soundingOrdered { 0 };
+        bool silent { true };
         // A group of four rendered modes none of which has residues in this
         // bank adds exactly zero to both sums, so render only advances its
         // states: a later Shape or Wood may sound them (sameBodyBank).
@@ -1916,6 +1924,7 @@ private:
             momentReal.fill(0.0f);
             momentImaginary.fill(0.0f);
             captureFilter.reset();
+            silent = true;
         }
         // Every mode's two-pole state advanced by the force and moment and
         // summed into the left and right residues, then a flush of tiny
@@ -2603,6 +2612,7 @@ private:
     float piezoSaddleLowIndexScale_ {}, piezoSaddleHighIndexScale_ {};
     float piezoSaddleImpedance_ { -1.0f };
     float piezoTransport_ {}; // one sample, on both Main and separate Piezo
+    bool piezoSilent_ { true };
     PiezoSaddleFilter piezoSaddle_ {};
     std::array<float, piezoSaddleTaps> piezoSaddleInput_ {};
     std::array<float, 2> piezoSaddleOutput_ {};

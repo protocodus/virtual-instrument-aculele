@@ -11,6 +11,10 @@ The main build renders these demos once Aculele has a plug-in to build. Until th
 
 ## Version history
 
+### 0.4.66 — 2026-11-14 — Paired string loops, vectorised bridge mobility and silent-stage fast paths
+
+Each string's two polarisation loops and any retained-wave pair now advance together in 2-lane float vectors across their dispersion, reflection, bending-loss and constant-loss sections, the bridge mobility evaluation runs four modes at a time in 4-lane float vectors while summing in mode order, the string-stretch sum unpacks returning tap pairs and carry lanes with vector shuffles, and the bridge, body and piezo chains skip per-sample state updates while at exact zero. Every factory demo and `Aculele.SampleRateLayoutParity` across 44.1, 48, 96 and 192 kHz render byte for byte as in 0.4.65, taking a further 3-4% less CPU across the presets (about 7-8% below 0.4.64 overall; [measurement](Docs/benchmarks/cpu-phdsp64-2026-11-14.md)).
+
 ### 0.4.65 — 2026-11-14 — Aligned for Reason's allocator, and less CPU across the engine
 
 Three internal structures (`BridgeMode`, `BodyBank` and the room's early-arrival weights) asked for 16-byte alignment, which Reason's 8-byte allocator does not give; the engine and `Performer` now stay within 8-byte alignment, checked by `AculeleDSPCxx17` (`-fnew-alignment=8 -fno-aligned-allocation -Wover-aligned`). In the per-sample path, a remaining library `abs` call on slewing string loops, two unclipped corner calls in the piezo preamp and the junction's derivative closures are now inline, the stereo microphone shelves, the room's 8-line feedback network and ARM64's string-stretch sum run in vectors, and hot fields sit ahead of the large delay rings. Every factory demo and `Aculele.SampleRateLayoutParity` across 44.1, 48, 96 and 192 kHz render byte for byte as in 0.4.64, taking about 3-6% less CPU across the presets ([measurement](Docs/benchmarks/cpu-phdsp64-2026-11-14.md)).

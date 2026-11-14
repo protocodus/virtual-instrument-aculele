@@ -392,9 +392,19 @@ private:
     void rememberStroke(std::int64_t strokeSample, std::int64_t interval,
                         bool restarted) noexcept;
 
-    AculeleEngine engine_;
+    // The block being played and playing state that outlives a block sit ahead
+    // of the large event/key queues and engine_ so every hot scalar and small
+    // channel array stays within immediate-offset reach of `this`.
+    float* left_ { nullptr };
+    float* right_ { nullptr };
+    AculeleEngine::OutputBuses buses_ {};
+    int blockSamples_ { 0 };
+    int renderedTo_ { 0 };
+    bool direct_ { true };
+    int groupedSample_ { -1 };
+    int pendingNoteOnCount_ { 0 };
+    int pendingNoteOffCount_ { 0 };
 
-    // Playing state that outlives a block.
     // The picking hand's strokes alternate; the sample clock and the tempo
     // tell a hand's return from a new stroke, unless a keyswitch has
     // latched one. nextUpstroke_ is the direction of a return stroke.
@@ -414,39 +424,34 @@ private:
     // The last stroke that came an odd number of sixteenths after the one
     // before it (pendulumUpstroke); -1 for none.
     std::int64_t sixteenthSwingSample_ { -1 };
+    float lowerMasterPitchBendRange_ { 2.0f };
+    float lowerMemberPitchBendRange_ { 48.0f };
+    int lowerZoneMemberCount_ { 0 };
+    // The channel whose CC1 set the wheel's vibrato now; 0 for none.
+    int vibratoChannel_ { 0 };
+    int heldCount_ { 0 };
+    int gatherWindow_ { 0 };
+    bool fingerLookahead_ { false };
+    int lookaheadWindow_ { 0 };
+    std::uint32_t droppedEvents_ { 0 };
     std::array<RpnState, 16> rpnStates_ {};
     std::array<float, 16> rawPitchWheels_ {};
     // Both messages are required: CC65 never infers legato from overlap.
     // CC84 names one source note for one subsequent target on its channel.
     std::array<bool, 16> portamentoSwitches_ {};
     std::array<int, 16> portamentoSources_ {};
+    std::array<float, 16> conventionalPitchBendRanges_ {};
+
+    std::array<PendingNoteOn, sampleGroupCapacity> pendingNoteOns_ {};
+    std::array<PendingNoteOff, sampleGroupCapacity> pendingNoteOffs_ {};
     // Per channel and key, the Note Ons a chord moved up (foldChord,
     // liftChord), so its key-ups let go of the strings they sound on.
     std::array<std::array<LiftedKey, 128>, 16> liftedKeys_ {};
-    std::array<float, 16> conventionalPitchBendRanges_ {};
-    float lowerMasterPitchBendRange_ { 2.0f };
-    float lowerMemberPitchBendRange_ { 48.0f };
-    int lowerZoneMemberCount_ { 0 };
-    // The channel whose CC1 set the wheel's vibrato now; 0 for none.
-    int vibratoChannel_ { 0 };
     std::array<HeldEvent, heldEventCapacity> held_ {};
-    int heldCount_ { 0 };
-    int gatherWindow_ { 0 };
-    bool fingerLookahead_ { false };
-    int lookaheadWindow_ { 0 };
-    std::uint32_t droppedEvents_ { 0 };
 
-    // The block being played.
-    float* left_ { nullptr };
-    float* right_ { nullptr };
-    AculeleEngine::OutputBuses buses_ {};
-    int blockSamples_ { 0 };
-    int renderedTo_ { 0 };
-    bool direct_ { true };
-    int groupedSample_ { -1 };
-    std::array<PendingNoteOn, sampleGroupCapacity> pendingNoteOns_ {};
-    int pendingNoteOnCount_ { 0 };
-    std::array<PendingNoteOff, sampleGroupCapacity> pendingNoteOffs_ {};
-    int pendingNoteOffCount_ { 0 };
+    AculeleEngine engine_;
 };
+
+static_assert(alignof(Performer) <= 8,
+              "Jukebox phdsp64 allocates Performer with 8-byte alignment");
 } // namespace aculele

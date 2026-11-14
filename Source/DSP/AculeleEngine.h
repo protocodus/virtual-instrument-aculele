@@ -290,7 +290,7 @@ public:
     [[nodiscard]] const PerformanceRealism& performanceRealism() const noexcept
     { return performanceRealism_; }
 
-    // The MIDI notes of the open strings, low E string first, in a tuning:
+    // The MIDI notes of the open strings, G string first, in a tuning:
     // what the engine tunes to and the lowest note each string can play.
     [[nodiscard]] static std::array<int, stringCount> openNotes(Tuning) noexcept;
 
@@ -307,7 +307,7 @@ public:
     // A return stroke releases the sideways plane in the opposite direction.
     // Each scheduled string captures its own direction at note-on, so a later
     // stroke cannot change an earlier contact still travelling to the bridge.
-    // entryString and exitString (0 is the low E; -1 when not known) are the
+    // entryString and exitString (0 is the G string; -1 when not known) are the
     // strings the stroke enters and leaves the chord on, which the pick
     // strikes more lightly than those between them; each string captures its
     // part at note-on too.
@@ -355,18 +355,18 @@ public:
     // that string, as the strings the whole stroke sounds.
     void planChord(const int* midiNotes, int count, int midiChannel = 1,
                    bool sweptFill = false) noexcept;
-    // The current chord plan's assignment (0 is the low E), or -1 for a
+    // The current chord plan's assignment (0 is the G string), or -1 for a
     // note the plan does not place. Read before noteOn consumes the plan,
     // so a player can time its stroke across the actual strings, including
     // strings skipped between them, rather than across pitches.
     [[nodiscard]] int plannedString(int midiNote, int midiChannel = 1) const noexcept;
-    // Observer for displays and tests: the string (0 is the low E) whose key
+    // Observer for displays and tests: the string (0 is the G string) whose key
     // is down for this note on this channel, or -1.
     [[nodiscard]] int heldString(int midiNote, int midiChannel = 1) const noexcept;
     // Samples after the first string that a strum's k-th string sounds, from
     // the pick's speed for this velocity and the string spacing, in a stroke
     // that crosses strokeGaps spacings in all: a smaller stroke crosses each
-    // string more slowly. The default is the six-string stroke's.
+    // string more slowly. The default is the four-string stroke's.
     [[nodiscard]] int strumDelaySamples(int stringRank, float velocity,
                                         int strokeGaps = stringCount - 1) const noexcept;
     // Samples after the chord's highest string that the string rankFromTop
@@ -515,14 +515,11 @@ public:
     // its own. 0-1; inert on a conventional or manager channel and inert with
     // no lower zone.
     void setMpePressure(float value, int midiChannel) noexcept;
-    // Opt-in guitar-controller mode: channels 1-6 are the six strings
-    // directly, bypassing chooseString's fret-distance guess. It is the
-    // layout Roland's GK and Fishman's TriplePlay produce in "mono mode",
-    // but neither is documented to transmit a message requesting it -- see
-    // the CC126 handler in AculelePerformer.cpp for what actually toggles
-    // it. A note on channel 1-6 with no playable fret on that channel's
-    // string is dropped rather than reassigned. Off, the default, is an
-    // exact no-op.
+    // Opt-in tab / string-controller mode: channels 1-4 are the four strings
+    // directly (1 = G, 4 = A), bypassing chooseString's fret-distance guess.
+    // See the CC126 handler in AculelePerformer.cpp for what toggles it. A
+    // note on channel 1-4 with no playable fret on that channel's string is
+    // dropped rather than reassigned. Off, the default, is an exact no-op.
     void setStringPerChannelMode(bool enabled) noexcept;
     [[nodiscard]] bool isStringPerChannelMode() const noexcept
     {
@@ -1081,7 +1078,8 @@ private:
         // transitions - stays (processIdleFlush).
         void settle() noexcept;
         void setCurrentDelay(float samples) noexcept;
-        [[nodiscard]] float readDelay(float samples) noexcept;
+        [[nodiscard]] ACULELE_ALWAYS_INLINE float readDelay(float samples) noexcept;
+        void advanceIntrinsicCoefficients() noexcept;
         // Switches the second dispersion section in or out under a sounding
         // wave (see its definition).
         void switchSecondDispersion(bool active) noexcept;
@@ -1117,7 +1115,7 @@ private:
         // raw delay tap - or establishing the released shape reads as a
         // one-sample velocity impulse the size of the whole displacement.
         ACULELE_ALWAYS_INLINE float bridgeVelocity(float incident, float sampleRateRatio) noexcept;
-        void write(float value) noexcept;
+        ACULELE_ALWAYS_INLINE void write(float value) noexcept;
         void beginGestureContact(float position, float strength,
                                  int relaxationSamples) noexcept;
         void applyGestureContact() noexcept;
@@ -1128,19 +1126,24 @@ private:
     // group's pole angles to only about 5%, which turned the heave's H1 by
     // 90 degrees against the rock.
     // One bridge mode's section, which both coordinates share: lane 0 is
-    // driven by the net force and lane 1 by the moment. Each lane holds the
-    // same coefficients beside its own history, so advanceModes steps the
-    // pair with whole-pair loads instead of gathering them field by field.
+    // driven by the net force and lane 1 by the moment. Both lanes share one
+    // scalar coefficient set alongside each lane's history and the widened
+    // residues, with natural 8-byte alignment for Jukebox phdsp64.
     struct BridgeMode
     {
         using Lanes = std::array<double, 2>;
-        alignas(16) Lanes denominator1 {};
-        alignas(16) Lanes denominator2 {};
-        alignas(16) Lanes numerator1 {};
-        alignas(16) Lanes numerator2 {};
-        alignas(16) Lanes input1 {};
-        alignas(16) Lanes output1 {};
-        alignas(16) Lanes output2 {};
+        double denominator1 { 0.0 };
+        double denominator2 { 0.0 };
+        double numerator1 { 0.0 };
+        double numerator2 { 0.0 };
+        Lanes input1 {};
+        Lanes output1 {};
+        Lanes output2 {};
+        // Single-precision residues, held widened once for the double sums.
+        double residueHeave { 0.0 };
+        double residueCross { 0.0 };
+        double residueRock { 0.0 };
+        bool rocking { false };
 
         void reset() noexcept
         {
@@ -1148,7 +1151,7 @@ private:
         }
     };
 
-    // What the six strings present to the saddle, in the two coordinates the
+    // What the four strings present to the saddle, in the two coordinates the
     // archive measures: sum over strings of Z*2a and of u*Z*2a, and of Z, u*Z
     // and u^2*Z. u is saddleLeverArm(string). The short segment from the
     // saddle crown to the bridge pin presents nothing: both its ends are on
@@ -1175,12 +1178,6 @@ private:
         // [cross, rock]] of MeasuredBridgeData.h, so it needs two states:
         // one driven by the net force and one by the moment. A mode with no
         // rocking residue leaves its second state alone.
-        std::array<BridgeMode, bridgeModeCount + 1> modes {};
-        // Single-precision residues, held widened once for the double sums.
-        std::array<double, bridgeModeCount + 1> residueHeave {};
-        std::array<double, bridgeModeCount + 1> residueCross {};
-        std::array<double, bridgeModeCount + 1> residueRock {};
-        std::array<bool, bridgeModeCount + 1> rocking {};
         // The slots process() runs, in index order: configureBridge drops
         // the ones whose section and residues are all zero (the padding past
         // a bank and modes above 0.45 fs), which add exactly zero.
@@ -1202,6 +1199,7 @@ private:
         float mainIntegratedMoment { 0.0f };
         float bodyIntegratedForce { 0.0f };
         float bodyIntegratedMoment { 0.0f };
+        std::array<BridgeMode, bridgeModeCount + 1> modes {};
 
         void reset() noexcept;
         void process(const BridgeDrive& drive) noexcept;
@@ -1260,12 +1258,12 @@ private:
             double a1 { 0.0 }, a2 { 0.0 };
             double y1 { 0.0 }, y2 { 0.0 };
         };
-        DelayHistory<maximumDelaySamples> history {};
         std::array<Tap, 2> taps {};
         int writeIndex { 0 };
         int historyLength { 0 };
         int historyRemaining { 0 };
         bool active { false };
+        DelayHistory<maximumDelaySamples> history {};
         void reset(float directDelay, float nutDelay) noexcept;
         std::array<float, 2> process(float source) noexcept;
         // Fractional sections ahead of the integer flight time. Release
@@ -1375,10 +1373,10 @@ private:
     struct RepluckArrivals
     {
         static constexpr int capacity = 2 * maximumDelaySamples;
-        std::array<DelayHistory<capacity>, 2> wave {};
         int readIndex { 0 };
         int remaining { 0 };
         bool overflow { false };
+        std::array<DelayHistory<capacity>, 2> wave {};
         // Every slot outside the `remaining` from readIndex is zero: add()
         // writes only inside them and process() zeroes each slot it reads.
         // So clear() and a copy touch those slots alone, where the whole
@@ -1403,11 +1401,7 @@ private:
     // contact/stroke starts. A queued stroke owns its snapshot; later strokes
     // and intervening notes cannot change that trajectory or the snapshot.
     [[nodiscard]] PickingGesture nextPickingGesture() noexcept;
-    PickingGesture pickingGesture_ {}, strumGesture_ {};
     static constexpr std::uint32_t pickingGestureSeed = 0x7f4a7c15u;
-    std::uint64_t pickingGestureOriginSample_ { 0 };
-    std::uint64_t pickingGestureSample_ { 0 };
-    bool pickingGestureSeen_ { false };
 
     // One dispersion design (calibrateDispersion) with the exact arguments
     // it was made for (solvedDispersion): up to three sections' pole pairs
@@ -1455,7 +1449,6 @@ private:
             float leak { 0.0f };
             int remaining { 0 };
         };
-        FretMotion fretMotion {};
         // The string's own lengthwise force at the saddle: the stretch its
         // vibration adds, carried there by its longitudinal waves
         // (renderStringAxialForce). The ring holds the longitudinal round
@@ -1463,7 +1456,6 @@ private:
         struct StringAxialForce
         {
             static constexpr int ringSize = 1024;
-            std::array<float, ringSize> ring {};
             int writeIndex { 0 };
             // The design, for the length, tension, excursion scale and loss
             // it was made at (the rate clears it).
@@ -1507,6 +1499,7 @@ private:
             // rewritten: the quiet-string gate (renderStringAxialForce).
             float drive { 0.0f };
             float drivePeak { 0.0f };
+            std::array<float, ringSize> ring {};
             void lineRewritten() noexcept
             {
                 rereference = true;
@@ -1514,60 +1507,12 @@ private:
                 countdown = 0;
                 drivePeak = 0.0f;
             }
-            void clear() noexcept { *this = StringAxialForce {}; }
+            void clear() noexcept;
         };
-        StringAxialForce stringAxialForce {};
-        std::uint32_t fretMotionNoiseState { 1 };
-        // Per-shift draws, and the slide's wander on its own sequence, so
-        // a slide's length never shifts the next shift's draws.
-        std::uint32_t fretGestureState { 1 };
-        std::uint32_t fretWanderState { 1 };
-        std::array<StringLoop, 2> loops {};
-        VoiceConfigurationKey configurationKey {};
-        // Key and payload follow whole-voice copies. Waveform resets may retain
-        // these pure values: pitch/rate changes miss the exact key, while
-        // calibration and bridge changes still use configurationKey below it.
-        PitchGeometryCache pitchGeometry {};
-        // A string taken for a new note is still vibrating. This carries that
-        // vibration on under the hand damping the model already uses for a
-        // stopped note, instead of deleting it, in both planes: the parallel
-        // one holds most of a pluck and radiates through the rocking saddle.
-        StringLoop tailLoop {};
-        StringLoop tailParallelLoop {};
-        ContactTravel tailContactTravel {};
-        // The connected finger's already emitted and remaining contact and
-        // fret-friction source belongs to this retained wave on a re-pluck.
-        ContactTravel tailLegatoContactTravel {};
-        float tailLegatoContactAmplitude { 0.0f };
-        float tailLegatoNormalGain { 1.0f };
-        float tailLegatoParallelGain { 0.0f };
-        int tailLegatoContactAge { 0 };
-        int tailLegatoContactSamples { 0 };
-        std::array<float, maximumLegatoContactSamples + 1> tailLegatoContactPulse {};
-        float tailDamping { 1.0f };
-        // Intrinsic loss and pitch belong to the captured string. The bridge
-        // hand remains live CC2 expression while that old wave is retained.
-        float tailHandFrequency { 1.0f };
-        float tailHandIntrinsicT60 { 1.0f };
-        float tailHandIntrinsicHighLoss { 0.0f };
-        float tailHandPressure { 0.0f };
-        float tailCapturedHandPressure { 0.0f };
-        std::array<float, 2> tailCapturedLoopGain {};
-        std::array<float, 2> tailCapturedHighLoss {};
-        // The retained virtual-string branch keeps the port it had at capture,
-        // including its applied member bend, while the main voice is retuned.
-        float tailCharacteristicImpedance { 0.0f };
-        float tailLevel { 0.0f };
-        int tailQuietSamples { 0 };
-        // Samples since a contact, legato or re-pluck arrival last fed the
-        // retained wave.
-        int tailUnfedSamples { 0 };
-        bool tailActive { false };
-        // A tail being let go: its port fades out of the junction on the
-        // delay's time constant before the branch is dropped (finishVoice).
-        bool tailRetiring { false };
-        RepluckArrivals repluckArrivals {};
-        RepluckArrivals tailRepluckArrivals {};
+
+        // Hot per-sample and event scalars sit ahead of the large ring and
+        // delay-history members so every field stays within immediate-offset
+        // reach of `&voice`.
         int openMidi { 40 };
         int midiNote { 40 };
         // 1 is a stopped note. Above that the string sounds open in its nth
@@ -1633,7 +1578,6 @@ private:
         std::uint32_t excitationCoefficientRate { 0xffffffffu };
         float excitationCoefficient { 0.0f };
         float excitationReleaseCoefficient { 0.0f };
-        ContactTravel contactTravel {};
         float contactPeriodSamples { 0.0f };
         // Finger applies releaseSlipPole in full and has no inverse
         // reference. Thumb retains its full-velocity reference ratio;
@@ -1687,12 +1631,6 @@ private:
         float dispersionDesignInharmonicity { -1.0f };
         float dispersionDesignAge { -1.0f };
         float dispersionDesignFrequencyLossScale { -1.0f };
-        // The last completed dispersion design and its exact arguments. Its
-        // fit frequency is bounded beyond the playable fretboard plus the
-        // documented 12-semitone panel/Reason bend range; above that the
-        // inexpensive bending section still follows the physical pitch.
-        // Frequency is positive, so an all-zero key cannot be a valid hit.
-        DispersionSolve dispersionDesign {};
         // The string's own bending-loss and air-loss sections at the
         // physical playing frequency, including beyond the bounded phase-fit
         // band above; both polarisations carry them.
@@ -1713,12 +1651,6 @@ private:
         // samples, for a Pick release at another rate (writePickRelease);
         // zero when not tuned for one.
         std::array<float, 2> referencePickDelay {};
-        // The dispersion design that tuning was made with.
-        DispersionSolve referencePickDispersion {};
-        // Reference-rate release geometry belongs to an attack, not every
-        // control update. Reuse it until the next Pick meets a new string
-        // configuration; refreshing it must not reset a retained wave.
-        VoiceConfigurationKey referencePickConfigurationKey {};
         float level { 0.0f };
         float releaseDamping { 1.0f };
         float muteIdleDamping { 1.0f };
@@ -1789,13 +1721,6 @@ private:
         // The engine's sample clock when this note was fretted; a chord
         // still forming is the run of notes whose onsets are close together.
         std::uint64_t onsetSample { 0 };
-        // The key-up's sound (startReleaseNoise): the release velocity the
-        // key came up with (negative when not sent), the largest bridge force
-        // since the pluck, and the release noise's generator state - the
-        // touch's white amplitude and its rise and fall, two one-pole stages
-        // at the contact's corner, the leaky integrator that launches the
-        // displacement, the samples left, the stroke's normal and parallel
-        // shares, its own draws and its travel from the damping point.
         // An explicitly requested connected finger articulation: a smooth
         // finite contact pulse and filtered fret friction, transported from
         // the finger's point on the string. Their combined slope energy is
@@ -1808,9 +1733,8 @@ private:
         float legatoParallelGain { 0.0f };
         int legatoContactAge { 0 };
         int legatoContactSamples { 0 };
-        std::array<float, maximumLegatoContactSamples + 1> legatoContactPulse {};
         std::uint32_t legatoFrictionState { 1 };
-        ContactTravel legatoContactTravel {};
+        // The key-up's sound (startReleaseNoise).
         float releaseVelocity { -1.0f };
         float peakLevel { 0.0f };
         float releaseNoiseTouch { 0.0f };
@@ -1827,7 +1751,75 @@ private:
         float releaseNoiseParallel { 0.0f };
         int releaseNoiseSamples { 0 };
         std::uint32_t releaseNoiseState { 1 };
+        FretMotion fretMotion {};
+        std::uint32_t fretMotionNoiseState { 1 };
+        // Per-shift draws, and the slide's wander on its own sequence, so
+        // a slide's length never shifts the next shift's draws.
+        std::uint32_t fretGestureState { 1 };
+        std::uint32_t fretWanderState { 1 };
+        float tailLegatoContactAmplitude { 0.0f };
+        float tailLegatoNormalGain { 1.0f };
+        float tailLegatoParallelGain { 0.0f };
+        int tailLegatoContactAge { 0 };
+        int tailLegatoContactSamples { 0 };
+        float tailDamping { 1.0f };
+        // Intrinsic loss and pitch belong to the captured string. The bridge
+        // hand remains live CC2 expression while that old wave is retained.
+        float tailHandFrequency { 1.0f };
+        float tailHandIntrinsicT60 { 1.0f };
+        float tailHandIntrinsicHighLoss { 0.0f };
+        float tailHandPressure { 0.0f };
+        float tailCapturedHandPressure { 0.0f };
+        std::array<float, 2> tailCapturedLoopGain {};
+        std::array<float, 2> tailCapturedHighLoss {};
+        // The retained virtual-string branch keeps the port it had at capture,
+        // including its applied member bend, while the main voice is retuned.
+        float tailCharacteristicImpedance { 0.0f };
+        float tailLevel { 0.0f };
+        int tailQuietSamples { 0 };
+        // Samples since a contact, legato or re-pluck arrival last fed the
+        // retained wave.
+        int tailUnfedSamples { 0 };
+        bool tailActive { false };
+        // A tail being let go: its port fades out of the junction on the
+        // delay's time constant before the branch is dropped (finishVoice).
+        bool tailRetiring { false };
+        VoiceConfigurationKey configurationKey {};
+        // Key and payload follow whole-voice copies. Waveform resets may retain
+        // these pure values: pitch/rate changes miss the exact key, while
+        // calibration and bridge changes still use configurationKey below it.
+        PitchGeometryCache pitchGeometry {};
+        // The last completed dispersion design and its exact arguments. Its
+        // fit frequency is bounded beyond the playable fretboard plus the
+        // documented 12-semitone panel/Reason bend range; above that the
+        // inexpensive bending section still follows the physical pitch.
+        // Frequency is positive, so an all-zero key cannot be a valid hit.
+        DispersionSolve dispersionDesign {};
+        // The dispersion design referencePickDelay was made with.
+        DispersionSolve referencePickDispersion {};
+        // Reference-rate release geometry belongs to an attack, not every
+        // control update. Reuse it until the next Pick meets a new string
+        // configuration; refreshing it must not reset a retained wave.
+        VoiceConfigurationKey referencePickConfigurationKey {};
+        StringAxialForce stringAxialForce {};
+        std::array<float, maximumLegatoContactSamples + 1> legatoContactPulse {};
+        std::array<float, maximumLegatoContactSamples + 1> tailLegatoContactPulse {};
+        std::array<StringLoop, 2> loops {};
+        // A string taken for a new note is still vibrating. This carries that
+        // vibration on under the hand damping the model already uses for a
+        // stopped note, instead of deleting it, in both planes: the parallel
+        // one holds most of a pluck and radiates through the rocking saddle.
+        StringLoop tailLoop {};
+        StringLoop tailParallelLoop {};
+        ContactTravel contactTravel {};
+        ContactTravel legatoContactTravel {};
         ContactTravel releaseNoiseTravel {};
+        ContactTravel tailContactTravel {};
+        // The connected finger's already emitted and remaining contact and
+        // fret-friction source belongs to this retained wave on a re-pluck.
+        ContactTravel tailLegatoContactTravel {};
+        RepluckArrivals repluckArrivals {};
+        RepluckArrivals tailRepluckArrivals {};
     };
 
     struct BodyOutput
@@ -1887,11 +1879,6 @@ private:
         static constexpr int lanes = 4;
         static constexpr int capacity = (bodyModeCount + lanes - 1) / lanes * lanes;
         using Lanes = std::array<float, capacity>;
-        alignas(16) Lanes real {}, imaginary {}, momentReal {}, momentImaginary {};
-        alignas(16) Lanes poleReal {}, poleImaginary {};
-        alignas(16) Lanes leftReal {}, leftImaginary {}, rightReal {}, rightImaginary {};
-        alignas(16) Lanes leftMomentReal {}, leftMomentImaginary {};
-        alignas(16) Lanes rightMomentReal {}, rightMomentImaginary {};
         int count { 0 };
         // The first `ordered` modes (a bank's own) are summed in index order;
         // the rest (the steel blend's parallel parts, starting on a group of
@@ -1912,6 +1899,11 @@ private:
         // groups, so render tests silence once a run, not once a group.
         std::array<std::uint8_t, capacity / lanes> runEnd {};
         CaptureFilter captureFilter {};
+        Lanes real {}, imaginary {}, momentReal {}, momentImaginary {};
+        Lanes poleReal {}, poleImaginary {};
+        Lanes leftReal {}, leftImaginary {}, rightReal {}, rightImaginary {};
+        Lanes leftMomentReal {}, leftMomentImaginary {};
+        Lanes rightMomentReal {}, rightMomentImaginary {};
 
         // The first modeCount modes' coefficients, their states kept. Slots
         // past the bank are zero.
@@ -2001,7 +1993,7 @@ private:
     // bridgePortMobility's per-mode terms that do not depend on the string's
     // frequency - each included mode's prewarped omega (a tanf), its damping
     // and residues, and the plate floor's - for the bank, shape, host rate
-    // and calibration in the key. configureVoice asks for them six times per
+    // and calibration in the key. configureVoice asks for them four times per
     // control update; they change only when one of those does.
     struct BridgeMobilityTable
     {
@@ -2020,16 +2012,15 @@ private:
         // parallel parts after them (SteelBodyBlend.h) by a real-arithmetic
         // form of the same section (bridgePortMobility).
         int ordered { 0 };
-        std::array<Mode, bridgeModeCount> modes {};
         float scale { 1.0f };
         bool plate { false };
         float plateOmega { 0.0f };
         float plateDamping { 0.0f };
         float plateWeight { 0.0f };
         float plateRock { 0.0f };
+        std::array<Mode, bridgeModeCount> modes {};
     };
     const BridgeMobilityTable& bridgeMobilityTable() const noexcept;
-    mutable BridgeMobilityTable bridgeMobilityTable_ {};
     float bridgePhaseDelay(const PortMobility& port, float frequency,
                            int stringIndex) const noexcept;
     // How far, as a fraction of the request, the pair of modes the two
@@ -2277,68 +2268,20 @@ private:
                      float bridgeVelocity, float horizontalBridgeDisplacement) noexcept;
     BodyOutput renderBody(float bridgeInput, float bodyMoment) noexcept;
     float renderPiezo(float force) noexcept;
+    double piezoDiodeDump(double excess) const noexcept;
+    void piezoClipCorner(double rail) noexcept;
     void resetPiezo() noexcept;
     void configurePiezoUnit() noexcept;
     float nextNoise(Voice& voice) noexcept;
-
-    EngineParameters targetParameters_ {};
-    EngineParameters parameters_ {};
-    PhysicalCalibration physicalCalibration_ { fittedPhysicalCalibration };
-    PerformanceRealism performanceRealism_ {};
-    std::array<Voice, stringCount> voices_ {};
-    std::array<BodyMode, bodyModeCount> bodyModes_ {};
-    std::array<BodyConfiguration, 12> bodyConfigurations_ {};
-    bool bodyConfigurationsReady_ { false };
-    // What renderBody runs: the two banks above as BodyBank lanes, with
-    // their states. Slots past a bank's own modes are all-zero padding
-    // (configureBody); their contribution to every sum is exactly zero, so
-    // BodyBank::count stops before them.
-    BodyBank bodyBank_ {}, fadingBodyBank_ {};
-    BodyShape fadingBodyShape_ { BodyShape::Concert };
-    BodyMaterial fadingBodyMaterial_ { BodyMaterial::Spruce };
-    BodyShape configuredBodyShape_ { BodyShape::Concert };
-    BodyMaterial configuredBodyMaterial_ { BodyMaterial::Spruce };
-    bool bodyUpdatePending_ { false };
-    // Completed dispersion solves by their exact arguments, shared by the
-    // six strings: a chord change asks for a handful of designs a playing
-    // hand keeps returning to, and each solve is an iterative 3x3 fit that
-    // made the note-on batch several times a normal one (with a
-    // least-squares refit on the stiffer notes). The solve is a pure
-    // function of its arguments, so a hit is the same result.
-    std::array<DispersionSolve, 64> dispersionSolves_ {};
+    void processIdleFlush(float samplePeak) noexcept;
+    void applyPendingBridge(bool fade) noexcept;
     // previous: a string's last design, which a design near it continues
     // from (calibrateDispersion). Such a design depends on that history, so
-    // it is neither taken from the solves above nor kept among them.
+    // it is neither taken from the solves below nor kept among them.
     [[nodiscard]] DispersionSolve solvedDispersion(
         const std::array<double, 13>& arguments,
         const DispersionSolve* previous = nullptr) noexcept;
-    // The design each string's fresh pluck at each fret asks for first, and
-    // its 48 kHz pick reference where the host rate needs one, made ahead of
-    // the note a start at a time (prepareDispersion): a stiff note's whole
-    // search took 3.5-9 ms of the note-on batch. A prepared design is the
-    // same full search the note would run, so it does not change the sound.
-    // After a construction change every slot first takes its interim design
-    // (complete false), then the stiff ones' searches are finished.
     static constexpr int preparedDispersionCount = stringCount * (fretCount + 1) * 2;
-    std::array<DispersionSolve, preparedDispersionCount> preparedDispersion_ {};
-    int preparedDispersionSlot_ { 0 };
-    bool preparingDispersion_ { false };
-    std::array<double, 13> preparingDispersionArguments_ {};
-    detail::DispersionProgress preparingDispersionProgress_ {};
-    int preparedDispersionCountdown_ { 0 };
-    // ready(): every slot found finished in a row since the inputs to the
-    // slots' arguments last changed (the configuration generation and
-    // whether a 48 kHz reference is needed). dispersionMadeSlots_ counts
-    // the slots found holding a design for their arguments, finished or
-    // interim: the searches are finished only once every slot has one.
-    bool dispersionReady_ { false };
-    int dispersionReadySlots_ { 0 };
-    int dispersionMadeSlots_ { 0 };
-    // prepare() is not real-time and searches every design in full, so a
-    // prepared engine holds the designs a search from nothing makes.
-    bool dispersionSearchesInFull_ { false };
-    std::uint64_t dispersionReadyGeneration_ { 0 };
-    bool dispersionReadyReference_ { false };
     [[nodiscard]] bool preparedDispersionArguments(
         int slot, std::array<double, 13>& arguments) const noexcept;
     void prepareDispersion() noexcept;
@@ -2357,152 +2300,8 @@ private:
         bool secondDispersion { false };
         bool thirdDispersion { false };
     };
-    std::array<RestingStringModel, stringCount> restingStringModels_ {};
-    std::array<int, stringCount> restingStringNotes_ {};
-    std::uint64_t restingStringGeneration_ { 0 };
-    double restingStringRate_ { 0.0 };
-    float restingStringMasterTune_ { 0.0f };
     [[nodiscard]] const std::array<RestingStringModel, stringCount>&
         restingStringModels() noexcept;
-    // writePickRelease's two released waves at every sample of the loop: its
-    // energy pass evaluates them (ten Gaussian edges and ten corner lookups
-    // a sample), and its write pass writes the same samples from them.
-    // Once both fresh planes are built, a continuing re-pluck reuses these
-    // arrays for the aligned increments shared by its work and merge passes.
-    DelayHistory<maximumDelaySamples> pickReleaseDisplacement_ {};
-    DelayHistory<maximumDelaySamples> pickReleaseVelocity_ {};
-    // A release's whole loop period, and what its slip changed
-    // (releaseOverPeriod).
-    DelayHistory<maximumDelaySamples> releaseSlipFrame_ {};
-    DelayHistory<maximumDelaySamples> releaseSlipChange_ {};
-    int nextDispersionSolve_ { 0 };
-    // Advanced whenever engine state that configureVoice reads changes; see
-    // VoiceConfigurationKey. Starts past the keys' never-matching zero.
-    std::uint64_t voiceConfigurationGeneration_ { 1 };
-    // The coupled body-shape factors configureBridge applies to the bridge
-    // bank's A0 group, its modes up to T1 and the plate modes above; all
-    // exactly 1 at each bank's anchor shape.
-    float bridgeShapeA0_ { 1.0f };
-    float bridgeShapeT1_ { 1.0f };
-    float bridgeShapePlate_ { 1.0f };
-    float bridgeShapeT1UpperHz_ { 0.0f };
-    BridgeLoad bridgeLoad_ {};
-    // Motion plus total/body loads, each in heave and normalized rock.
-    // Unlike acoustic histories these never re-prime at a note boundary.
-    std::array<FixedDerivative, 6> bridgePowerDerivatives_ {};
-    FixedDerivative bridgeVelocityDerivative_ {};
-    std::array<float, 8> captureMix_ { 1.0f };
-    // The piezo chain (renderPiezo). Each string presses on its own stretch
-    // of the element at its own sensitivity; the weighted sums below mirror
-    // the junction's, and like its port they are held while no string is
-    // summed.
-    std::array<float, stringCount> piezoStringWeights_ {};
-    float lastPiezoImpedanceSum_ { 0.0f };
-    float lastPiezoImpedanceMoment_ { 0.0f };
-    FixedDerivative piezoForceDerivative_ {};
-    float lastPiezoWave_ { 0.0f };
-    float lastPiezoForce_ { 0.0f };
-    // The saddle filter, in direct form I; histories are force units.
-    PiezoSaddleFilter piezoSaddle_ {};
-    std::array<PiezoSaddleFilter, piezoSaddleBankSize> piezoSaddleBank_ {};
-    float piezoSaddleAnchor_ {}, piezoSaddleMaximum_ {};
-    float piezoSaddleLowIndexScale_ {}, piezoSaddleHighIndexScale_ {};
-    float piezoSaddleImpedance_ { -1.0f };
-    std::array<float, piezoSaddleTaps> piezoSaddleInput_ {};
-    float piezoTransport_ {}; // one sample, on both Main and separate Piezo
-    std::array<float, 2> piezoSaddleOutput_ {};
-    // The preamp's input section, trapezoidal, as deviations from its
-    // operating point: w = V_IN - kin V_oc and C2's voltage.
-    double piezoFrontA00_ {}, piezoFrontA01_ {}, piezoFrontA10_ {}, piezoFrontA11_ {};
-    double piezoFrontB0_ {}, piezoFrontB1_ {}, piezoFrontE0_ {}, piezoFrontE1_ {};
-    double piezoInputShare_ {}, piezoJackInput_ {}, piezoJackElement_ {};
-    double piezoFrontW_ {}, piezoFrontC2_ {};
-    double piezoLastOpen_ {}, piezoLastClamp_ {};
-    // D1/D2: Ceq fs / IS, the IN node's charge per volt and sample over
-    // the diodes' saturation current, and the charge (as volts at IN) they
-    // take in one sample at 0 to 8 V past U1A's range, with its slope.
-    static constexpr int piezoDiodePoints = 1025;
-    static constexpr double piezoDiodeStep = 8.0 / (piezoDiodePoints - 1);
-    double piezoDiodeScale_ {};
-    std::array<double, piezoDiodePoints> piezoDiodeDump_ {};
-    std::array<double, piezoDiodePoints> piezoDiodeSlope_ {};
-    // C3, C4 and C5 as trapezoidal one-poles: state = pole * state
-    // + gain * (input + previous input).
-    double piezoC3Pole_ {}, piezoC3Gain_ {}, piezoC4Pole_ {}, piezoC4Gain_ {};
-    double piezoC5Pole_ {}, piezoC5Gain_ {};
-    double piezoC3_ {}, piezoC4_ {}, piezoC5_ {};
-    double piezoLastBuffer_ {}, piezoLastStage_ {};
-    // U1B's drive for the four samples a corner is found on, and its
-    // clipped output for the twelve the BLAMP spans (seven held back, the
-    // newest, and four ahead that only hold corrections), oldest first; the
-    // chain's output is seven samples behind its input.
-    std::array<double, 4> piezoDrive_ {};
-    std::array<double, 12> piezoStage_ {};
-    double piezoOutputVolts_ { 0.0 };
-    double piezoOutputScale_ { 0.0 };
-    // PiezoDesign item 2 at run time: newtons per engine force unit, the
-    // calibration's displacement unit per 48 kHz sample; the mid-band gain
-    // from the element's open-circuit voltage to the DI that the level match
-    // divides out with it; and the force floors below which renderPiezo
-    // reads none (5 pN) and zeroes the saddle's histories (50 nN), in force
-    // units (configurePiezoUnit).
-    double piezoNewtonsPerUnit_ { 0.0 };
-    double piezoMidbandGain_ { 0.0 };
-    float piezoForceFloor_ { 0.0f };
-    float piezoSaddleFloor_ { 0.0f };
-    // Observers (getLastPiezoProbe).
-    float lastPiezoOpen_ { 0.0f };
-    float lastPiezoVoltage_ { 0.0f };
-    float lastPiezoInput_ { 0.0f };
-    float lastPiezoDrive_ { 0.0f };
-    // The piezo's whole level over radiationReferenceGain: its match to the
-    // microphones (PiezoDesign::trim) times its reference for the
-    // construction and Picking (piezoReferenceFor), smoothed like the
-    // microphones' reference.
-    float piezoTrim_ { 1.0f };
-    FixedDerivative bridgeRotationDerivative_ {};
-    // The junction's power is the sum over both coordinates, so the moments
-    // are differenced alongside the forces; the passivity tests read it.
-    FixedDerivative bridgeForceMomentDerivative_ {};
-    FixedDerivative bridgeBodyMomentDerivative_ {};
-    FixedDerivative bridgeForceDerivative_ {};
-    FixedDerivative bridgeBodyForceDerivative_ {};
-    double sampleRate_ { 48000.0 };
-    float inverseSampleRate_ { 1.0f / 48000.0f };
-    // The released static force's high-pass, a double pole at 10 ms, and
-    // how long it runs (initialisePluck).
-    float releaseStepPole_ { 0.0f };
-    int releaseStepSamples_ { 1 };
-    float delaySmoothing_ { 0.001f };
-    // How long the sections of a string retuned under its wave take to
-    // follow (configureVoice).
-    int retuneSectionSamples_ { 1440 };
-    float parameterSmoothing_ { 0.002f };
-    float levelSmoothing_ { 0.0025f };
-    std::array<float, midiChannelCount> pitchBendSemitones_ {};
-    float masterTuneSemitones_ { 0.0f };
-    float masterTuneRatio_ { 1.0f };
-    float vibrato_ { 0.0f };
-    float vibratoPhase_ { 0.0f };
-    float vibratoOnset_ { 0.0f };
-    float lastBridgeVelocity_ { 0.0f };
-    float lastBridgeReactionForce_ { 0.0f };
-    float lastBridgeBodyForce_ { 0.0f };
-    float lastBridgePower_ { 0.0f };
-    float lastBridgeBodyPower_ { 0.0f };
-    float bodyAmount_ { 0.82f };
-    float width_ { 0.62f };
-    float outputGain_ { 0.42f };
-    // Main's and the Piezo output's shared output stages: the VU guard,
-    // which holds the hardest chords out of the red of Reason's meter, then
-    // a limiter holding -1.5 dBFS (-4.8 below 44.1 kHz), under the safety
-    // limiter's knee so a limited signal never reaches it. The Piezo
-    // output's runs only while that bus is rendered.
-    protocodus::OutputStage<2> mainOutput_;
-    protocodus::OutputStage<1> piezoOutput_;
-    bool lowRateOutputReserve_ { false };
-    float outputLimiterDrive_ { 1.0f };
-    float outputLimiterReturn_ { 1.0f };
     template <std::size_t Channels>
     void processOutputStage(protocodus::OutputStage<Channels>& stage,
                             std::array<float, Channels>& frame) noexcept
@@ -2514,13 +2313,7 @@ private:
         if (lowRateOutputReserve_)
             for (float& sample : frame) sample *= outputLimiterReturn_;
     }
-    bool piezoOutputRunning_ { false };
-    float piezoMix_ { 0.0f };
-    // The crossfade's gains for piezoBlendFor_, a function of it alone.
-    float piezoBlendFor_ { 0.0f };
-    float micBlendGain_ { 1.0f };
-    float piezoBlendGain_ { 0.0f };
-    float piezoBlendPolarity_ { 1.0f };
+
     // A small room's sound at the microphones (EngineParameters::room): its
     // early reflections from a tapped line and its late field from an
     // eight-line feedback delay network, run at the host rate divided by the
@@ -2535,23 +2328,7 @@ private:
         static constexpr int lineCapacity = 4096;
         static constexpr int earlyCapacity = 2048;
         static constexpr int tapCount = 10;
-        std::array<std::array<float, lineCapacity>, lineCount> lines {};
-        std::array<int, lineCount> lengths {};
-        std::array<int, lineCount> heads {};
-        std::array<float, lineCount> absorptionState {};
-        std::array<float, lineCount> absorptionGain {};
-        std::array<float, lineCount> absorptionPole {};
-        // Held twice, one capacity apart (see step()).
-        std::array<float, 2 * earlyCapacity> early {};
-        int earlyHead { 0 };
-        // Four Schroeder allpasses diffusing what enters the late field.
         static constexpr int diffuserCapacity = 512;
-        std::array<std::array<float, diffuserCapacity>, 4> diffusers {};
-        std::array<int, 4> diffuserLengths {};
-        std::array<int, 4> diffuserHeads {};
-        std::array<int, tapCount> tapDelays {};
-        std::array<float, tapCount> tapLeft {};
-        std::array<float, tapCount> tapRight {};
         // One coherent source, observed by a 20 cm spaced cardioid pair.
         // Each image has its own receiver delay, with cubic interpolation.
         struct Arrival
@@ -2559,53 +2336,70 @@ private:
             int firstDelay { 1 };
             std::array<float, 4> weights {};
         };
-        std::array<Arrival, tapCount> arrivalsLeft {}, arrivalsRight {};
-        // The same weights four taps a row, point k of tap 4 g + t at
-        // [channel][g][k][t], so step forms four taps' arrivals at once;
-        // the taps past tapCount weigh zero.
         static constexpr int tapGroups = (tapCount + 3) / 4;
-        alignas(16) std::array<std::array<std::array<std::array<float, 4>, 4>,
-                                          tapGroups>, 2> arrivalWeights {};
-        bool directional { false };
-        bool rateConversion { false };
         // Two 64-internal-sample Blackman-windowed sinc filters. The first
         // rejects aliases before decimation; the second rejects images.
         // Their combined group delay is removed from every room arrival.
         static constexpr int converterOrder = 64;
         static constexpr int maximumDecimation = 12; // through 768 kHz
         static constexpr int converterCapacity = converterOrder * maximumDecimation + 1;
-        std::array<float, converterCapacity> converterCoefficients {}, converterInput {};
-        std::array<std::array<float, converterOrder + 1>, maximumDecimation>
-            converterPhases {};
-        std::array<float, converterOrder + 1> converterLeft {}, converterRight {};
-        int converterLength { 1 };
-        int converterInputHead { 0 }, converterOutputHead { 0 };
-        int lateDelay { 1 };
-        // The late field's input gain, set at prepare to its share.
-        float lateInput { 1.0f };
-        int longest { 1 };
-        float inputCoefficient { 1.0f };
-        float inputState { 0.0f };
-        float earlyCoefficient { 1.0f };
-        float earlyLeft { 0.0f };
-        float earlyRight { 0.0f };
-        float outputScale { 1.0f };
+
+        bool active { false };
+        bool directional { false };
+        bool rateConversion { false };
         int decimation { 1 };
         float inverseDecimation { 1.0f };
         int phase { 0 };
         float accumulator { 0.0f };
+        float inputCoefficient { 1.0f };
+        float inputState { 0.0f };
         float previousLeft { 0.0f };
         float previousRight { 0.0f };
         float currentLeft { 0.0f };
         float currentRight { 0.0f };
+        int earlyHead { 0 };
+        int lateDelay { 1 };
+        // The late field's input gain, set at prepare to its share.
+        float lateInput { 1.0f };
+        int longest { 1 };
+        float earlyCoefficient { 1.0f };
+        float earlyLeft { 0.0f };
+        float earlyRight { 0.0f };
+        float outputScale { 1.0f };
+        // Internal samples since anything but an exact zero went in or came
+        // out; past the longest path every state is zero again.
+        int quietSamples { 0 };
+        int converterLength { 1 };
+        int converterInputHead { 0 }, converterOutputHead { 0 };
         // Host-rate 150 Hz Butterworth high-pass on the wet side only. The
         // room's original mid is retained independently at the output sum.
         std::array<double, 5> sideHighpassCoefficients {};
         std::array<double, 2> sideHighpassState {};
-        // Internal samples since anything but an exact zero went in or came
-        // out; past the longest path every state is zero again.
-        int quietSamples { 0 };
-        bool active { false };
+        std::array<int, lineCount> lengths {};
+        std::array<int, lineCount> heads {};
+        std::array<float, lineCount> absorptionState {};
+        std::array<float, lineCount> absorptionGain {};
+        std::array<float, lineCount> absorptionPole {};
+        std::array<int, 4> diffuserLengths {};
+        std::array<int, 4> diffuserHeads {};
+        std::array<int, tapCount> tapDelays {};
+        std::array<float, tapCount> tapLeft {};
+        std::array<float, tapCount> tapRight {};
+        std::array<Arrival, tapCount> arrivalsLeft {}, arrivalsRight {};
+        // The same weights four taps a row, point k of tap 4 g + t at
+        // [channel][g][k][t], so step forms four taps' arrivals at once;
+        // the taps past tapCount weigh zero.
+        std::array<std::array<std::array<std::array<float, 4>, 4>,
+                              tapGroups>, 2> arrivalWeights {};
+        // Held twice, one capacity apart (see step()).
+        std::array<float, 2 * earlyCapacity> early {};
+        // Four Schroeder allpasses diffusing what enters the late field.
+        std::array<std::array<float, diffuserCapacity>, 4> diffusers {};
+        std::array<float, converterOrder + 1> converterLeft {}, converterRight {};
+        std::array<float, converterCapacity> converterCoefficients {}, converterInput {};
+        std::array<std::array<float, converterOrder + 1>, maximumDecimation>
+            converterPhases {};
+        std::array<std::array<float, lineCapacity>, lineCount> lines {};
 
         void prepare(double hostRate, bool directionalReflections = false,
                      bool correctedRateConversion = false) noexcept;
@@ -2616,107 +2410,10 @@ private:
         float coherentSide(float side) noexcept;
         void step(float input) noexcept;
     };
-    RoomAmbience room_ {};
-    float roomAmount_ { 0.0f };
-    float roomSendFor_ { 0.0f };
-    float roomSend_ { 0.0f };
-    // The microphones, held back by the piezo chain's pipeline (renderPiezo's
-    // output plus saddle fit and transport have outputLatency samples), so the two
-    // sensors meet on the instrument's one time base.
+
+    static constexpr int piezoDiodePoints = 1025;
+    static constexpr double piezoDiodeStep = 8.0 / (piezoDiodePoints - 1);
     static constexpr int piezoPipelineSamples = outputLatency;
-    std::array<float, piezoPipelineSamples> micDelayLeft_ {};
-    std::array<float, piezoPipelineSamples> micDelayRight_ {};
-    std::array<float, piezoPipelineSamples> micDelayMono_ {};
-    int micDelayIndex_ { 0 };
-    // The output reference's per-material and per-construction factor
-    // (outputReferenceFor in AculeleEngine.cpp), smoothed like the output
-    // control, and the mono microphone's own (monoReferenceFor).
-    float outputReference_ { 1.0f };
-    float monoReference_ { 1.0f };
-    float palmMute_ { 0.0f };
-    float targetPalmMute_ { 0.0f };
-    float palmMuteSmoothing_ { 0.5f };
-    HandGestureSource handGestures_ {};
-    int muteIdleSamples_ {};
-    // An idle instrument settles on a rounding-level residue (about 1e-12 at
-    // the output) that its strings and bridge hold between them; after
-    // idleFlushSeconds with nothing let go or about to sound and everything
-    // under idleFloor it is cleared once, as All Sound Off clears it, so an
-    // idle instrument reaches exact zero, held strings included
-    // (processIdleFlush).
-    int idleQuietSamples_ { 0 };
-    bool idleFlushed_ { true };
-    // The last flush left held strings where they were.
-    bool idleFlushHeld_ { false };
-    void processIdleFlush(float samplePeak) noexcept;
-    float bodyModelFade_ { 1.0f };
-    float bodyModelFadeStep_ { 1.0f / 1920.0f };
-    // A live bridge rebuild crossfades the mobility from the modes that were
-    // sounding (fadingBridgeLoad_) to the new ones over 20 ms, as the body
-    // crossfades its radiation: bridgeLoadFade_ is the new modes' share.
-    BridgeLoad fadingBridgeLoad_ {};
-    float bridgeLoadFade_ { 1.0f };
-    float bridgeLoadFadeStep_ { 1.0f / 960.0f };
-    // A rebuild asked for while that fade runs waits for it to end, as the
-    // body's does (bodyUpdatePending_): restarting the fade from a mix of two
-    // banks, or rebuilding under it, stepped the bridge.
-    bool bridgeUpdatePending_ { false };
-    BodyShape fadingBridgeShape_ { BodyShape::Concert };
-    BodyMaterial fadingBridgeMaterial_ { BodyMaterial::Spruce };
-    BodyShape configuredBridgeShape_ { BodyShape::Concert };
-    BodyMaterial configuredBridgeMaterial_ { BodyMaterial::Spruce };
-    void applyPendingBridge(bool fade) noexcept;
-    int controlCounter_ { 0 };
-    int lowerZoneMemberCount_ { 0 };
-    // -1 means no CC74 (mpeTimbre_) or channel pressure (mpePressure_) has
-    // ever been received on that channel; the panel Pluck Position control
-    // applies as it always did. Both persist across notes on the channel,
-    // the way MPE per-channel controllers do, until the lower zone is
-    // reconfigured or the engine is reset.
-    std::array<float, midiChannelCount> mpeTimbre_ {};
-    std::array<float, midiChannelCount> mpePressure_ {};
-    bool stringPerChannelMode_ { false };
-    std::array<bool, midiChannelCount> sustainPedals_ {};
-    bool sustainHold_ { false };
-    bool bridgeCouplingEnabled_ { true };
-    bool sympatheticStringsEnabled_ { true };
-    bool portObserversEnabled_ { true };
-    // The strings do not leave the bridge when a note ends, so the junction
-    // keeps the port they present rather than switching it out from under a
-    // body that is still ringing.
-    float lastImpedanceSum_ { 0.0f };
-    float lastImpedanceMoment_ { 0.0f };
-    float lastImpedanceInertia_ { 0.0f };
-    bool bridgeDerivativesNeedPriming_ { true };
-    bool bridgeDerivativesCrossRelease_ { false };
-    // A re-pluck merged into a ringing string stepped the junction's wave
-    // variables on the next sample (FixedDerivative::processAcrossStep).
-    bool bridgeDerivativesCrossConfigure_ { false };
-    bool prepared_ { false };
-    bool suspended_ { false };
-    bool bodyConfigured_ { false };
-    std::uint64_t noteOrder_ { 0 };
-    // Samples rendered since reset(); the hand's memory and the chord window
-    // are timed on it.
-    std::uint64_t sampleClock_ { 0 };
-    double tempoBpm_ { 120.0 };
-    std::array<HandFinger, stringCount> hand_ {};
-    std::array<FingerAnticipation, stringCount> anticipations_ {};
-    // Reused synchronously by one note-on; never a second bridge-loaded string.
-    std::array<StringLoop, 2> repluckOldLoops_ {};
-    // A test's switch (Aculele.TailReach): a retained wave's lines hold a
-    // value no string takes wherever captureFrom did not copy, so a read
-    // past its reach shows in the output.
-    bool poisonUnreachedLines_ { false };
-    std::array<std::uint64_t, midiChannelCount> lastNoteOnSample_ {};
-    std::array<std::uint64_t, midiChannelCount> chordStartSample_ {};
-    std::array<bool, midiChannelCount> noteOnSeen_ {};
-    // planChord's shape for the notes of one sample.
-    std::array<int, stringCount> plannedNotes_ {};
-    std::array<int, stringCount> plannedStrings_ {};
-    int plannedCount_ { 0 };
-    int plannedChannel_ { 1 };
-    std::uint64_t plannedSample_ { 0 };
     // Heijink and Meulenbroek, "On the Complexity of Classical Guitar
     // Playing: Functional Adaptations to Task Constraints", J. Motor
     // Behavior 34(4), 339-351 (2002): the scale fingering they call a small
@@ -2752,24 +2449,6 @@ private:
     // the hand lowest wins, as the chord books fret G as 7-7-7-10, not
     // 0-11-10-10, and D7 as 2223, not 5220.
     static constexpr int firstPositionFret = 4;
-    // Shared across every string of one strum: drawn once by beginStrum(),
-    // read by noteOn's strumMember path. A per-string draw here (rather than
-    // each voice's own generator) is what keeps the pick's speed for the
-    // whole stroke coherent, so a slower or faster draw scales every
-    // string's delay together and never reorders them.
-    std::uint32_t strumRandomState_ { 0x9e3779b9u };
-    // The fingers' own timing in a plucked chord (fingerChordOffsetSamples),
-    // apart from the strums' draws so a plucked chord moves no strum.
-    std::uint32_t fingerChordRandomState_ { 0x2545f491u };
-    std::uint32_t fingerPairRandomState_ { 0x9a735c21u };
-    // Each swept string's own moment (strumScatterSamples), apart from the
-    // speed draws so the scatter moves no stroke's speed.
-    std::uint32_t strumScatterRandomState_ { 0x68e31da4u };
-    float strumSpeedScale_ { 1.0f };
-    float strumParallelSign_ { 1.0f };
-    // The strings the latest stroke enters and leaves its chord on, or -1.
-    int strumEntryString_ { -1 };
-    int strumExitString_ { -1 };
     // Half-width of the uniform draw beginStrum() applies to strumSpeedScale_.
     // GuitarSet's comping tracks (Tools/MeasureStrums.py), pooled over runs
     // of >=3 repeats of one chord and direction, put a stroke's own total
@@ -2779,6 +2458,266 @@ private:
     // corpus's absolute-ms one, is what a single per-stroke speed draw
     // should match. std of h*U(-1,1) is h/sqrt(3), so h = 0.3647*sqrt(3).
     static constexpr float strumSpeedJitterHalfWidth = 0.6317f;
+
+    // Hot per-sample and control-rate scalars sit ahead of the modal banks,
+    // room buffers, dispersion tables and voices_ so every per-sample load and
+    // store stays within single-instruction immediate-offset reach of `this`.
+    EngineParameters targetParameters_ {};
+    EngineParameters parameters_ {};
+    PhysicalCalibration physicalCalibration_ { fittedPhysicalCalibration };
+    PerformanceRealism performanceRealism_ {};
+    double sampleRate_ { 48000.0 };
+    float inverseSampleRate_ { 1.0f / 48000.0f };
+    float sampleRateRatio_ { 1.0f };
+    float sqrtSampleRateRatio_ { 1.0f };
+    float inverseSampleRateRatio_ { 1.0f };
+    // The released static force's high-pass, a double pole at 10 ms, and
+    // how long it runs (initialisePluck).
+    float releaseStepPole_ { 0.0f };
+    int releaseStepSamples_ { 1 };
+    float delaySmoothing_ { 0.001f };
+    // How long the sections of a string retuned under its wave take to
+    // follow (configureVoice).
+    int retuneSectionSamples_ { 1440 };
+    float parameterSmoothing_ { 0.002f };
+    float levelSmoothing_ { 0.0025f };
+    float masterTuneSemitones_ { 0.0f };
+    float masterTuneRatio_ { 1.0f };
+    float vibrato_ { 0.0f };
+    float vibratoPhase_ { 0.0f };
+    float vibratoOnset_ { 0.0f };
+    float lastBridgeVelocity_ { 0.0f };
+    float lastBridgeReactionForce_ { 0.0f };
+    float lastBridgeBodyForce_ { 0.0f };
+    float lastBridgePower_ { 0.0f };
+    float lastBridgeBodyPower_ { 0.0f };
+    float bodyAmount_ { 0.82f };
+    float width_ { 0.62f };
+    float outputGain_ { 0.42f };
+    float outputReference_ { 1.0f };
+    float monoReference_ { 1.0f };
+    float targetOutputReference_ { 1.0f };
+    float targetMonoReference_ { 1.0f };
+    float piezoTrim_ { 1.0f };
+    float targetPiezoTrim_ { 1.0f };
+    bool lowRateOutputReserve_ { false };
+    float outputLimiterDrive_ { 1.0f };
+    float outputLimiterReturn_ { 1.0f };
+    bool piezoOutputRunning_ { false };
+    float piezoMix_ { 0.0f };
+    // The crossfade's gains for piezoBlendFor_, a function of it alone.
+    float piezoBlendFor_ { 0.0f };
+    float micBlendGain_ { 1.0f };
+    float piezoBlendGain_ { 0.0f };
+    float piezoBlendPolarity_ { 1.0f };
+    float roomAmount_ { 0.0f };
+    float roomSendFor_ { 0.0f };
+    float roomSend_ { 0.0f };
+    float palmMute_ { 0.0f };
+    float targetPalmMute_ { 0.0f };
+    float palmMuteSmoothing_ { 0.5f };
+    int muteIdleSamples_ {};
+    int idleQuietSamples_ { 0 };
+    bool idleFlushed_ { true };
+    // The last flush left held strings where they were.
+    bool idleFlushHeld_ { false };
+    float bodyModelFade_ { 1.0f };
+    float bodyModelFadeStep_ { 1.0f / 1920.0f };
+    float bridgeLoadFade_ { 1.0f };
+    float bridgeLoadFadeStep_ { 1.0f / 960.0f };
+    bool bridgeUpdatePending_ { false };
+    bool bodyUpdatePending_ { false };
+    bool bodyConfigurationsReady_ { false };
+    BodyShape fadingBodyShape_ { BodyShape::Concert };
+    BodyMaterial fadingBodyMaterial_ { BodyMaterial::Spruce };
+    BodyShape configuredBodyShape_ { BodyShape::Concert };
+    BodyMaterial configuredBodyMaterial_ { BodyMaterial::Spruce };
+    BodyShape fadingBridgeShape_ { BodyShape::Concert };
+    BodyMaterial fadingBridgeMaterial_ { BodyMaterial::Spruce };
+    BodyShape configuredBridgeShape_ { BodyShape::Concert };
+    BodyMaterial configuredBridgeMaterial_ { BodyMaterial::Spruce };
+    int controlCounter_ { 0 };
+    int lowerZoneMemberCount_ { 0 };
+    bool stringPerChannelMode_ { false };
+    bool sustainHold_ { false };
+    bool bridgeCouplingEnabled_ { true };
+    bool sympatheticStringsEnabled_ { true };
+    bool portObserversEnabled_ { true };
+    // The strings do not leave the bridge when a note ends, so the junction
+    // keeps the port they present rather than switching it out from under a
+    // body that is still ringing.
+    float lastImpedanceSum_ { 0.0f };
+    float lastImpedanceMoment_ { 0.0f };
+    float lastImpedanceInertia_ { 0.0f };
+    bool bridgeDerivativesNeedPriming_ { true };
+    bool bridgeDerivativesCrossRelease_ { false };
+    // A re-pluck merged into a ringing string stepped the junction's wave
+    // variables on the next sample (FixedDerivative::processAcrossStep).
+    bool bridgeDerivativesCrossConfigure_ { false };
+    bool prepared_ { false };
+    bool suspended_ { false };
+    bool bodyConfigured_ { false };
+    bool poisonUnreachedLines_ { false };
+    std::uint64_t noteOrder_ { 0 };
+    // Samples rendered since reset(); the hand's memory and the chord window
+    // are timed on it.
+    std::uint64_t sampleClock_ { 0 };
+    double tempoBpm_ { 120.0 };
+    // Advanced whenever engine state that configureVoice reads changes; see
+    // VoiceConfigurationKey. Starts past the keys' never-matching zero.
+    std::uint64_t voiceConfigurationGeneration_ { 1 };
+    float bridgeShapeA0_ { 1.0f };
+    float bridgeShapeT1_ { 1.0f };
+    float bridgeShapePlate_ { 1.0f };
+    float bridgeShapeT1UpperHz_ { 0.0f };
+    // Motion plus total/body loads, each in heave and normalized rock.
+    // Unlike acoustic histories these never re-prime at a note boundary.
+    std::array<FixedDerivative, 6> bridgePowerDerivatives_ {};
+    FixedDerivative bridgeVelocityDerivative_ {};
+    FixedDerivative bridgeRotationDerivative_ {};
+    // The junction's power is the sum over both coordinates, so the moments
+    // are differenced alongside the forces; the passivity tests read it.
+    FixedDerivative bridgeForceMomentDerivative_ {};
+    FixedDerivative bridgeBodyMomentDerivative_ {};
+    FixedDerivative bridgeForceDerivative_ {};
+    FixedDerivative bridgeBodyForceDerivative_ {};
+    FixedDerivative piezoForceDerivative_ {};
+    std::array<float, 8> captureMix_ { 1.0f };
+    // The microphones, held back by the piezo chain's pipeline (renderPiezo's
+    // output plus saddle fit and transport have outputLatency samples), so the two
+    // sensors meet on the instrument's one time base.
+    std::array<float, piezoPipelineSamples> micDelayLeft_ {};
+    std::array<float, piezoPipelineSamples> micDelayRight_ {};
+    std::array<float, piezoPipelineSamples> micDelayMono_ {};
+    int micDelayIndex_ { 0 };
+    // The piezo chain (renderPiezo). Each string presses on its own stretch
+    // of the element at its own sensitivity; the weighted sums below mirror
+    // the junction's, and like its port they are held while no string is
+    // summed.
+    std::array<float, stringCount> piezoStringWeights_ {};
+    float lastPiezoImpedanceSum_ { 0.0f };
+    float lastPiezoImpedanceMoment_ { 0.0f };
+    float lastPiezoWave_ { 0.0f };
+    float lastPiezoForce_ { 0.0f };
+    float piezoSaddleAnchor_ {}, piezoSaddleMaximum_ {};
+    float piezoSaddleLowIndexScale_ {}, piezoSaddleHighIndexScale_ {};
+    float piezoSaddleImpedance_ { -1.0f };
+    float piezoTransport_ {}; // one sample, on both Main and separate Piezo
+    PiezoSaddleFilter piezoSaddle_ {};
+    std::array<float, piezoSaddleTaps> piezoSaddleInput_ {};
+    std::array<float, 2> piezoSaddleOutput_ {};
+    // The preamp's input section, trapezoidal, as deviations from its
+    // operating point: w = V_IN - kin V_oc and C2's voltage.
+    double piezoFrontA00_ {}, piezoFrontA01_ {}, piezoFrontA10_ {}, piezoFrontA11_ {};
+    double piezoFrontB0_ {}, piezoFrontB1_ {}, piezoFrontE0_ {}, piezoFrontE1_ {};
+    double piezoInputShare_ {}, piezoJackInput_ {}, piezoJackElement_ {};
+    double piezoFrontW_ {}, piezoFrontC2_ {};
+    double piezoLastOpen_ {}, piezoLastClamp_ {};
+    double piezoDiodeScale_ {};
+    // C3, C4 and C5 as trapezoidal one-poles: state = pole * state
+    // + gain * (input + previous input).
+    double piezoC3Pole_ {}, piezoC3Gain_ {}, piezoC4Pole_ {}, piezoC4Gain_ {};
+    double piezoC5Pole_ {}, piezoC5Gain_ {};
+    double piezoC3_ {}, piezoC4_ {}, piezoC5_ {};
+    double piezoLastBuffer_ {}, piezoLastStage_ {};
+    // U1B's drive for the four samples a corner is found on, and its
+    // clipped output for the twelve the BLAMP spans (seven held back, the
+    // newest, and four ahead that only hold corrections), oldest first; the
+    // chain's output is seven samples behind its input.
+    std::array<double, 4> piezoDrive_ {};
+    std::array<double, 12> piezoStage_ {};
+    double piezoOutputVolts_ { 0.0 };
+    double piezoOutputScale_ { 0.0 };
+    double piezoNewtonsPerUnit_ { 0.0 };
+    double piezoMidbandGain_ { 0.0 };
+    float piezoForceFloor_ { 0.0f };
+    float piezoSaddleFloor_ { 0.0f };
+    // Observers (getLastPiezoProbe).
+    float lastPiezoOpen_ { 0.0f };
+    float lastPiezoVoltage_ { 0.0f };
+    float lastPiezoInput_ { 0.0f };
+    float lastPiezoDrive_ { 0.0f };
+    // Main's and the Piezo output's shared output stages.
+    protocodus::OutputStage<2> mainOutput_;
+    protocodus::OutputStage<1> piezoOutput_;
+    HandGestureSource handGestures_ {};
+    int preparedDispersionSlot_ { 0 };
+    bool preparingDispersion_ { false };
+    int preparedDispersionCountdown_ { 0 };
+    bool dispersionReady_ { false };
+    int dispersionReadySlots_ { 0 };
+    int dispersionMadeSlots_ { 0 };
+    bool dispersionSearchesInFull_ { false };
+    std::uint64_t dispersionReadyGeneration_ { 0 };
+    bool dispersionReadyReference_ { false };
+    int nextDispersionSolve_ { 0 };
+    PickingGesture pickingGesture_ {}, strumGesture_ {};
+    std::uint64_t pickingGestureOriginSample_ { 0 };
+    std::uint64_t pickingGestureSample_ { 0 };
+    bool pickingGestureSeen_ { false };
+    std::uint32_t strumRandomState_ { 0x9e3779b9u };
+    std::uint32_t fingerChordRandomState_ { 0x2545f491u };
+    std::uint32_t fingerPairRandomState_ { 0x9a735c21u };
+    std::uint32_t strumScatterRandomState_ { 0x68e31da4u };
+    float strumSpeedScale_ { 1.0f };
+    float strumParallelSign_ { 1.0f };
+    int strumEntryString_ { -1 };
+    int strumExitString_ { -1 };
+    std::array<float, midiChannelCount> pitchBendSemitones_ {};
+    std::array<float, midiChannelCount> mpeTimbre_ {};
+    std::array<float, midiChannelCount> mpePressure_ {};
+    std::array<bool, midiChannelCount> sustainPedals_ {};
+    std::array<std::uint64_t, midiChannelCount> lastNoteOnSample_ {};
+    std::array<std::uint64_t, midiChannelCount> chordStartSample_ {};
+    std::array<bool, midiChannelCount> noteOnSeen_ {};
+    std::array<HandFinger, stringCount> hand_ {};
+    std::array<FingerAnticipation, stringCount> anticipations_ {};
+    std::array<int, stringCount> plannedNotes_ {};
+    std::array<int, stringCount> plannedStrings_ {};
+    int plannedCount_ { 0 };
+    int plannedChannel_ { 1 };
+    std::uint64_t plannedSample_ { 0 };
+    std::array<int, stringCount> restingStringNotes_ {};
+    std::uint64_t restingStringGeneration_ { 0 };
+    double restingStringRate_ { 0.0 };
+    float restingStringMasterTune_ { 0.0f };
+    std::array<RestingStringModel, stringCount> restingStringModels_ {};
+
+    // Medium and large modal banks, room buffers, lookup tables and voices_.
+    BridgeLoad bridgeLoad_ {};
+    BridgeLoad fadingBridgeLoad_ {};
+    mutable BridgeMobilityTable bridgeMobilityTable_ {};
+    // What renderBody runs: the two banks as BodyBank lanes, with their states.
+    BodyBank bodyBank_ {}, fadingBodyBank_ {};
+    std::array<double, piezoDiodePoints> piezoDiodeDump_ {};
+    std::array<double, piezoDiodePoints> piezoDiodeSlope_ {};
+    std::array<PiezoSaddleFilter, piezoSaddleBankSize> piezoSaddleBank_ {};
+    RoomAmbience room_ {};
+    std::array<double, 13> preparingDispersionArguments_ {};
+    detail::DispersionProgress preparingDispersionProgress_ {};
+    // Completed dispersion solves by their exact arguments, shared by the
+    // four strings: a chord change asks for a handful of designs a playing
+    // hand keeps returning to, and each solve is an iterative 3x3 fit that
+    // made the note-on batch several times a normal one (with a
+    // least-squares refit on the stiffer notes). The solve is a pure
+    // function of its arguments, so a hit is the same result.
+    std::array<DispersionSolve, 64> dispersionSolves_ {};
+    std::array<DispersionSolve, preparedDispersionCount> preparedDispersion_ {};
+    std::array<BodyMode, bodyModeCount> bodyModes_ {};
+    std::array<BodyConfiguration, 12> bodyConfigurations_ {};
+    std::array<Voice, stringCount> voices_ {};
+    // writePickRelease's two released waves at every sample of the loop.
+    DelayHistory<maximumDelaySamples> pickReleaseDisplacement_ {};
+    DelayHistory<maximumDelaySamples> pickReleaseVelocity_ {};
+    // A release's whole loop period, and what its slip changed
+    // (releaseOverPeriod).
+    DelayHistory<maximumDelaySamples> releaseSlipFrame_ {};
+    DelayHistory<maximumDelaySamples> releaseSlipChange_ {};
+    // Reused synchronously by one note-on; never a second bridge-loaded string.
+    std::array<StringLoop, 2> repluckOldLoops_ {};
 };
+
+static_assert(alignof(AculeleEngine) <= 8,
+              "Jukebox phdsp64 allocates AculeleEngine with 8-byte alignment");
 
 } // namespace aculele

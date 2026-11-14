@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 # Aculele: a physically modelled ukulele built on Acustra's engine. The
 # JUCE-free engine and performer, the demo renderer and two analysis tools;
 # there is no plug-in or editor yet.
-project(Aculele VERSION 0.4.64 LANGUAGES CXX)
+project(Aculele VERSION 0.4.65 LANGUAGES CXX)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
@@ -59,6 +59,11 @@ if(NOT MSVC)
     set_target_properties(AculeleDSPCxx17 PROPERTIES
         CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
     target_compile_options(AculeleDSPCxx17 PRIVATE -Wall -Wextra -Werror)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        # Jukebox phdsp64 guarantees only 8-byte heap alignment with no aligned new.
+        target_compile_options(AculeleDSPCxx17 PRIVATE
+            -fnew-alignment=8 -fno-aligned-allocation -Wover-aligned)
+    endif()
     # The Rack's layout too: four times the delay line, for 192 kHz. No other
     # target here builds it; Aculele.SampleRateLayoutParity plays it.
     target_compile_definitions(AculeleDSPCxx17 PUBLIC ACULELE_EXTENDED_SAMPLE_RATES=1)

@@ -1504,8 +1504,10 @@ static_assert(detail::stereoMicLevel.size() == 3 * woodSpecs.size() * 4);
 // A float follower otherwise stops one rounding cell short of its target;
 // the cell depends on its approach direction. Every settled control and
 // construction reference must recover the same exact final value.
-float settlingGlide(float value, float target, float smoothing) noexcept
+ACULELE_ALWAYS_INLINE float settlingGlide(float value, float target, float smoothing) noexcept
 {
+    if (value == target)
+        return target;
     const float next = value + smoothing * (target - value);
     return next == value || exact::abs(target - next) < 1.0e-4f
         ? target : next;
@@ -3594,6 +3596,9 @@ AculeleEngine::AculeleEngine() noexcept
 
     parameters_ = sanitise(parameters_);
     targetParameters_ = parameters_;
+    targetOutputReference_ = outputReferenceFor(parameters_);
+    targetMonoReference_ = monoReferenceFor(parameters_);
+    targetPiezoTrim_ = PiezoDesign::trim * piezoReferenceFor(parameters_);
     configurePiezoUnit();
     const auto notes = openNotes(parameters_.tuning);
     for (int string = 0; string < stringCount; ++string)
@@ -4213,11 +4218,22 @@ float AculeleEngine::StringLoop::readDelay(float samples) noexcept
         readDelayValid = true;
     }
     const int whole = readDelayWhole;
-    const auto at = [&] (int samplesAgo)
+    const float* const data = delay.data();
+    const unsigned mask = static_cast<unsigned>(delay.size()) - 1u;
+    const unsigned idx0 = static_cast<unsigned>(writeIndex - whole) & mask;
+    float s0, s1, s2;
+    if (idx0 >= 2u)
     {
-        return delay[static_cast<std::size_t>(
-            wrapDelayIndex(writeIndex - samplesAgo))];
-    };
+        s2 = data[idx0 - 2u];
+        s1 = data[idx0 - 1u];
+        s0 = data[idx0];
+    }
+    else
+    {
+        s2 = data[(idx0 - 2u) & mask];
+        s1 = data[(idx0 - 1u) & mask];
+        s0 = data[idx0];
+    }
 
     // Second-order Thiran allpass, exactly lossless at every frequency (see
     // delayAnchor). Direct form I: the only state is the two previous
@@ -4236,9 +4252,9 @@ float AculeleEngine::StringLoop::readDelay(float samples) noexcept
     // preserved exactly even when the fractional coefficients or anchor
     // change. The expanded four-product form introduced rounding impulses
     // from its large cancelling terms during an otherwise quiet retune.
-    const float output = at(whole + 2)
-                       + first * (at(whole + 1) - allpassY1)
-                       + second * (at(whole) - allpassY2);
+    const float output = s2
+                       + first * (s1 - allpassY1)
+                       + second * (s0 - allpassY2);
     allpassY2 = allpassY1;
     allpassY1 = output;
     return output;
@@ -4343,6 +4359,43 @@ void AculeleEngine::StringLoop::switchLeadingDispersion(
     }
 }
 
+ACULELE_NOINLINE void AculeleEngine::StringLoop::advanceIntrinsicCoefficients() noexcept
+{
+    const int remaining = --intrinsicCoefficientSamples;
+    const auto step = [this, remaining] (float& applied, std::size_t index) noexcept
+    {
+        const float target = intrinsicCoefficientTarget[index];
+        if (remaining == 0)
+        {
+            applied = target;
+            return;
+        }
+        // Evaluate from the target and fixed step instead of accumulating
+        // independently rounded additions, so every coefficient reaches
+        // its target on the same sample.
+        const float delta = intrinsicCoefficientStep[index];
+        const float next = static_cast<float>(static_cast<double>(target)
+            - static_cast<double>(delta) * remaining);
+        applied = delta > 0.0f
+            ? std::min(target, std::max(applied, next))
+            : std::max(target, std::min(applied, next));
+    };
+    step(bendingLossGain, 0);
+    step(bendingLossA1, 1);
+    step(bendingLossA2, 2);
+    step(dispersionA1, 3);
+    step(dispersionA2, 4);
+    step(secondDispersionA1, 5);
+    step(secondDispersionA2, 6);
+    step(thirdDispersionA1, 7);
+    step(thirdDispersionA2, 8);
+    step(constantLossGain, 9);
+    step(constantLossA1, 10);
+    step(constantLossA2, 11);
+    step(constantLossN1, 12);
+    step(constantLossN2, 13);
+}
+
 float AculeleEngine::StringLoop::advance(float delaySmoothing,
                                          float releaseGain) noexcept
 {
@@ -4374,29 +4427,7 @@ float AculeleEngine::StringLoop::advance(float delaySmoothing,
         }
     }
     if (intrinsicCoefficientSamples > 0)
-    {
-        const std::array<float*, intrinsicCoefficientCount> applied {
-            &bendingLossGain, &bendingLossA1, &bendingLossA2, &dispersionA1,
-            &dispersionA2, &secondDispersionA1, &secondDispersionA2,
-            &thirdDispersionA1, &thirdDispersionA2,
-            &constantLossGain, &constantLossA1, &constantLossA2,
-            &constantLossN1, &constantLossN2 };
-        --intrinsicCoefficientSamples;
-        for (std::size_t index = 0; index < applied.size(); ++index)
-        {
-            const float target = intrinsicCoefficientTarget[index];
-            // Evaluate from the target and fixed step instead of accumulating
-            // independently rounded additions, so every coefficient reaches
-            // its target on the same sample.
-            const float next = static_cast<float>(static_cast<double>(target)
-                - static_cast<double>(intrinsicCoefficientStep[index])
-                    * intrinsicCoefficientSamples);
-            *applied[index] = intrinsicCoefficientSamples == 0 ? target
-                : intrinsicCoefficientStep[index] > 0.0f
-                    ? std::min(target, std::max(*applied[index], next))
-                    : std::max(target, std::min(*applied[index], next));
-        }
-    }
+        advanceIntrinsicCoefficients();
     // A float follower's increment rounds to zero while a physically
     // significant delay difference remains. Preserve its sub-ULP progress
     // instead of snapping that whole difference on one sample. Explicit
@@ -4413,7 +4444,7 @@ float AculeleEngine::StringLoop::advance(float delaySmoothing,
         const double nextDelay = delayProgress + static_cast<double>(delaySmoothing)
             * (static_cast<double>(targetDelay) - delayProgress);
         delayProgress = nextDelay == delayProgress
-            || std::abs(static_cast<double>(targetDelay) - nextDelay) < 1.0e-4
+            || exact::abs(static_cast<double>(targetDelay) - nextDelay) < 1.0e-4
             ? static_cast<double>(targetDelay) : nextDelay;
         currentDelay = static_cast<float>(delayProgress);
         delayProgressBits = exact::bits(currentDelay);
@@ -4510,7 +4541,8 @@ float AculeleEngine::StringLoop::advance(float delaySmoothing,
 
 void AculeleEngine::StringLoop::write(float value) noexcept
 {
-    if (!exact::isfinite(value) || exact::abs(value) < 1.0e-30f)
+    if ((exact::bits(value) & 0x7fffffffu) - 0x0da24260u
+        >= (0x7f800000u - 0x0da24260u))
         value = 0.0f;
     delay[static_cast<std::size_t>(writeIndex)] = value;
     writeIndex = wrapDelayIndex(writeIndex + 1);
@@ -4756,7 +4788,7 @@ void AculeleEngine::BridgeLoad::advanceModes(float bodyForce,
     // __builtin_memcpy, not std::memcpy: -fno-builtin turns std::memcpy into
     // a library call, seven a rocking mode a sample.
 #if ACULELE_PACKED_BRIDGE_MODES
-    typedef double Vector __attribute__((vector_size(16)));
+    typedef double Vector __attribute__((vector_size(16), aligned(8), may_alias));
     const auto load = [] (const BridgeMode::Lanes& lanes)
     {
         Vector vector;
@@ -4771,13 +4803,17 @@ void AculeleEngine::BridgeLoad::advanceModes(float bodyForce,
         auto& mode = modes[index];
         double heaveState, rockState = 0.0;
 #if ACULELE_PACKED_BRIDGE_MODES
-        if (rocking[index])
+        if (mode.rocking)
         {
             const Vector o1 = load(mode.output1);
-            const Vector output = load(mode.numerator1) * input
-                + load(mode.numerator2) * load(mode.input1)
-                - load(mode.denominator1) * o1
-                - load(mode.denominator2) * load(mode.output2);
+            const Vector n1 = { mode.numerator1, mode.numerator1 };
+            const Vector n2 = { mode.numerator2, mode.numerator2 };
+            const Vector d1 = { mode.denominator1, mode.denominator1 };
+            const Vector d2 = { mode.denominator2, mode.denominator2 };
+            const Vector output = n1 * input
+                + n2 * load(mode.input1)
+                - d1 * o1
+                - d2 * load(mode.output2);
             __builtin_memcpy(mode.input1.data(), &input, sizeof input);
             __builtin_memcpy(mode.output2.data(), &o1, sizeof o1);
             __builtin_memcpy(mode.output1.data(), &output, sizeof output);
@@ -4787,27 +4823,27 @@ void AculeleEngine::BridgeLoad::advanceModes(float bodyForce,
         else
 #endif
         {
-            const auto step = [&mode] (std::size_t lane, double input)
+            const auto step = [&mode] (std::size_t lane, double laneInput)
             {
-                const double output = mode.numerator1[lane] * input
-                    + mode.numerator2[lane] * mode.input1[lane]
-                    - mode.denominator1[lane] * mode.output1[lane]
-                    - mode.denominator2[lane] * mode.output2[lane];
-                mode.input1[lane] = input;
+                const double output = mode.numerator1 * laneInput
+                    + mode.numerator2 * mode.input1[lane]
+                    - mode.denominator1 * mode.output1[lane]
+                    - mode.denominator2 * mode.output2[lane];
+                mode.input1[lane] = laneInput;
                 mode.output2[lane] = mode.output1[lane];
                 mode.output1[lane] = output;
                 return output;
             };
             heaveState = step(0, bodyForce);
-            if (rocking[index])
+            if (mode.rocking)
                 rockState = step(1, bodyMoment);
         }
-        nextPastHeave += residueHeave[index] * heaveState;
-        if (!rocking[index])
+        nextPastHeave += mode.residueHeave * heaveState;
+        if (!mode.rocking)
             continue;
-        nextPastHeave += residueCross[index] * rockState;
-        nextPastRock += residueCross[index] * heaveState
-                      + residueRock[index] * rockState;
+        nextPastHeave += mode.residueCross * rockState;
+        nextPastRock += mode.residueCross * heaveState
+                      + mode.residueRock * rockState;
     }
     pastHeave = exact::isfinite(nextPastHeave)
         ? static_cast<float>(nextPastHeave) : 0.0f;
@@ -4947,6 +4983,9 @@ void AculeleEngine::prepare(double sampleRate, int)
 #endif
     ++voiceConfigurationGeneration_;
     inverseSampleRate_ = static_cast<float>(1.0 / sampleRate_);
+    sampleRateRatio_ = static_cast<float>(sampleRate_) / 48000.0f;
+    sqrtSampleRateRatio_ = exact::sqrt(sampleRateRatio_);
+    inverseSampleRateRatio_ = 48000.0f / static_cast<float>(sampleRate_);
     releaseStepPole_ = static_cast<float>(std::exp(-1.0 / (0.010 * sampleRate_)));
     releaseStepSamples_ = static_cast<int>(std::ceil(0.4 * sampleRate_));
     // The piezo chain (renderPiezo; PiezoDesign has the parts and their
@@ -5118,9 +5157,9 @@ void AculeleEngine::reset() noexcept
     piezoBlendPolarity_ = parameters_.piezoPolarityInverted ? -1.0f : 1.0f;
     roomAmount_ = parameters_.room;
     roomSendFor_ = -1.0f;
-    outputReference_ = outputReferenceFor(parameters_);
-    monoReference_ = monoReferenceFor(parameters_);
-    piezoTrim_ = PiezoDesign::trim * piezoReferenceFor(parameters_);
+    outputReference_ = targetOutputReference_ = outputReferenceFor(parameters_);
+    monoReference_ = targetMonoReference_ = monoReferenceFor(parameters_);
+    piezoTrim_ = targetPiezoTrim_ = PiezoDesign::trim * piezoReferenceFor(parameters_);
     captureMix_.fill(0.0f);
     captureMix_[static_cast<std::size_t>(parameters_.capture)] = 1.0f;
     bodyConfigured_ = false;
@@ -5156,7 +5195,7 @@ void AculeleEngine::reset() noexcept
         returnToOpenString(voice, string, true);
     }
     // Initialise every reciprocal open-string loop. The second pass settles
-    // tuning against all six configured ports and preserves the normal
+    // tuning against all four configured ports and preserves the normal
     // post-pluck update order.
     for (int pass = 0; pass < 2; ++pass)
         for (int string = 0; string < stringCount; ++string)
@@ -5269,9 +5308,9 @@ void AculeleEngine::settleSuspendedParameters() noexcept
         bridgeUpdatePending_ = false;
         bridgeLoadFade_ = 1.0f;
     }
-    outputReference_ = outputReferenceFor(parameters_);
-    monoReference_ = monoReferenceFor(parameters_);
-    piezoTrim_ = PiezoDesign::trim * piezoReferenceFor(parameters_);
+    outputReference_ = targetOutputReference_ = outputReferenceFor(parameters_);
+    monoReference_ = targetMonoReference_ = monoReferenceFor(parameters_);
+    piezoTrim_ = targetPiezoTrim_ = PiezoDesign::trim * piezoReferenceFor(parameters_);
     // Match the ordinary construction update's reciprocal-port refinement.
     // Only the delay endpoint moves; delay/filter waves and contact memory
     // stay intact, as do controller and performance histories.
@@ -5426,6 +5465,9 @@ void AculeleEngine::applyDiscreteParameters(bool force) noexcept
         previousImpedance[static_cast<std::size_t>(string)]
             = voices_[static_cast<std::size_t>(string)].characteristicImpedance;
     parameters_ = next;
+    targetOutputReference_ = outputReferenceFor(parameters_);
+    targetMonoReference_ = monoReferenceFor(parameters_);
+    targetPiezoTrim_ = PiezoDesign::trim * piezoReferenceFor(parameters_);
 
     // Shape and Wood retune the bridge and body banks. configureBody
     // crossfades its radiation over 40 ms; a live bridge rebuild crossfades
@@ -6565,10 +6607,6 @@ void AculeleEngine::configureBridge(bool keepModalState) noexcept
                                 bool sharedPole = false)
     {
         auto& mode = bridgeLoad_.modes[index];
-        bridgeLoad_.residueHeave[index] = 0.0;
-        bridgeLoad_.residueCross[index] = 0.0;
-        bridgeLoad_.residueRock[index] = 0.0;
-        bridgeLoad_.rocking[index] = false;
         // The plate conductance floor is broadband: it is kept at every
         // rate, from its 48 kHz design (below), rather than dropped with the
         // modes above 0.45 fs, which took it away below a 13 kHz host.
@@ -6603,18 +6641,18 @@ void AculeleEngine::configureBridge(bool keepModalState) noexcept
         const double numerator1 = -static_cast<double>(immediate) * denominator1;
         const double numerator2 = -static_cast<double>(immediate)
             * (1.0 + denominator2);
-        mode.denominator1 = { denominator1, denominator1 };
-        mode.denominator2 = { denominator2, denominator2 };
-        mode.numerator1 = { numerator1, numerator1 };
-        mode.numerator2 = { numerator2, numerator2 };
+        mode.denominator1 = denominator1;
+        mode.denominator2 = denominator2;
+        mode.numerator1 = numerator1;
+        mode.numerator2 = numerator2;
         // The same bank retuned (Shape, Wood) keeps ringing as it was;
         // the new coefficients carry the state on from here.
         if (!keepModalState)
             mode.reset();
-        bridgeLoad_.residueHeave[index] = heave;
-        bridgeLoad_.residueCross[index] = cross;
-        bridgeLoad_.residueRock[index] = rock;
-        bridgeLoad_.rocking[index] = rock > 0.0f || cross != 0.0f;
+        mode.residueHeave = heave;
+        mode.residueCross = cross;
+        mode.residueRock = rock;
+        mode.rocking = rock > 0.0f || cross != 0.0f;
         bridgeLoad_.immediateHeave += heave * immediate;
         bridgeLoad_.immediateCross += cross * immediate;
         bridgeLoad_.immediateRock += rock * immediate;
@@ -6678,11 +6716,11 @@ void AculeleEngine::configureBridge(bool keepModalState) noexcept
     for (std::size_t index = 0; index < bridgeLoad_.modes.size(); ++index)
     {
         const auto& mode = bridgeLoad_.modes[index];
-        if (mode.denominator1[0] == 0.0 && mode.denominator2[0] == 0.0
-            && mode.numerator1[0] == 0.0 && mode.numerator2[0] == 0.0
-            && bridgeLoad_.residueHeave[index] == 0.0
-            && bridgeLoad_.residueCross[index] == 0.0
-            && bridgeLoad_.residueRock[index] == 0.0)
+        if (mode.denominator1 == 0.0 && mode.denominator2 == 0.0
+            && mode.numerator1 == 0.0 && mode.numerator2 == 0.0
+            && mode.residueHeave == 0.0
+            && mode.residueCross == 0.0
+            && mode.residueRock == 0.0)
             continue;
         bridgeLoad_.activeModes[static_cast<std::size_t>(
             bridgeLoad_.activeModeCount++)] = static_cast<std::uint8_t>(index);
@@ -7595,7 +7633,7 @@ void AculeleEngine::configureVoice(Voice& voice, int stringIndex,
         // delay, but the inharmonicity that goes as 1/T and the impedance the
         // junction reads move with the tension that would produce it. The
         // manager's zone-wide bend stays a slide, because a whole zone bending is
-        // a hand moving rather than six fingers pushing. Grimes (see
+        // a hand moving rather than four fingers pushing. Grimes (see
         // bentStringTension) notes a lateral bend can only raise pitch; a
         // downward member bend is the release of a pre-bend, the same law run
         // backwards. The attack glide stays out of it: it is the model's own
@@ -10314,7 +10352,7 @@ float releaseFallCents(float dropDb) noexcept
 // fretted only in part (a slide's handover at the nut) falls in proportion.
 // The fall adds to each loop's configured delay instead of reconfiguring the
 // string as a slide: re-solving a released string's dispersion and bridge
-// phase every control period cost half again a callback for six strings.
+// phase every control period cost half again a callback for four strings.
 // Dispersion, bridge compensation and hand loss stay the fretted note's, a
 // period at most 5% shorter than the one sounding, on a note being damped.
 // speakingLengthMetres, the stop the hand holds, does not move, so the fall
@@ -13878,11 +13916,11 @@ namespace
 // back and the returning wave at its own age, and adds the square of the two
 // waves' slopes over the cell. `outgoing`, `returning` and `sum` carry the
 // previous cell's reads and the running sum in and out. Four cells go at once
-// on x86-64 and under the Jukebox SDK, whose compiler vectorises no loop
-// itself; each cell's reads and slope are the one-at-a-time arithmetic. Under
-// the SDK the squares join the sum in the scalar order, so its samples are
-// the scalar loop's, bit for bit, as in Acustra. Native x86-64 adds them in
-// four partial sums, joined last, a change in the sum's last bits.
+// on ARM64, x86-64 and under the Jukebox SDK, whose compiler vectorises no
+// loop itself; each cell's reads and slope are the one-at-a-time arithmetic.
+// Under the SDK and on ARM64 the squares join the sum in the scalar order, so
+// its samples are the scalar loop's, bit for bit, as in Acustra. Native x86-64
+// adds them in four partial sums, joined last, a change in the sum's last bits.
 void sumAxialCells(const float* line, unsigned mask, unsigned newest,
                    int stride, int first, int end, float period,
                    float returningSpan, float outgoingScale,
@@ -13899,10 +13937,11 @@ void sumAxialCells(const float* line, unsigned mask, unsigned newest,
         return a + part * (b - a);
     };
     int cell = first;
-#if (defined(JUKEBOX_SDK) || (defined(__SSE2__) && defined(__x86_64__))) \
+#if (defined(JUKEBOX_SDK) || defined(__aarch64__) || defined(_M_ARM64) \
+     || (defined(__SSE2__) && defined(__x86_64__))) \
     && (defined(__clang__) || defined(__GNUC__))
-    typedef float Floats __attribute__((vector_size(16)));
-    typedef int Ints __attribute__((vector_size(16)));
+    typedef float Floats __attribute__((vector_size(16), aligned(4), may_alias));
+    typedef int Ints __attribute__((vector_size(16), aligned(4), may_alias));
     if (end - cell >= 4)
     {
         const Floats periodV = { period, period, period, period };
@@ -13915,14 +13954,13 @@ void sumAxialCells(const float* line, unsigned mask, unsigned newest,
         const Floats four = { 4.0f, 4.0f, 4.0f, 4.0f };
         Floats cells = { static_cast<float>(cell), static_cast<float>(cell + 1),
                          static_cast<float>(cell + 2), static_cast<float>(cell + 3) };
-#if defined(JUKEBOX_SDK)
+#if defined(JUKEBOX_SDK) || defined(__aarch64__) || defined(_M_ARM64)
         const auto addSquares = [&sum] (Floats slope)
         {
-            const Floats squares = slope * slope;
-            sum += squares[0];
-            sum += squares[1];
-            sum += squares[2];
-            sum += squares[3];
+            sum += slope[0] * slope[0];
+            sum += slope[1] * slope[1];
+            sum += slope[2] * slope[2];
+            sum += slope[3] * slope[3];
         };
 #else
         Floats partial = { 0.0f, 0.0f, 0.0f, 0.0f };
@@ -13942,13 +13980,13 @@ void sumAxialCells(const float* line, unsigned mask, unsigned newest,
             // A lane's two samples sit side by side, the older first: one
             // eight-byte read each, at an index that is never negative here,
             // two lanes to a vector.
-            const auto pairs = [line] (int first, int second)
+            const auto pairs = [line] (int firstIndex, int secondIndex)
             {
                 Floats both;
-                __builtin_memcpy(&both, line + static_cast<unsigned>(first) - 1,
+                __builtin_memcpy(&both, line + static_cast<unsigned>(firstIndex) - 1,
                                  2 * sizeof(float));
                 __builtin_memcpy(reinterpret_cast<char*>(&both) + 2 * sizeof(float),
-                                 line + static_cast<unsigned>(second) - 1,
+                                 line + static_cast<unsigned>(secondIndex) - 1,
                                  2 * sizeof(float));
                 return both;
             };
@@ -13964,8 +14002,24 @@ void sumAxialCells(const float* line, unsigned mask, unsigned newest,
                 const Floats b = { low[0], low[2], high[0], high[2] };
                 const Floats nextReturning = a + part * (b - a);
                 const float* const o = now - cell * stride;
-                const Floats nextOutgoing = { o[0], o[-stride], o[-2 * stride],
-                                              o[-3 * stride] };
+                Floats nextOutgoing;
+                if (stride == 1)
+                {
+                    Floats v;
+                    __builtin_memcpy(&v, o - 3, sizeof(v));
+                    nextOutgoing = __builtin_shufflevector(v, v, 3, 2, 1, 0);
+                }
+                else if (stride == 2)
+                {
+                    Floats v0, v1;
+                    __builtin_memcpy(&v0, o - 3, sizeof(v0));
+                    __builtin_memcpy(&v1, o - 7, sizeof(v1));
+                    nextOutgoing = __builtin_shufflevector(v0, v1, 3, 1, 7, 5);
+                }
+                else
+                {
+                    nextOutgoing = { o[0], o[-stride], o[-2 * stride], o[-3 * stride] };
+                }
                 const Floats previousOutgoing = { outgoing, nextOutgoing[0],
                                                   nextOutgoing[1], nextOutgoing[2] };
                 const Floats previousReturning = { returning, nextReturning[0],
@@ -14008,7 +14062,7 @@ void sumAxialCells(const float* line, unsigned mask, unsigned newest,
             returning = nextReturning[3];
             cells += four;
         }
-#if !defined(JUKEBOX_SDK)
+#if !defined(JUKEBOX_SDK) && !defined(__aarch64__) && !defined(_M_ARM64)
         sum += (partial[0] + partial[1]) + (partial[2] + partial[3]);
 #endif
     }
@@ -14080,7 +14134,12 @@ void sumAxialCells(const float* line, unsigned mask, unsigned newest,
 // away from the top, so a tension rise pushes the saddle into it. The
 // along-string push on the saddle top, which turns the bridge about its
 // long axis, has no measured path here and is left out.
-void AculeleEngine::designStringAxialForce(Voice& voice, int stringIndex) noexcept
+ACULELE_NOINLINE void AculeleEngine::Voice::StringAxialForce::clear() noexcept
+{
+    *this = StringAxialForce {};
+}
+
+ACULELE_NOINLINE void AculeleEngine::designStringAxialForce(Voice& voice, int stringIndex) noexcept
 {
     auto& axial = voice.stringAxialForce;
     const float length = std::max(voice.speakingLengthMetres, 0.05f);
@@ -14257,7 +14316,12 @@ float AculeleEngine::renderStringAxialForce(Voice& voice, int stringIndex) noexc
             axial.rereference = true;
         else if (axial.countdown <= 0)
         {
-            designStringAxialForce(voice, stringIndex);
+            if (!axial.designed || !(voice.tensionNewtons > 0.0f)
+                || axial.lengthBits != exact::bits(std::max(voice.speakingLengthMetres, 0.05f))
+                || axial.tensionBits != exact::bits(voice.tensionNewtons)
+                || axial.scaleBits != exact::bits(physicalCalibration_.steelDisplacementScaleMetres)
+                || axial.lossBits != exact::bits(voice.axialLossFactor))
+                designStringAxialForce(voice, stringIndex);
             double stretch = 0.0;
             for (const auto& loop : voice.loops)
             {
@@ -14294,9 +14358,9 @@ float AculeleEngine::renderStringAxialForce(Voice& voice, int stringIndex) noexc
                 // At the longest period the line allows the room left is a
                 // sample short; a negative reach would read the line's far
                 // end.
-                const float reach = std::max(0.0f, std::min({ shear * period,
-                    static_cast<float>(axial.validAge),
-                    static_cast<float>(activeDelaySamples() - 4) - period }));
+                const float reach = std::max(0.0f, std::min(shear * period,
+                    std::min(static_cast<float>(axial.validAge),
+                             static_cast<float>(activeDelaySamples() - 4) - period)));
                 // The direct path and the one by way of the nut join into one
                 // loop over u in [0, D], u = x on the first and D - x on the
                 // second: there the waves are read at u + r and D - u + r,
@@ -14383,7 +14447,7 @@ float AculeleEngine::renderStringAxialForce(Voice& voice, int stringIndex) noexc
     // (Docs/benchmarks/cpu-2026-11-09.md).
     const auto floored = [] (float value)
     {
-        return exact::abs(value) < 1.0e-30f ? 0.0f : value;
+        return (exact::bits(value) & 0x7fffffffu) < 0x0da24260u ? 0.0f : value;
     };
     if (performanceRealism_.axialWaves)
     {
@@ -14405,6 +14469,10 @@ float AculeleEngine::renderStringAxialForce(Voice& voice, int stringIndex) noexc
     // delay is held to it as well.
     float output = axial.force;
     if (axial.banded)
+    {
+#if defined(__clang__)
+#pragma unroll
+#endif
         for (std::size_t section = 0; section < axial.band.size(); ++section)
         {
             const auto& c = axial.band[section];
@@ -14414,6 +14482,7 @@ float AculeleEngine::renderStringAxialForce(Voice& voice, int stringIndex) noexc
             z[1] = floored(c[2] * output - c[4] * filtered);
             output = filtered;
         }
+    }
     axial.ringing = true;
     if (!driven)
     {
@@ -14437,9 +14506,8 @@ float AculeleEngine::renderExcitation(Voice& voice) noexcept
     float excitation = 0.0f;
     if (voice.excitationEnvelope > 1.0e-8f)
     {
-        const float rateRatio = static_cast<float>(sampleRate_) / 48000.0f;
         const float noise = xorshiftNoise(voice.excitationNoiseState)
-            * exact::sqrt(rateRatio);
+            * sqrtSampleRateRatio_;
         const float excitationCoefficient = voice.excitationReleaseCoefficient;
         voice.excitationLowpass += excitationCoefficient
             * (noise - voice.excitationLowpass);
@@ -14499,14 +14567,14 @@ void AculeleEngine::finishVoice(Voice& voice, int stringIndex,
         voice.loops[1].applyGestureContact();
     }
 
-    const float sampleRateRatio = static_cast<float>(sampleRate_) / 48000.0f;
+    const float sampleRateRatio = sampleRateRatio_;
     const float verticalVelocity = voice.loops[0].bridgeVelocity(
         verticalIncident, sampleRateRatio);
     const float horizontalVelocity = voice.loops[1].bridgeVelocity(
         horizontalIncident, sampleRateRatio);
     if (voice.played)
     {
-        const float referenceRate = 48000.0f / static_cast<float>(sampleRate_);
+        const float referenceRate = inverseSampleRateRatio_;
         const float verticalSlope = voice.loops[0].currentDelay
                                   * referenceRate * verticalVelocity;
         const float horizontalSlope = voice.loops[1].currentDelay
@@ -14748,6 +14816,39 @@ void AculeleEngine::BodyBank::CaptureFilter::render(BodyOutput& output) noexcept
 {
     if (!enabled)
         return;
+#if defined(__clang__) || defined(__GNUC__)
+    typedef double Pair __attribute__((vector_size(16), aligned(8), may_alias));
+    typedef std::int64_t Mask2 __attribute__((vector_size(16), aligned(8), may_alias));
+    // IEEE binary64 magnitude bits for 1.0e-30: 0x39b4484bfeebc2a0.
+    constexpr std::int64_t floorBits = 0x39b4484bfeebc2a0ll;
+    Pair signal = { static_cast<double>(output.left), static_cast<double>(output.right) };
+    for (int index = 0; index < activeCount; ++index)
+    {
+        const auto slot = static_cast<std::size_t>(active[static_cast<std::size_t>(index)]);
+        const auto& c = coefficients[slot];
+        auto& sl = stateLeft[slot];
+        auto& sr = stateRight[slot];
+        const Pair s0 = { sl[0], sr[0] };
+        const Pair s1 = { sl[1], sr[1] };
+        const Pair result = c[0] * signal + s0;
+        const Pair first = c[1] * signal - c[3] * result + s1;
+        const Pair second = c[2] * signal - c[4] * result;
+        const Mask2 fBits = reinterpret_cast<Mask2>(first);
+        const Mask2 sBits = reinterpret_cast<Mask2>(second);
+        const Pair fFlushed = reinterpret_cast<Pair>(
+            fBits & ~((fBits & 0x7fffffffffffffffll) < floorBits));
+        const Pair sFlushed = reinterpret_cast<Pair>(
+            sBits & ~((sBits & 0x7fffffffffffffffll) < floorBits));
+        sl[0] = fFlushed[0];
+        sr[0] = fFlushed[1];
+        sl[1] = sFlushed[0];
+        sr[1] = sFlushed[1];
+        signal = { static_cast<double>(static_cast<float>(result[0])),
+                   static_cast<double>(static_cast<float>(result[1])) };
+    }
+    output.left = static_cast<float>(signal[0]) * gain;
+    output.right = static_cast<float>(signal[1]) * gain;
+#else
     const auto filter = [] (float input, const std::array<double, 5>& coefficient,
                            std::array<double, 2>& state)
     {
@@ -14767,6 +14868,7 @@ void AculeleEngine::BodyBank::CaptureFilter::render(BodyOutput& output) noexcept
     }
     output.left *= gain;
     output.right *= gain;
+#endif
 }
 
 void AculeleEngine::BodyBank::load(const std::array<BodyMode, bodyModeCount>& modes,
@@ -14836,8 +14938,8 @@ AculeleEngine::BodyOutput AculeleEngine::BodyBank::render(float force, float mom
 {
     BodyOutput output;
 #if defined(__clang__) || defined(__GNUC__)
-    typedef float Vector __attribute__((vector_size(16)));
-    typedef std::int32_t Mask __attribute__((vector_size(16)));
+    typedef float Vector __attribute__((vector_size(16), aligned(4), may_alias));
+    typedef std::int32_t Mask __attribute__((vector_size(16), aligned(4), may_alias));
     const auto load = [] (const Lanes& values, int index)
     {
         Vector value;
@@ -14951,11 +15053,12 @@ AculeleEngine::BodyOutput AculeleEngine::BodyBank::render(float force, float mom
         }
         else
         {
-            for (int lane = 0; lane < valid; ++lane)
-            {
-                const Vector pair = { leftPart[lane], rightPart[lane], 0.0f, 0.0f };
-                addStereo(pair);
-            }
+            if (valid > 0)
+                addStereo(Vector { leftPart[0], rightPart[0], 0.0f, 0.0f });
+            if (valid > 1)
+                addStereo(Vector { leftPart[1], rightPart[1], 0.0f, 0.0f });
+            if (valid > 2)
+                addStereo(Vector { leftPart[2], rightPart[2], 0.0f, 0.0f });
         }
     };
     // Runs of sounding and of silent groups, each in its own loop. A group
@@ -15350,6 +15453,64 @@ void AculeleEngine::configurePiezoUnit() noexcept
                                    * piezoMidbandGain_);
 }
 
+ACULELE_NOINLINE double AculeleEngine::piezoDiodeDump(double excess) const noexcept
+{
+    using D = PiezoDesign;
+    constexpr double top = piezoDiodeStep * (piezoDiodePoints - 1);
+    if (excess < top)
+    {
+        // Cubic Hermite between the table's points, its slopes exact.
+        const double position = excess / piezoDiodeStep;
+        const auto point = static_cast<std::size_t>(position);
+        const double t = position - static_cast<double>(point);
+        const double t2 = t * t, t3 = t2 * t;
+        return (2.0 * t3 - 3.0 * t2 + 1.0) * piezoDiodeDump_[point]
+            + (t3 - 2.0 * t2 + t) * piezoDiodeStep * piezoDiodeSlope_[point]
+            + (3.0 * t2 - 2.0 * t3) * piezoDiodeDump_[point + 1]
+            + (t3 - t2) * piezoDiodeStep * piezoDiodeSlope_[point + 1];
+    }
+    // Past 8 V the diode voltage is a slowly growing logarithm:
+    // z = x - N Vt ln(1 + Ceq fs z / IS), by two fixed-point steps.
+    double dump = excess;
+    for (int step = 0; step < 3; ++step)
+        dump = excess - D::diodeThermalVoltage * std::log1p(piezoDiodeScale_ * dump);
+    return dump;
+}
+
+ACULELE_NOINLINE void AculeleEngine::piezoClipCorner(double rail) noexcept
+{
+    auto& u = piezoDrive_;
+    auto& stage = piezoStage_;
+    const double before = u[1] - rail, after = u[2] - rail;
+    // The corner lies between samples n - 2 and n - 1, on the cubic
+    // through the four drives about u[1], relative to the rail.
+    const double p0 = u[0] - rail, p3 = u[3] - rail;
+    const double c1 = -p0 / 3.0 - before / 2.0 + after - p3 / 6.0;
+    const double c2 = 0.5 * p0 - before + 0.5 * after;
+    const double c3 = -p0 / 6.0 + before / 2.0 - after / 2.0 + p3 / 6.0;
+    double d = before / (before - after);
+    for (int step = 0; step < 2; ++step)
+    {
+        const double value = before + d * (c1 + d * (c2 + d * c3));
+        const double slope = c1 + d * (2.0 * c2 + 3.0 * d * c3);
+        if (slope != 0.0)
+            d -= value / slope;
+        d = d < 0.0 ? 0.0 : (d > 0.999999 ? 0.999999 : d);
+    }
+    const double slope = c1 + d * (2.0 * c2 + 3.0 * d * c3);
+    const bool entering = rail > 0.0 ? after > 0.0 : after < 0.0;
+    const double change = entering ? -slope : slope;
+    // The residual at samples n - 7 .. n + 4, between two of the table's
+    // 129 fractional positions.
+    const double position = d * piezoBlampPhases;
+    const auto row = static_cast<std::size_t>(position);
+    const double share = position - static_cast<double>(row);
+    const auto& lower = piezoBlampTable[row];
+    const auto& upper = piezoBlampTable[row + 1];
+    for (std::size_t m = 0; m < stage.size(); ++m)
+        stage[m] += change * (lower[m] + share * (upper[m] - lower[m]));
+}
+
 float AculeleEngine::renderPiezo(float force) noexcept
 {
     using D = PiezoDesign;
@@ -15366,10 +15527,17 @@ float AculeleEngine::renderPiezo(float force) noexcept
     const auto& saddle = piezoSaddle_;
     auto& x = piezoSaddleInput_;
     auto& y = piezoSaddleOutput_;
+#if defined(__clang__) || defined(__GNUC__)
+    __builtin_memmove(x.data() + 1, x.data(), (x.size() - 1) * sizeof(float));
+#else
     for (std::size_t i = x.size() - 1; i > 0; --i)
         x[i] = x[i - 1];
+#endif
     x[0] = input;
     double feed = 0.0;
+#if defined(__clang__)
+#pragma unroll
+#endif
     for (std::size_t i = 0; i < x.size(); ++i)
         feed += static_cast<double>(saddle.b[i]) * x[i];
     const float pressed = static_cast<float>(feed - saddle.a1 * y[0] - saddle.a2 * y[1]);
@@ -15400,31 +15568,10 @@ float AculeleEngine::renderPiezo(float force) noexcept
     // position, maximum velocity and softer Touch, coherent string forces
     // can briefly reach it; retain the modeled circuit's physical overload.
     // CaptureTests distinguishes this from isolated U1B aliasing.
-    const double excess = (bufferInput > 0.0 ? bufferInput : -bufferInput) - D::commonModeLimit;
+    const double excess = exact::abs(bufferInput) - D::commonModeLimit;
     if (excess > 0.0)
     {
-        double dump;
-        constexpr double top = piezoDiodeStep * (piezoDiodePoints - 1);
-        if (excess < top)
-        {
-            // Cubic Hermite between the table's points, its slopes exact.
-            const double position = excess / piezoDiodeStep;
-            const auto point = static_cast<std::size_t>(position);
-            const double t = position - static_cast<double>(point);
-            const double t2 = t * t, t3 = t2 * t;
-            dump = (2.0 * t3 - 3.0 * t2 + 1.0) * piezoDiodeDump_[point]
-                + (t3 - 2.0 * t2 + t) * piezoDiodeStep * piezoDiodeSlope_[point]
-                + (3.0 * t2 - 2.0 * t3) * piezoDiodeDump_[point + 1]
-                + (t3 - t2) * piezoDiodeStep * piezoDiodeSlope_[point + 1];
-        }
-        else
-        {
-            // Past 8 V the diode voltage is a slowly growing logarithm:
-            // z = x - N Vt ln(1 + Ceq fs z / IS), by two fixed-point steps.
-            dump = excess;
-            for (int step = 0; step < 3; ++step)
-                dump = excess - D::diodeThermalVoltage * std::log1p(piezoDiodeScale_ * dump);
-        }
+        const double dump = piezoDiodeDump(excess);
         const double sign = bufferInput > 0.0 ? 1.0 : -1.0;
         bufferInput -= sign * dump;
         piezoFrontW_ -= sign * dump;
@@ -15457,44 +15604,19 @@ float AculeleEngine::renderPiezo(float force) noexcept
     u[3] = freeDrive;
     // stage[m] is sample n - 7 + m: seven held back, this one, and four
     // ahead that only hold corrections so far.
+#if defined(__clang__) || defined(__GNUC__)
+    __builtin_memmove(stage.data(), stage.data() + 1, (stage.size() - 1) * sizeof(double));
+#else
     for (std::size_t m = 0; m + 1 < stage.size(); ++m)
         stage[m] = stage[m + 1];
+#endif
     stage[stage.size() - 1] = 0.0;
     stage[7] += stageDrive > D::railHigh ? D::railHigh
         : (stageDrive < D::railLow ? D::railLow : stageDrive);
-    for (const double rail : { D::railHigh, D::railLow })
-    {
-        const double before = u[1] - rail, after = u[2] - rail;
-        if (!(before * after < 0.0))
-            continue;
-        // The corner lies between samples n - 2 and n - 1, on the cubic
-        // through the four drives about u[1], relative to the rail.
-        const double p0 = u[0] - rail, p3 = u[3] - rail;
-        const double c1 = -p0 / 3.0 - before / 2.0 + after - p3 / 6.0;
-        const double c2 = 0.5 * p0 - before + 0.5 * after;
-        const double c3 = -p0 / 6.0 + before / 2.0 - after / 2.0 + p3 / 6.0;
-        double d = before / (before - after);
-        for (int step = 0; step < 2; ++step)
-        {
-            const double value = before + d * (c1 + d * (c2 + d * c3));
-            const double slope = c1 + d * (2.0 * c2 + 3.0 * d * c3);
-            if (slope != 0.0)
-                d -= value / slope;
-            d = d < 0.0 ? 0.0 : (d > 0.999999 ? 0.999999 : d);
-        }
-        const double slope = c1 + d * (2.0 * c2 + 3.0 * d * c3);
-        const bool entering = rail > 0.0 ? after > 0.0 : after < 0.0;
-        const double change = entering ? -slope : slope;
-        // The residual at samples n - 7 .. n + 4, between two of the table's
-        // 129 fractional positions.
-        const double position = d * piezoBlampPhases;
-        const auto row = static_cast<std::size_t>(position);
-        const double share = position - static_cast<double>(row);
-        const auto& lower = piezoBlampTable[row];
-        const auto& upper = piezoBlampTable[row + 1];
-        for (std::size_t m = 0; m < stage.size(); ++m)
-            stage[m] += change * (lower[m] + share * (upper[m] - lower[m]));
-    }
+    if ((u[1] - D::railHigh) * (u[2] - D::railHigh) < 0.0)
+        piezoClipCorner(D::railHigh);
+    if ((u[1] - D::railLow) * (u[2] - D::railLow) < 0.0)
+        piezoClipCorner(D::railLow);
     // 6. The output seven samples back: C4's and C5's states follow it, and
     // the DI takes it through R9 and C5 off the pot.
     const double gainStage = stage[0];
@@ -15516,15 +15638,32 @@ float AculeleEngine::renderPiezo(float force) noexcept
     {
         const float saddleFloor = piezoSaddleFloor_;
         constexpr double floor = 1.0e-8;
-        bool quiet = exact::abs(y[0]) < saddleFloor && exact::abs(y[1]) < saddleFloor;
-        for (float value : x)
-            quiet = quiet && exact::abs(value) < saddleFloor;
-        for (double value : { piezoFrontW_, piezoFrontC2_, piezoLastOpen_, piezoLastClamp_,
-                              piezoC3_, piezoC4_, piezoC5_, piezoLastBuffer_,
-                              piezoLastStage_, u[0], u[1], u[2], u[3] })
-            quiet = quiet && exact::abs(value) < floor;
-        for (double value : stage)
-            quiet = quiet && exact::abs(value) < floor;
+        bool quiet = exact::abs(y[0]) < saddleFloor && exact::abs(y[1]) < saddleFloor
+            && exact::abs(piezoFrontW_) < floor && exact::abs(piezoFrontC2_) < floor
+            && exact::abs(piezoLastOpen_) < floor && exact::abs(piezoLastClamp_) < floor
+            && exact::abs(piezoC3_) < floor && exact::abs(piezoC4_) < floor
+            && exact::abs(piezoC5_) < floor && exact::abs(piezoLastBuffer_) < floor
+            && exact::abs(piezoLastStage_) < floor
+            && exact::abs(u[0]) < floor && exact::abs(u[1]) < floor
+            && exact::abs(u[2]) < floor && exact::abs(u[3]) < floor;
+        if (quiet)
+        {
+            for (float value : x)
+                if (!(exact::abs(value) < saddleFloor))
+                {
+                    quiet = false;
+                    break;
+                }
+        }
+        if (quiet)
+        {
+            for (double value : stage)
+                if (!(exact::abs(value) < floor))
+                {
+                    quiet = false;
+                    break;
+                }
+        }
         if (quiet)
             resetPiezo();
     }
@@ -15533,8 +15672,7 @@ float AculeleEngine::renderPiezo(float force) noexcept
     // (ConstructionLoudnessData.h). It is smoothed as one value, like the
     // microphones' reference, so a change glides along one curve and never
     // overshoots where the two factors move apart.
-    piezoTrim_ = settlingGlide(piezoTrim_,
-        PiezoDesign::trim * piezoReferenceFor(parameters_), parameterSmoothing_);
+    piezoTrim_ = settlingGlide(piezoTrim_, targetPiezoTrim_, parameterSmoothing_);
     const auto result = static_cast<float>(
         static_cast<double>(piezoTrim_) * piezoOutputScale_ * piezoOutputVolts_);
     if (!exact::isfinite(result))
@@ -15994,7 +16132,7 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
             piezoWave = piezoIncident - piezoImpedance0 * bridgeDisplacement
                 - piezoImpedance1 * bridgeRotation;
         lastPiezoWave_ = piezoWave;
-        const float sampleRateRatio = static_cast<float>(sampleRate_) / 48000.0f;
+        const float sampleRateRatio = sampleRateRatio_;
         if (bridgeDerivativesNeedPriming_
             && (exact::abs(reactionWave) + exact::abs(bridgeDisplacement)
                 > 1.0e-12f))
@@ -16025,26 +16163,64 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
         const bool crossingConfigure = bridgeDerivativesCrossConfigure_;
         bridgeDerivativesCrossRelease_ = false;
         bridgeDerivativesCrossConfigure_ = false;
-        const auto motion = [&] (FixedDerivative& derivative, float wave)
-        {
-            return crossingRelease
-                ? derivative.processAcrossRelease(wave, sampleRateRatio)
-                : crossingConfigure
-                ? derivative.processAcrossStep(wave, sampleRateRatio)
-                : derivative.process(wave, sampleRateRatio);
-        };
-        lastBridgeVelocity_ = motion(
-            bridgeVelocityDerivative_, bridgeDisplacement);
         // The saddle's rocking rate. A string reads its own end's motion as
         // the heave plus its lever arm times this; the derivative is linear,
-        // so two of them serve all six.
-        const float bridgeRotationRate = motion(
-            bridgeRotationDerivative_, bridgeRotation);
-        lastBridgeReactionForce_ = motion(bridgeForceDerivative_, reactionWave);
-        lastPiezoForce_ = motion(piezoForceDerivative_, piezoWave);
-        lastBridgeBodyForce_ = motion(bridgeBodyForceDerivative_, bodyForceWave);
-        const float bodyMomentRate
-            = motion(bridgeBodyMomentDerivative_, bodyMomentWave);
+        // so two of them serve all four.
+        float bridgeRotationRate = 0.0f;
+        float bodyMomentRate = 0.0f;
+        if (!crossingRelease && !crossingConfigure)
+        {
+            lastBridgeVelocity_ = bridgeVelocityDerivative_.process(
+                bridgeDisplacement, sampleRateRatio);
+            bridgeRotationRate = bridgeRotationDerivative_.process(
+                bridgeRotation, sampleRateRatio);
+            lastBridgeReactionForce_ = bridgeForceDerivative_.process(
+                reactionWave, sampleRateRatio);
+            lastPiezoForce_ = piezoForceDerivative_.process(
+                piezoWave, sampleRateRatio);
+            lastBridgeBodyForce_ = bridgeBodyForceDerivative_.process(
+                bodyForceWave, sampleRateRatio);
+            bodyMomentRate = bridgeBodyMomentDerivative_.process(
+                bodyMomentWave, sampleRateRatio);
+            if (portObserversEnabled_)
+                bridgeForceMomentDerivative_.process(reactionMoment, sampleRateRatio);
+        }
+        else if (crossingRelease)
+        {
+            lastBridgeVelocity_ = bridgeVelocityDerivative_.processAcrossRelease(
+                bridgeDisplacement, sampleRateRatio);
+            bridgeRotationRate = bridgeRotationDerivative_.processAcrossRelease(
+                bridgeRotation, sampleRateRatio);
+            lastBridgeReactionForce_ = bridgeForceDerivative_.processAcrossRelease(
+                reactionWave, sampleRateRatio);
+            lastPiezoForce_ = piezoForceDerivative_.processAcrossRelease(
+                piezoWave, sampleRateRatio);
+            lastBridgeBodyForce_ = bridgeBodyForceDerivative_.processAcrossRelease(
+                bodyForceWave, sampleRateRatio);
+            bodyMomentRate = bridgeBodyMomentDerivative_.processAcrossRelease(
+                bodyMomentWave, sampleRateRatio);
+            if (portObserversEnabled_)
+                bridgeForceMomentDerivative_.processAcrossRelease(
+                    reactionMoment, sampleRateRatio);
+        }
+        else
+        {
+            lastBridgeVelocity_ = bridgeVelocityDerivative_.processAcrossStep(
+                bridgeDisplacement, sampleRateRatio);
+            bridgeRotationRate = bridgeRotationDerivative_.processAcrossStep(
+                bridgeRotation, sampleRateRatio);
+            lastBridgeReactionForce_ = bridgeForceDerivative_.processAcrossStep(
+                reactionWave, sampleRateRatio);
+            lastPiezoForce_ = piezoForceDerivative_.processAcrossStep(
+                piezoWave, sampleRateRatio);
+            lastBridgeBodyForce_ = bridgeBodyForceDerivative_.processAcrossStep(
+                bodyForceWave, sampleRateRatio);
+            bodyMomentRate = bridgeBodyMomentDerivative_.processAcrossStep(
+                bodyMomentWave, sampleRateRatio);
+            if (portObserversEnabled_)
+                bridgeForceMomentDerivative_.processAcrossStep(
+                    reactionMoment, sampleRateRatio);
+        }
         // Everything from here to the voices is observation only - the total
         // moment and the port-power ledger feed getters, never the output -
         // so it runs only while observed.
@@ -16052,7 +16228,6 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
         {
             // Power crosses the saddle in both coordinates, so each branch's is
             // the heave product plus the rocking one.
-            motion(bridgeForceMomentDerivative_, reactionMoment);
             // Account for the complete zero-state trajectory of the passive load.
             // Audio priming suppresses the displacement shape's initial boundary
             // step; using that primed derivative in the work ledger drops its
@@ -16120,9 +16295,8 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
         // over the same smoothing as the output control, so it never steps a
         // ringing instrument; the mono microphone's own reference glides
         // beside it.
-        const float outputReference = outputReferenceFor(parameters_);
-        outputReference_ = settlingGlide(outputReference_, outputReference, parameterSmoothing_);
-        monoReference_ = settlingGlide(monoReference_, monoReferenceFor(parameters_), parameterSmoothing_);
+        outputReference_ = settlingGlide(outputReference_, targetOutputReference_, parameterSmoothing_);
+        monoReference_ = settlingGlide(monoReference_, targetMonoReference_, parameterSmoothing_);
         const float reference = radiationReferenceGain * outputReference_;
         // Preserve the output sum's signed-zero normalization.
         const float dryLeft = bodyScale * spreadLeft + 0.0f;
@@ -16146,9 +16320,9 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
         // whole host samples; this is scheduling, not a circuit component.
         const float loadedPiezo = piezoTransport_;
         piezoTransport_ = nextPiezo;
-        const float idlePeak = std::max({ exact::abs(body.left),
-            exact::abs(body.right), exact::abs(body.upper),
-            exact::abs(loadedPiezo) });
+        const float idlePeak = std::max(
+            std::max(exact::abs(body.left), exact::abs(body.right)),
+            std::max(exact::abs(body.upper), exact::abs(loadedPiezo)));
         if (piezo != nullptr)
         {
             // The separate Piezo output observes before Capture chooses, at
@@ -16226,14 +16400,20 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
             if (parameters_.capture != CaptureType::StereoMic
                 || captureMix_[0] != 1.0f)
             {
-                for (std::size_t slot = 0; slot < captureMix_.size(); ++slot)
+                const auto targetSlot = static_cast<std::size_t>(parameters_.capture);
+                const float targetStereo = targetSlot == 0 ? 1.0f : 0.0f;
+                const float targetPiezo = targetSlot == 6 ? 1.0f : 0.0f;
+                const float targetMono = targetSlot == 7 ? 1.0f : 0.0f;
+                if (captureMix_[0] != targetStereo
+                    || captureMix_[6] != targetPiezo
+                    || captureMix_[7] != targetMono)
                 {
-                    const float target = slot == static_cast<std::size_t>(
-                        parameters_.capture) ? 1.0f : 0.0f;
-                    float& mix = captureMix_[slot];
-                    const float next = mix + parameterSmoothing_ * (target - mix);
-                    mix = next == mix || exact::abs(target - next) < 1.0e-4f
-                        ? target : next;
+                    captureMix_[0] = settlingGlide(
+                        captureMix_[0], targetStereo, parameterSmoothing_);
+                    captureMix_[6] = settlingGlide(
+                        captureMix_[6], targetPiezo, parameterSmoothing_);
+                    captureMix_[7] = settlingGlide(
+                        captureMix_[7], targetMono, parameterSmoothing_);
                 }
                 // Mono uses the right observer directly, without summing
                 // the pair again; its copies and the piezo ignore width.
@@ -16349,7 +16529,7 @@ bool roomPrime(int value) noexcept
 }
 
 // The eight lines' Hadamard mix, in place, normalised to stay lossless.
-void roomHadamard(std::array<float, roomLineTotal>& values) noexcept
+[[maybe_unused]] void roomHadamard(std::array<float, roomLineTotal>& values) noexcept
 {
     // The eight-point transform written out stage by stage (spans 1, 2, 4),
     // each butterfly the same sum and difference as the loop it replaces.
@@ -16659,7 +16839,7 @@ void AculeleEngine::RoomAmbience::step(float input) noexcept
         // Four taps at once, each lane the one-tap sum's own products and
         // additions in its order; the taps then join the sum one at a time
         // in tap order, as ever.
-        typedef float Vector __attribute__((vector_size(16)));
+        typedef float Vector __attribute__((vector_size(16), aligned(4), may_alias));
         const auto reflect = [newest] (const std::array<Arrival, tapCount>& arrivals,
                                        const auto& weights,
                                        const std::array<float, tapCount>& gains)
@@ -16684,8 +16864,14 @@ void AculeleEngine::RoomAmbience::step(float input) noexcept
                                             first[2][-point], first[3][-point] };
                     value += weight * sample;
                 }
-                for (std::size_t lane = 0; lane < 4 && tap + lane < tapCount; ++lane)
-                    reflected += gains[tap + lane] * value[lane];
+                reflected += gains[tap] * value[0];
+                reflected += gains[tap + 1] * value[1];
+                if (tap + 2 < tapCount)
+                {
+                    reflected += gains[tap + 2] * value[2];
+                    if (tap + 3 < tapCount)
+                        reflected += gains[tap + 3] * value[3];
+                }
             }
             return reflected;
         };
@@ -16737,6 +16923,89 @@ void AculeleEngine::RoomAmbience::step(float input) noexcept
         head = head + 1 == diffuserLengths[diffuser] ? 0 : head + 1;
         late = stored - roomDiffusion * written;
     }
+#if defined(__clang__) || defined(__GNUC__)
+    {
+        typedef float Vector __attribute__((vector_size(16), aligned(4), may_alias));
+        typedef std::int32_t Mask __attribute__((vector_size(16), aligned(4), may_alias));
+        constexpr std::int32_t floorBits = 0x1e3ce508; // 1.0e-20f
+        const auto flush20 = [] (Vector v) noexcept
+        {
+            const Mask bits = reinterpret_cast<Mask>(v);
+            return reinterpret_cast<Vector>(bits & ~((bits & 0x7fffffff) < floorBits));
+        };
+        const auto load4 = [] (const float* p) noexcept
+        {
+            Vector v;
+            __builtin_memcpy(&v, p, sizeof(v));
+            return v;
+        };
+        const auto store4 = [] (float* p, Vector v) noexcept
+        {
+            __builtin_memcpy(p, &v, sizeof(v));
+        };
+        const Vector stored0 = { lines[0][static_cast<std::size_t>(heads[0])],
+                                 lines[1][static_cast<std::size_t>(heads[1])],
+                                 lines[2][static_cast<std::size_t>(heads[2])],
+                                 lines[3][static_cast<std::size_t>(heads[3])] };
+        const Vector stored1 = { lines[4][static_cast<std::size_t>(heads[4])],
+                                 lines[5][static_cast<std::size_t>(heads[5])],
+                                 lines[6][static_cast<std::size_t>(heads[6])],
+                                 lines[7][static_cast<std::size_t>(heads[7])] };
+        bool silent = input == 0.0f && late == 0.0f
+            && stored0[0] == 0.0f && stored0[1] == 0.0f
+            && stored0[2] == 0.0f && stored0[3] == 0.0f
+            && stored1[0] == 0.0f && stored1[1] == 0.0f
+            && stored1[2] == 0.0f && stored1[3] == 0.0f;
+        const Vector s0 = flush20(load4(absorptionGain.data()) * stored0
+            + load4(absorptionPole.data()) * load4(absorptionState.data()));
+        const Vector s1 = flush20(load4(absorptionGain.data() + 4) * stored1
+            + load4(absorptionPole.data() + 4) * load4(absorptionState.data() + 4));
+        store4(absorptionState.data(), s0);
+        store4(absorptionState.data() + 4, s1);
+        float lateLeft = 0.0f;
+        lateLeft += s0[0]; lateLeft += s0[1]; lateLeft += s0[2]; lateLeft += s0[3];
+        lateLeft -= s1[0]; lateLeft -= s1[1]; lateLeft -= s1[2]; lateLeft -= s1[3];
+        float lateRight = 0.0f;
+        lateRight += s0[0]; lateRight -= s0[1]; lateRight += s0[2]; lateRight -= s0[3];
+        lateRight += s1[0]; lateRight -= s1[1]; lateRight += s1[2]; lateRight -= s1[3];
+
+        const auto hadamard4 = [] (Vector v) noexcept
+        {
+            const Vector u = __builtin_shufflevector(v, v, 0, 0, 2, 2)
+                           + __builtin_shufflevector(v, -v, 1, 5, 3, 7);
+            return __builtin_shufflevector(u, u, 0, 1, 0, 1)
+                 + __builtin_shufflevector(u, -u, 2, 3, 6, 7);
+        };
+        const Vector w0 = hadamard4(s0);
+        const Vector w1 = hadamard4(s1);
+        const Vector h0 = (w0 + w1) * 0.35355339f;
+        const Vector h1 = (w0 - w1) * 0.35355339f;
+        const Vector signScale = { 0.35355339f, 0.35355339f, -0.35355339f, -0.35355339f };
+        const Vector lateV = { late, late, late, late };
+        const Vector written0 = flush20(h0 + signScale * lateV);
+        const Vector written1 = flush20(h1 + signScale * lateV);
+        lines[0][static_cast<std::size_t>(heads[0])] = written0[0];
+        lines[1][static_cast<std::size_t>(heads[1])] = written0[1];
+        lines[2][static_cast<std::size_t>(heads[2])] = written0[2];
+        lines[3][static_cast<std::size_t>(heads[3])] = written0[3];
+        lines[4][static_cast<std::size_t>(heads[4])] = written1[0];
+        lines[5][static_cast<std::size_t>(heads[5])] = written1[1];
+        lines[6][static_cast<std::size_t>(heads[6])] = written1[2];
+        lines[7][static_cast<std::size_t>(heads[7])] = written1[3];
+        for (std::size_t line = 0; line < roomLineTotal; ++line)
+            heads[line] = heads[line] + 1 == lengths[line] ? 0 : heads[line] + 1;
+        if (exact::abs(earlyLeft) < 1.0e-20f)
+            earlyLeft = 0.0f;
+        if (exact::abs(earlyRight) < 1.0e-20f)
+            earlyRight = 0.0f;
+        currentLeft = outputScale * (earlyLeft + 0.35355339f * lateLeft);
+        currentRight = outputScale * (earlyRight + 0.35355339f * lateRight);
+        silent = silent && earlyLeft == 0.0f && earlyRight == 0.0f;
+        quietSamples = silent ? quietSamples + 1 : 0;
+        if (quietSamples > longest + earlyCapacity)
+            active = false;
+    }
+#else
     std::array<float, roomLineTotal> outputs {};
     float lateLeft = 0.0f;
     float lateRight = 0.0f;
@@ -16776,6 +17045,7 @@ void AculeleEngine::RoomAmbience::step(float input) noexcept
     // Past the longest path with nothing in or out, every state is zero.
     if (quietSamples > longest + earlyCapacity)
         active = false;
+#endif
 }
 
 void AculeleEngine::RoomAmbience::process(float input, float& left,

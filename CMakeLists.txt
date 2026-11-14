@@ -59,7 +59,7 @@ if(NOT MSVC)
     set_target_properties(AculeleDSPCxx17 PROPERTIES
         CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
     target_compile_options(AculeleDSPCxx17 PRIVATE -Wall -Wextra -Werror)
-    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         # Jukebox phdsp64 guarantees only 8-byte heap alignment with no aligned new.
         target_compile_options(AculeleDSPCxx17 PRIVATE
             -fnew-alignment=8 -fno-aligned-allocation -Wover-aligned)

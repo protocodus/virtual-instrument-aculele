@@ -14239,7 +14239,7 @@ void sumAxialCells(const float* line, unsigned mask, unsigned newest,
                 }
                 else
                 {
-                    nextOutgoing = { o[0], o[-stride], o[-2 * stride], o[-3 * stride] };
+                    nextOutgoing = Floats { o[0], o[-stride], o[-2 * stride], o[-3 * stride] };
                 }
                 const Floats previousOutgoing = __builtin_shufflevector(
                     outgoingCarry, nextOutgoing, 3, 4, 5, 6);
@@ -15069,8 +15069,8 @@ void AculeleEngine::BodyBank::CaptureFilter::render(BodyOutput& output) noexcept
         sr[0] = fFlushed[1];
         sl[1] = sFlushed[0];
         sr[1] = sFlushed[1];
-        signal = { static_cast<double>(static_cast<float>(result[0])),
-                   static_cast<double>(static_cast<float>(result[1])) };
+        signal = Pair { static_cast<double>(static_cast<float>(result[0])),
+                        static_cast<double>(static_cast<float>(result[1])) };
     }
     output.left = static_cast<float>(signal[0]) * gain;
     output.right = static_cast<float>(signal[1]) * gain;

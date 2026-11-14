@@ -5,6 +5,61 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-11-14 — four-string upstroke tilt midpoint and spatial Nyquist stride in the stretch sum, 0.4.67 (two A/B sets; the owner approved B in both)
+
+**What was decided.** Two non-bit-exact changes, each isolated in its own A/B
+set against 0.4.66 (`886a7a9`):
+
+- **The upstroke string-tilt midpoint.** `AculeleEngine::initialisePluck`
+  carried GuitarSet's per-string upstroke tilt around `(stringIndex - 2.5f)`,
+  the midpoint between strings 2 and 3 of Acustra's 6-string guitar
+  (`stringIndex` in `0..5`). On Aculele's 4 ukulele strings (`0..3`),
+  `stringIndex - 2.5f` evaluated to `{-2.5, -1.5, -0.5, +0.5}`, shifting every
+  ukulele string down by one extra string step (`-0.30 dB` with `strokeEdges`
+  on, `-0.90 dB` with `strokeEdges` off) relative to `upstrokeMidNeckDb = -1.2`
+  dB. Centring on `0.5f * (stringCount - 1) = 1.5f` places the zero-tilt point
+  between the C4 and E4 strings (`{-1.5, -0.5, +0.5, +1.5}`).
+- **The spatial cell stride of the string-stretch sum.** `designStringAxialForce`
+  stepped along the transverse delay line by `floor(rate / (4.0 * cutoff))`
+  (`cutoff = min(f_longitudinal_1, 5000 Hz)`), 2x oversampling the spatial
+  cutoff (`stride = 2..3` samples per cell at 48 kHz). Stepping at the spatial
+  Nyquist rate `floor(rate / (2.0 * cutoff))` (`stride = 4..6` at 48 kHz) halves
+  the cells summed in `sumAxialCells` on every sample while keeping full
+  host-rate temporal evaluation (zero reduced-rate temporal fold-back, `-301.7`
+  to `-307.7 dB` across 44.1–192 kHz in `Aculele.StringAxialForce`) and the same
+  8th-order output band filter at `2 * cutoff`.
+
+**The letters.** Both sets play the opening 7.2 s of `01-concert-strum.mid` on
+factory preset `01` (*Concert Strum*) with natural ring-out to 9.200 s through
+the shipping `Performer` at 48 kHz, 256-sample blocks, seed `20261017`, 24-bit
+stereo WAV (`diagnostics/ab-listening-2026-11-14/aculele/`, uncommitted per
+`CLAUDE.md`, each with its `key.md`):
+
+- **`01-upstroke-string-tilt`.**
+  - A: 0.4.66 (`stringIndex - 2.5f`).
+  - B: `stringIndex - 1.5f` (`0.5f * (stringCount - 1)`).
+  - B was matched to A on whole-file RMS (`-22.5815 dBFS`), `-0.0663 dB` trim;
+    the RMS-matched null is `-56.70 dBFS` (`-34.12 dB` relative to A's RMS).
+- **`02-axial-spatial-stride`.**
+  - A: 0.4.66 (`floor(rate / (4.0 * cutoff))`).
+  - B: `floor(rate / (2.0 * cutoff))`.
+  - B was matched to A on whole-file RMS (`-22.5815 dBFS`), `+0.0005 dB` trim;
+    the RMS-matched null is `-77.18 dBFS` (`-54.60 dB` relative to A's RMS;
+    `-78.22 dBFS` / `-52.90 dB` on *Tenor Fluorocarbon Fingerstyle*). Calling-thread
+    CPU falls by 12.7% across the seven demos and stress phrases (`8.5%`–`15.2%`
+    per preset), bringing every factory demo's worst 256-sample block below 10%.
+
+**What was chosen.** B in both sets. The owner replied: “approvel all b and
+push”. Recorded as the owner's selection approving both B candidates.
+
+**What it licensed.**
+- `AculeleEngine::initialisePluck` centres `upstrokeTiltDbPerString` on
+  `0.5f * static_cast<float>(stringCount - 1)` (`1.5f`).
+- `AculeleEngine::designStringAxialForce` sets `axial.stride` from
+  `std::floor(rate / (2.0 * cutoff))`.
+- `Aculele.Levels` passes unchanged on every preset, Picking and Capture without
+  re-pinning `LevelMatchData.h` or any preset `Output` trim.
+
 ## 2026-11-09 — the release gives back the whole held force, and open strings lose nothing at the nut, 0.4.56 (two A/B sets; the owner chose B in both)
 
 **What was decided.** Two audible changes, each with its own set:

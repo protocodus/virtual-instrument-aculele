@@ -8976,12 +8976,15 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
         // stroke's own lightness or the players' accents on the beat the
         // corpus cannot separate, and leaving it out made an upstroke louder
         // than its downstroke at the microphones, which no take shows. The
-        // downstroke is the reference.
+        // downstroke is the reference, centred between the ukulele's four
+        // strings (0.5 * (stringCount - 1) = 1.5, between C4 and E4;
+        // Docs/decisions.md 2026-11-14).
         constexpr float upstrokeMidNeckDb = -1.2f;
+        constexpr float midNeckString = 0.5f * static_cast<float>(stringCount - 1);
         const float upstrokeTiltDbPerString = performanceRealism_.strokeEdges ? 0.30f : 0.9f;
         if (voice.pluckParallelSign < 0.0f && performanceRealism_.strokeDepth)
             strumLevelGain *= std::pow(10.0f, (upstrokeMidNeckDb + upstrokeTiltDbPerString
-                * (static_cast<float>(stringIndex) - 2.5f)) / 20.0f);
+                * (static_cast<float>(stringIndex) - midNeckString)) / 20.0f);
         strumLevelGain *= voice.strokeEdgeGain;
     }
     // No hand plucks twice with quite the same force. A ukulele player's
@@ -14400,7 +14403,10 @@ ACULELE_NOINLINE void AculeleEngine::designStringAxialForce(Voice& voice, int st
     const double beta = 0.5 * (rigidity - static_cast<double>(tension));
     const double rate = sampleRate_;
     const double cutoff = std::min(fundamental, 5000.0);
-    axial.stride = std::max(1, static_cast<int>(std::floor(rate / (4.0 * cutoff))));
+    // Spatial Nyquist cell step for `cutoff` along the transverse delay line
+    // (Docs/decisions.md 2026-11-14); temporal evaluation stays at the full
+    // host rate so the quadratic source introduces no reduced-rate fold-back.
+    axial.stride = std::max(1, static_cast<int>(std::floor(rate / (2.0 * cutoff))));
     // Preserve the existing physical/numerical output bandwidth: twice the
     // source's spatial cutoff accommodates its sum tones. The source and
     // longitudinal ring now both run at the host rate; this filter is no

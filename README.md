@@ -4,9 +4,20 @@ Aculele is a physically modelled ukulele: four re-entrant nylon or fluorocarbon 
 
 ## Audio demos
 
-The main build renders these demos once Aculele has a plug-in to build. Until then, `RenderAculelePresetDemos` renders them locally from the phrases in `Docs/audio/midi/` (see Build).
+One demo per factory preset, all seven, each phrase written for what its preset is played for: the island strum on the first four chords, a calypso strum in D tuning, campanella fingerstyle on the fluorocarbon tenor, a chord melody over the low G string, a ballad brushed with the thumb, a single picked line and a pop strum through the piezo with its off-beats choked by the palm. Each is rendered from `Docs/audio/midi/` through the Performer the Rack Extension plays, at its phrase's tempo, which the strum's down-up swing follows, with no per-demo trims: each preset's own Output trim sets its level on Reason's meter. `RenderAculelePresetDemos` renders them (see Build).
 
 <!-- audio-demos-begin -->
+
+| # | Preset | Demo | Length | Peak |
+| --- | --- | --- | --- | --- |
+| 1 | Concert Strum | [01-concert-strum.wav](Docs/audio/01-concert-strum.wav) | 11.5 s | -4.4 dBFS |
+| 2 | Soprano D Tuning | [02-soprano-d-tuning.wav](Docs/audio/02-soprano-d-tuning.wav) | 11.7 s | -2.9 dBFS |
+| 3 | Tenor Fluorocarbon Fingerstyle | [03-tenor-fluorocarbon-fingerstyle.wav](Docs/audio/03-tenor-fluorocarbon-fingerstyle.wav) | 11.9 s | -7.0 dBFS |
+| 4 | Low G Tenor | [04-low-g-tenor.wav](Docs/audio/04-low-g-tenor.wav) | 11.6 s | -5.4 dBFS |
+| 5 | Soprano Thumb | [05-soprano-thumb.wav](Docs/audio/05-soprano-thumb.wav) | 11.1 s | -6.8 dBFS |
+| 6 | Tenor Picked Melody | [06-tenor-picked-melody.wav](Docs/audio/06-tenor-picked-melody.wav) | 10.8 s | -1.5 dBFS |
+| 7 | Concert Piezo Stage | [07-concert-piezo-stage.wav](Docs/audio/07-concert-piezo-stage.wav) | 10.3 s | -2.2 dBFS |
+
 <!-- audio-demos-end -->
 
 ## Version history

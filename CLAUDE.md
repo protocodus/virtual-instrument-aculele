@@ -5,7 +5,9 @@
 This is Aculele's canonical repository: it owns the DSP engine in
 `Source/DSP/`, a physically modelled ukulele forked from Acustra 1.9.0
 (`protocodus/virtual-instrument-acustra`, `0e20192`). There is no JUCE
-plug-in or editor yet. A Reason Rack Extension would live in the private
+plug-in or editor yet: Aculele is a Rack-first instrument (standard P4), so
+`Source/` holds only `DSP/`, ready for a plug-in to be added beside it. Its
+Reason Rack Extension lives in the private
 `protocodus/reason-rack-extensions` repository as a thin adapter that mounts
 this repository as the pinned submodule `Examples/Aculele/Instrument` and
 compiles `Source/DSP/AculeleEngine.cpp` and `AculelePerformer.cpp` directly.

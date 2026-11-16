@@ -5,6 +5,63 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-11-16 — a soft pluck takes its force off the saddle over its own release, 0.4.68 (measured on the model; adopted under the owner's standing rule, not yet heard)
+
+**What was decided.** Before a pluck lets go, the saddle carries the string's
+held force, and the release gives it back to the bridge (the whole of it
+since 0.4.56). The string's wave has had a slow release smoothed into it over
+the whole period since 0.4.35, at the pad's, nail's or pick's own slip time,
+but the saddle's force was still let go in one sample. The two are one event
+through one contact, and the model had them at different speeds: one sample
+after a velocity-32 thumb let an E4 go, the bridge felt 0.99 of the force it
+felt 16 samples on. The candidate takes the force off the saddle through one
+pole at the stroke's own slip (the pad's actual contact time, or the edge's),
+for every technique. Acustra made the same change for its pads in 1.9.46,
+measured against its recordings, and left its pick as it was; here the pick
+and the nails take it too, since a hard edge's pole is near zero and sheds
+the force at once as before.
+
+**Letters.** A: 0.4.67 (`3f4d8e3`). B: the candidate. Three soft phrases
+(velocities 20-58, 96 bpm) through Soprano Thumb, Tenor Fluorocarbon
+Fingerstyle and Concert Strum as they ship, 48 kHz, 256-sample blocks,
+24-bit stereo. B was matched to A on whole-file RMS: trims +0.000, +0.006 and
++0.001 dB; the matched difference stands 30.1, 29.5 and 28.8 dB under A. The
+set is in the project files under
+`aculele/listening/2026-11-16-release-step-slip/` with its `key.md`, not
+committed.
+
+**Measured.** B minus A in dB, the median over C4, E4, A4, E5 and A5 on
+Concert Strum's controls, each note alone:
+
+| Picking | Band and span | 20 | 50 | 90 | 127 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Thumb | 3-8 kHz, first 5 ms | -10.0 | -4.9 | -3.3 | -1.4 |
+| Thumb | 8-16 kHz, first 5 ms | -12.1 | -8.8 | -4.5 | -1.0 |
+| Thumb | 3-8 kHz, first 30 ms | -5.0 | -1.5 | -0.6 | -0.3 |
+| Pick | 3-8 kHz, first 5 ms | -4.9 | -0.7 | -0.1 | -0.1 |
+| Finger (nails) | 3-8 kHz, first 5 ms | -2.0 | -0.3 | 0.0 | -0.1 |
+
+The top's knock (60-300 Hz over the first 50 ms) stays within 0.3 dB in the
+median, 1.2 dB at most (a velocity-20 thumb), and every whole note within
+0.2 dB. A soft G5 and A5's loudest millisecond above 6 kHz
+(`Aculele.ThumbDynamics`) falls from 22 dB under the note's mean power to
+34-37 dB under. The FreePats tenor, recorded at one unstated dynamic, moves
+0-2.5 dB against the velocity-90 render on that measure and neither confirms
+nor rejects the change: the ground is the model's own consistency, not a
+recording.
+
+**Chosen.** B, under the owner's standing rule that the candidate wins unless
+they say otherwise; the owner has not listened yet.
+
+**What it licensed.** The slip pole on the saddle's held force for every
+technique (`AculeleEngine::initialisePluck`, `process`), the level re-pin
+(`AculeleLevels --write`) and Low G Tenor's Output from -1.5 to -1.4 dB: its
+piezo read -10.50 VU, on the 1.5 dB Capture bound, and the change moved it
+past the bound by less than 0.01 dB. A pads-only version, as Acustra has it, is the fallback if the owner
+hears the pick or the nails lose something. Nothing here licenses changing a
+slip time: both the wave and the force take the times the release law
+already had ([review](validation/physical-model-review-2026-11-16.md)).
+
 ## 2026-11-14 — four-string upstroke tilt midpoint and spatial Nyquist stride in the stretch sum, 0.4.67 (two A/B sets; the owner approved B in both)
 
 **What was decided.** Two non-bit-exact changes, each isolated in its own A/B

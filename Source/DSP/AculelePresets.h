@@ -53,7 +53,7 @@ inline constexpr std::array<FactoryPreset, 7> factoryPresets {{
     { "Low G Tenor", "low-g-tenor",
       BodyShape::Tenor, BodyMaterial::Mahogany, StringMaterial::Nylon,
       Tuning::LowG, PickingTechnique::Finger, CaptureType::StereoMic,
-      0.20f, 0.38f, 0.50f, 0.86f, 0.62f, 0.0f, 0.10f, 0.12f, -1.5f },
+      0.20f, 0.38f, 0.50f, 0.86f, 0.62f, 0.0f, 0.10f, 0.12f, -1.4f },
     { "Soprano Thumb", "soprano-thumb",
       BodyShape::Soprano, BodyMaterial::Mahogany, StringMaterial::Nylon,
       Tuning::Standard, PickingTechnique::Thumb, CaptureType::StereoMic,

@@ -564,8 +564,9 @@ constexpr BodyGeometry measuredAnchorBody { 0.397f, 0.508f, 0.111f, 0.1016f, 0.7
 // string's open G3. At 2 1/2 in A0 rings at 207 Hz, and at 2 5/8 in at
 // 212 Hz, where three measured tenors ring (below). As configured
 // (Tools/AculeleBodyModes.cpp) A0/T1 sit at 266/653 Hz (Soprano), 215/485 Hz
-// (Concert) and 212/415 Hz (Tenor) in Spruce; Mahogany lowers T1 4%, Koa
-// 3% and Cedar 1-2%, and Cedar lowers A0 about 1%. The same builder's two
+// (Concert) and 212/415 Hz (Tenor) in Spruce; Mahogany lowers T1 6.5% and
+// Koa 10.5%, Cedar raises it 6.7% (tops graduated to equal stiffness,
+// woodFactorsFor), and A0 stays within 0.2%. The same builder's two
 // tenors tap at 211 and 214 Hz (ukuleles.com, "Tunings for the 4-String
 // Tenor"), and the knock FreePats recorded on a Flight Fireball tenor (CC0,
 // body-tap.wav, after its 190 Hz high-pass) peaks at 212 Hz; a UBC student
@@ -5436,7 +5437,7 @@ void AculeleEngine::resetSoundState() noexcept
         voice.stringAxialForce.clear();
         voice.releaseStepAge = -1;
         voice.releaseStepRise = voice.releaseStepForce
-            = voice.releaseStepLevel = 0.0f;
+            = voice.releaseStepLevel = voice.releaseStepHeld = 0.0f;
     }
     piezoForceDerivative_.reset();
     lastPiezoWave_ = lastPiezoForce_ = 0.0f;
@@ -9348,6 +9349,11 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
         }
         voice.releaseSlipPole = unslipPole > 0.0 ? slipPole : 0.0;
     }
+    // The saddle's held force (releaseStepRise below) comes off through the
+    // same contact, in the time this stroke's slip takes: the pad's actual
+    // one, as its roughness burst follows, or the edge's.
+    voice.releaseStepSlipPole = static_cast<float>(pick ? slipPole
+                                                        : roughnessSlipPole);
 
     // The caller has already retained any preceding wave. This full-period
     // triangle initializes a fresh pluck, but its time origin is not the
@@ -9394,9 +9400,14 @@ void AculeleEngine::initialisePluck(Voice& voice, int stringIndex,
         // where the model stood 13-30 dB under. In the line's own terms the
         // force is the level of its steep flank, 2Z times the flank's rise
         // per sample, and the junction gets it back as the release's step
-        // (process). Only the normal plane's share pushes on the top; the
-        // parallel plane's acts along it. A natural harmonic is held aside
-        // by the picking hand as any note is - the finger on its node damps
+        // (process). Only the normal plane's share is given back. The
+        // parallel plane's held force was a moment on the saddle's crown
+        // (saddleHeightRatio) and is left out: given back the same way, it
+        // moved the 60-300 Hz knock under 0.2 dB and the first 5 ms at
+        // 3-8 kHz by 0.2-2 dB, up on the G and C strings and down on the E
+        // and A (Finger, Pick and Thumb, C4-E5, velocity 50 and 115). A
+        // natural harmonic is held aside by the picking hand as any note
+        // is - the finger on its node damps
         // what the node does not share only once the string is let go - so
         // its saddle sheds the same force. Acustra gave it back at 0.45
         // (0.8 by ear on a guitar, then 5 dB less once its saddle anchors
@@ -9837,7 +9848,7 @@ void AculeleEngine::returnToOpenString(Voice& voice, int stringIndex,
         voice.releaseNoiseTravel.active = false;
         voice.releaseStepAge = -1;
         voice.releaseStepRise = voice.releaseStepForce
-            = voice.releaseStepLevel = 0.0f;
+            = voice.releaseStepLevel = voice.releaseStepHeld = 0.0f;
     }
     voice.attackPitchCents = 0.0f;
     voice.attackPitchDecay = 1.0f;
@@ -16329,12 +16340,31 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
                 // travelling-wave force; no extra gain or sensor is added.
                 if (voice.releaseStepAge >= 0)
                 {
-                    float force = releaseStepPole_ * voice.releaseStepForce;
+                    float impulse = 0.0f;
                     if (voice.releaseStepRise != 0.0f)
                     {
-                        force += 2.0f * port * voice.releaseStepRise;
+                        impulse = 2.0f * port * voice.releaseStepRise;
                         voice.releaseStepRise = 0.0f;
                     }
+                    // The contact lets that force go as it lets the string
+                    // go, over its slip (initialisePluck), not in one sample:
+                    // the string's own share of the same change in force is
+                    // already slipped in the wave. Let go in one sample, the
+                    // saddle's share stood out as a click: a Thumb E4 at
+                    // velocity 32 put 0.99 of the force into its first
+                    // sample, and soft G5 and A5 clicked 12-16 dB louder
+                    // above 6 kHz (Aculele.ThumbDynamics). What is still held
+                    // is kept rather than a filter's state, so a re-pluck
+                    // with another slip sheds all of it; a fast release's
+                    // pole is near 0 and sheds it at once, as before.
+                    voice.releaseStepHeld += impulse;
+                    const float shed = (1.0f - voice.releaseStepSlipPole)
+                        * voice.releaseStepHeld;
+                    voice.releaseStepHeld -= shed;
+                    if (exact::abs(voice.releaseStepHeld) < 1.0e-20f)
+                        voice.releaseStepHeld = 0.0f;
+                    const float force = releaseStepPole_ * voice.releaseStepForce
+                        + shed;
                     voice.releaseStepForce = force;
                     voice.releaseStepLevel
                         = releaseStepPole_ * voice.releaseStepLevel + force;
@@ -16344,7 +16374,8 @@ void AculeleEngine::process(float* left, float* right, const OutputBuses& buses,
                     if (++voice.releaseStepAge >= releaseStepSamples_)
                     {
                         voice.releaseStepAge = -1;
-                        voice.releaseStepForce = voice.releaseStepLevel = 0.0f;
+                        voice.releaseStepForce = voice.releaseStepLevel
+                            = voice.releaseStepHeld = 0.0f;
                     }
                 }
                 const float piezoBranch = piezoWeight * branchImpedance;

@@ -14,6 +14,13 @@
 // the harmonics the slow release had taken. And soft G5 and A5 start
 // without a click above 6 kHz.
 //
+// The force the hand held the string aside with comes off the saddle through
+// the same contact, so it takes the same time (0.4.68): one sample after a
+// velocity-32 thumb lets an E4 go the bridge feels 0.17 of the force it
+// feels 16 samples on. Let go in one sample, as it was through 0.4.67, it
+// felt 0.99 of it at once, a click the slipped string did not have. A
+// full-velocity pick's edge still lets nearly all of it go at once.
+//
 // One E4 on channel 1, a fresh Performer for each velocity, the default
 // controls with Picking Thumb, 48 kHz in 256-sample blocks. The share is the
 // energy through a 4th-order 2.5 kHz high-pass and 6 kHz low-pass over the
@@ -166,6 +173,37 @@ Note play(int velocity, int key = 64)
     note.onsetClick = 10.0 * std::log10((loudest + 1e-30) / (mean + 1e-30));
     return note;
 }
+
+// The body's force from the bridge one sample and 16 samples after the
+// release, the engine stepped a sample at a time.
+struct SaddleForce
+{
+    double first = 0.0;
+    double later = 0.0;
+};
+
+SaddleForce saddleForce(aculele::PickingTechnique picking, int velocity)
+{
+    aculele::EngineParameters parameters;
+    parameters.picking = picking;
+    auto engine = std::make_unique<aculele::AculeleEngine>();
+    engine->setParameters(parameters);
+    engine->prepare(rate, 1);
+    engine->setParameters(parameters);
+    float left = 0.0f, right = 0.0f;
+    for (int sample = 0; sample < 4800; ++sample)
+        engine->process(&left, &right, 1);
+    engine->noteOn(64, static_cast<float>(velocity) / 127.0f);
+    SaddleForce force;
+    for (int sample = 0; sample <= 16; ++sample)
+    {
+        engine->process(&left, &right, 1);
+        if (sample == 1)
+            force.first = std::abs(engine->getLastBridgeBodyForce());
+    }
+    force.later = std::abs(engine->getLastBridgeBodyForce());
+    return force;
+}
 } // namespace
 
 int main()
@@ -202,13 +240,23 @@ int main()
     // (AculeleEngine::releaseOverPeriod). Given it at whole samples rather
     // than at the fraction the loop reads, soft G5 and A5 clicked: their
     // loudest millisecond above 6 kHz stood 1-2 dB over the note's mean
-    // power, where it is 30 dB under, and was 20-24 dB under in 0.4.34.
+    // power, and was 20-24 dB under in 0.4.34. It is 34-37 dB under now
+    // that the saddle's force is let go over the slip too (22 in 0.4.67).
     for (const int key : { 79, 81 })
     {
         const double click = play(28, key).onsetClick;
         std::printf("key %d at velocity 28: onset above 6 kHz %.1f dB\n", key, click);
         check(click < -10.0, "a soft high thumb note starts without a click");
     }
+    const SaddleForce thumb = saddleForce(aculele::PickingTechnique::Thumb, 32);
+    std::printf("thumb at velocity 32: the bridge feels %.2f of its force after one sample\n",
+                thumb.first / thumb.later);
+    check(thumb.later > 0.0 && thumb.first < 0.25 * thumb.later,
+          "a soft thumb takes its force off the saddle as slowly as it lets the string go");
+    const SaddleForce pick = saddleForce(aculele::PickingTechnique::Pick, 127);
+    std::printf("pick at velocity 127: %.2f\n", pick.first / pick.later);
+    check(pick.first > 0.5 * pick.later,
+          "a hard pick still takes its force off the saddle at once");
     if (failures > 0)
     {
         std::fprintf(stderr, "%d thumb dynamics checks failed\n", failures);

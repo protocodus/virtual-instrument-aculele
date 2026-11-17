@@ -5989,10 +5989,11 @@ void AculeleEngine::configureBody() noexcept
         woodSpecs.size() * static_cast<std::size_t>(parameters_.shape)
         + static_cast<std::size_t>(parameters_.bodyMaterial)];
     bodyModes_ = configuration.modes;
-    // g21's own modes are summed in index order, as ever; the parts after
-    // them in vector accumulators (BodyBank::render). Shape and Wood keep
-    // the same modes in the same slots ringing (sameBodyBank, audit F14).
-    bodyBank_.load(bodyModes_, configuration.count, configuration.ordered);
+    // g21's own modes come first, the parts after them from a group of four
+    // (BodyBank::render). Shape and Wood keep the same modes in the same
+    // slots ringing (sameBodyBank, audit F14).
+    bodyBank_.load(bodyModes_, configuration.count, configuration.ordered,
+                   bodyGroupsHeard_);
     // Acustra's mid-band dip evens a guitar sweep's notes over the body
     // mode its 450-800 Hz search finds; a ukulele's T1 lives in that band,
     // so the ukulele keeps its own response there (no dip). Its air mode
@@ -6018,6 +6019,13 @@ void AculeleEngine::prepareBodyConfigurations() noexcept
                 static_cast<std::size_t>(materials * shape + material)],
                 static_cast<BodyShape>(shape), static_cast<BodyMaterial>(material),
                 sampleRate_);
+    // At 44.1-192 kHz slots 8-15 and 140-159, seven groups, have residues
+    // in no Shape and Wood.
+    bodyGroupsHeard_.fill(false);
+    for (const auto& configuration : bodyConfigurations_)
+        for (int index = 0; index < configuration.count; ++index)
+            if (BodyBank::heard(configuration.modes[static_cast<std::size_t>(index)]))
+                bodyGroupsHeard_[static_cast<std::size_t>(index / BodyBank::lanes)] = true;
     bodyConfigurationsReady_ = true;
 }
 
@@ -14172,9 +14180,10 @@ namespace
 // previous cell's reads and the running sum in and out. Four cells go at once
 // on ARM64, x86-64 and under the Jukebox SDK, whose compiler vectorises no
 // loop itself; each cell's reads and slope are the one-at-a-time arithmetic.
-// Under the SDK and on ARM64 the squares join the sum in the scalar order, so
-// its samples are the scalar loop's, bit for bit, as in Acustra. Native x86-64
-// adds them in four partial sums, joined last, a change in the sum's last bits.
+// The squares gather in four partial sums, joined last: against the scalar
+// loop a change in the sum's last bits. Under the SDK, which until 0.4.69 kept
+// the scalar order, each of 63 test renders moved 122 dB or more under its
+// RMS, its peak under -118 dBFS (Docs/benchmarks/cpu-2026-11-16.md).
 void sumAxialCells(const float* line, unsigned mask, unsigned newest,
                    int stride, int first, int end, float period,
                    float returningSpan, float outgoingScale,
@@ -14211,18 +14220,8 @@ void sumAxialCells(const float* line, unsigned mask, unsigned newest,
                          static_cast<float>(cell + 2), static_cast<float>(cell + 3) };
         Floats outgoingCarry = { 0.0f, 0.0f, 0.0f, outgoing };
         Floats returningCarry = { 0.0f, 0.0f, 0.0f, returning };
-#if defined(JUKEBOX_SDK) || defined(__aarch64__) || defined(_M_ARM64)
-        const auto addSquares = [&sum] (Floats slope)
-        {
-            sum += slope[0] * slope[0];
-            sum += slope[1] * slope[1];
-            sum += slope[2] * slope[2];
-            sum += slope[3] * slope[3];
-        };
-#else
         Floats partial = { 0.0f, 0.0f, 0.0f, 0.0f };
         const auto addSquares = [&partial] (Floats slope) { partial += slope * slope; };
-#endif
         // Most sums read a stretch of the ring that does not wrap: the
         // newest sample sits at least a period and the outgoing wave's last
         // read past its start. There the reads are plain offsets back from
@@ -14320,9 +14319,7 @@ void sumAxialCells(const float* line, unsigned mask, unsigned newest,
         }
         outgoing = outgoingCarry[3];
         returning = returningCarry[3];
-#if !defined(JUKEBOX_SDK) && !defined(__aarch64__) && !defined(_M_ARM64)
         sum += (partial[0] + partial[1]) + (partial[2] + partial[3]);
-#endif
     }
 #endif
     for (; cell < end; ++cell)
@@ -14584,8 +14581,9 @@ float AculeleEngine::renderStringAxialForce(Voice& voice, int stringIndex) noexc
                 || axial.lossBits != exact::bits(voice.axialLossFactor))
                 designStringAxialForce(voice, stringIndex);
             double stretch = 0.0;
-            for (const auto& loop : voice.loops)
+            for (std::size_t loopIndex = 0; loopIndex < voice.loops.size(); ++loopIndex)
             {
+                const auto& loop = voice.loops[loopIndex];
                 // displacementAt's read, age 0 the newest sample, on the
                 // line's own power-of-two ring. writeIndex counts around the
                 // largest ring the build allows, four times the 48 kHz one
@@ -14609,50 +14607,72 @@ float AculeleEngine::renderStringAxialForce(Voice& voice, int stringIndex) noexc
                     return a + part * (b - a);
                 };
                 const float period = loop.currentDelay;
-                // The axial round trip is a seventh to a twelfth of the
-                // transverse one on these strings; the bound only keeps a
-                // cell's span of the line from closing up.
-                const float shear = performanceRealism_.axialWaves
-                    ? std::min(axial.roundTrip / period, 0.5f) : 0.0f;
-                // Before its own release a new shape was held still, so a
-                // retardation reaching past it reads the shape as released.
-                // At the longest period the line allows the room left is a
-                // sample short; a negative reach would read the line's far
-                // end.
-                const float reach = std::max(0.0f, std::min(shear * period,
-                    std::min(static_cast<float>(axial.validAge),
-                             static_cast<float>(activeDelaySamples() - 4) - period)));
+                const int stride = axial.stride;
                 // The direct path and the one by way of the nut join into one
                 // loop over u in [0, D], u = x on the first and D - x on the
                 // second: there the waves are read at u + r and D - u + r,
                 // r = min(e u, reach). Unheld, the first read moves (1 + e)
                 // per unit of u, so cells of a stride over (1 + e) put it on
                 // whole samples and only the second is interpolated. The
-                // last cell runs on to u = D, one to two cells wide.
-                const int stride = axial.stride;
-                const float outgoingStep = 1.0f + shear;
-                const float returningStep = 1.0f - shear;
-                const float width = static_cast<float>(stride) / outgoingStep;
-                const int cells = std::max(1, static_cast<int>(
-                    outgoingStep * period / static_cast<float>(stride)));
-                const float lastWidth = period - width * static_cast<float>(cells - 1);
+                // last cell runs on to u = D, one to two cells wide. A held
+                // note's period stays put, and with it the cells' layout and
+                // its five divisions, made again only when an input changes.
+                auto& layout = axial.cells[loopIndex];
+                if (layout.periodBits != exact::bits(period)
+                    || layout.roundTripBits != exact::bits(axial.roundTrip)
+                    || layout.stride != stride
+                    || layout.axialWaves != performanceRealism_.axialWaves)
+                {
+                    layout.periodBits = exact::bits(period);
+                    layout.roundTripBits = exact::bits(axial.roundTrip);
+                    layout.stride = stride;
+                    layout.axialWaves = performanceRealism_.axialWaves;
+                    // The axial round trip is a seventh to a twelfth of the
+                    // transverse one on these strings; the bound only keeps a
+                    // cell's span of the line from closing up.
+                    layout.shear = performanceRealism_.axialWaves
+                        ? std::min(axial.roundTrip / period, 0.5f) : 0.0f;
+                    layout.retarded = layout.shear * period;
+                    layout.outgoingStep = 1.0f + layout.shear;
+                    layout.returningStep = 1.0f - layout.shear;
+                    layout.width = static_cast<float>(stride) / layout.outgoingStep;
+                    layout.count = std::max(1, static_cast<int>(
+                        layout.outgoingStep * period / static_cast<float>(stride)));
+                    layout.lastWidth = period
+                        - layout.width * static_cast<float>(layout.count - 1);
+                    layout.returningSpan = layout.width * layout.returningStep;
+                    layout.outgoingScale = -1.0f / static_cast<float>(stride);
+                    layout.returningScale = 1.0f / layout.returningSpan;
+                }
+                const float shear = layout.shear;
+                const float outgoingStep = layout.outgoingStep;
+                const float returningStep = layout.returningStep;
+                const float width = layout.width;
+                const int cells = layout.count;
+                const float lastWidth = layout.lastWidth;
+                // Before its own release a new shape was held still, so a
+                // retardation reaching past it reads the shape as released.
+                // At the longest period the line allows the room left is a
+                // sample short; a negative reach would read the line's far
+                // end.
+                const float reach = std::max(0.0f, std::min(layout.retarded,
+                    std::min(static_cast<float>(axial.validAge),
+                             static_cast<float>(activeDelaySamples() - 4) - period)));
                 // y_x = -s'(outgoing) - s'(returning), each the mean over the
                 // cell's span of its own line.
                 float outgoing = sample(0);
                 float returning = tap(period);
                 float sum = 0.0f;
-                if (reach >= shear * period)
+                if (reach >= layout.retarded)
                 {
-                    const float returningSpan = width * returningStep;
-                    const float outgoingScale = -1.0f / static_cast<float>(stride);
-                    const float returningScale = 1.0f / returningSpan;
                     sumAxialCells(line, mask, newest, stride, 1, cells, period,
-                                  returningSpan, outgoingScale, returningScale,
+                                  layout.returningSpan, layout.outgoingScale,
+                                  layout.returningScale,
                                   outgoing, returning, sum);
                     sum *= width;
                     const float slope = (tap(outgoingStep * period) - outgoing)
                             / (-lastWidth * outgoingStep)
-                        + (tap(shear * period) - returning) / (lastWidth * returningStep);
+                        + (tap(layout.retarded) - returning) / (lastWidth * returningStep);
                     sum += lastWidth * slope * slope;
                 }
                 else
@@ -15133,15 +15153,12 @@ void AculeleEngine::BodyBank::CaptureFilter::render(BodyOutput& output) noexcept
 }
 
 void AculeleEngine::BodyBank::load(const std::array<BodyMode, bodyModeCount>& modes,
-                                   int modeCount, int orderedCount) noexcept
+                                   int modeCount, int orderedCount,
+                                   const std::array<bool, groups>& heardGroups) noexcept
 {
     const auto sounds = [&modes] (int index)
     {
-        const auto& mode = modes[static_cast<std::size_t>(index)];
-        return mode.leftReal != 0.0f || mode.leftImaginary != 0.0f
-            || mode.rightReal != 0.0f || mode.rightImaginary != 0.0f
-            || mode.leftMomentReal != 0.0f || mode.leftMomentImaginary != 0.0f
-            || mode.rightMomentReal != 0.0f || mode.rightMomentImaginary != 0.0f;
+        return heard(modes[static_cast<std::size_t>(index)]);
     };
     count = std::clamp(modeCount, 0, bodyModeCount);
     ordered = std::clamp(orderedCount, 0, count);
@@ -15151,18 +15168,20 @@ void AculeleEngine::BodyBank::load(const std::array<BodyMode, bodyModeCount>& mo
     const int parallel = (ordered + lanes - 1) / lanes * lanes;
     while (count > parallel && !sounds(count - 1))
         --count;
-    for (int group = 0; group < capacity / lanes; ++group)
+    for (int group = 0; group < groups; ++group)
     {
+        const auto slot = static_cast<std::size_t>(group);
         bool silent = true;
         for (int index = group * lanes; index < (group + 1) * lanes; ++index)
             silent = silent && (index >= count || !sounds(index));
-        silentGroup[static_cast<std::size_t>(group)] = silent;
+        groupKind[slot] = !silent ? soundingGroup
+            : heardGroups[slot] ? restingGroup : unheardGroup;
     }
-    for (int group = capacity / lanes - 1; group >= 0; --group)
+    for (int group = groups - 1; group >= 0; --group)
     {
         const auto slot = static_cast<std::size_t>(group);
-        runEnd[slot] = static_cast<std::uint8_t>(group + 1 < capacity / lanes
-                && silentGroup[slot + 1] == silentGroup[slot]
+        runEnd[slot] = static_cast<std::uint8_t>(group + 1 < groups
+                && groupKind[slot + 1] == groupKind[slot]
             ? runEnd[slot + 1] : group + 1);
     }
     for (int index = 0; index < capacity; ++index)
@@ -15181,26 +15200,36 @@ void AculeleEngine::BodyBank::load(const std::array<BodyMode, bodyModeCount>& mo
         rightMomentImaginary[slot] = mode.rightMomentImaginary;
         // A mode render skips rests, so it starts from rest if a later
         // Shape or Wood sounds it.
-        if (index >= count || (index >= soundingOrdered && index < ordered))
+        if (index >= count || (index >= soundingOrdered && index < ordered)
+            || groupKind[slot / lanes] == unheardGroup)
             real[slot] = imaginary[slot] = momentReal[slot] = momentImaginary[slot] = 0.0f;
     }
 }
 
-// Each mode's two-pole step and the flush of tiny states, four modes at a time.
-// Each lane is the scalar expression's own sequence of IEEE operations (the
-// same products, sums and order), so each mode's states and contributions
-// are the scalar ones bit for bit; the two sums then take the ordered modes'
-// contributions one mode at a time in index order, as the scalar loop did.
-// The modes after them (the steel blend's parallel parts) gather in four
-// vector accumulators, added across lanes and to the sums once per sample
-// (about 1.03 against 1.33 ns per mode-sample). Only modes below count are
-// summed; lanes past it are zero padding.
+// Each mode's two-pole step, four modes at a time. Each lane is the scalar
+// expression's own sequence of IEEE operations (the same products, sums and
+// order), so each mode's states and contributions are the scalar ones bit for
+// bit. The contributions gather in four-lane accumulators, added across lanes
+// once per sample: the sum is the modes' in another order, a change in its
+// last bits only (131.9 dB or more under the RMS of each of 63 test renders,
+// nothing in the strings or the bridge, Docs/benchmarks/cpu-2026-11-16.md).
+// Only modes below count are summed; lanes past it are zero padding.
 AculeleEngine::BodyOutput AculeleEngine::BodyBank::render(float force, float moment) noexcept
 {
     if (silent && force == 0.0f && moment == 0.0f)
         return {};
     silent = false;
     BodyOutput output;
+    // The states' flush to zero under 1e-30 keeps them off subnormal floats
+    // and lets a quiet bank reach silence. It runs every flushPeriod
+    // samples, not every sample: in 16 samples the fastest decaying mode (at
+    // 8 kHz) falls 76 dB, short of the 178 dB from 1e-30 down to a subnormal,
+    // and a state under 1e-30 adds less than a float's last bit to any sum it
+    // could be heard in. Each of the 63 test renders is byte for byte the one
+    // a flush on every sample gives.
+    const bool flushing = ++flushPhase >= flushPeriod;
+    if (flushing)
+        flushPhase = 0;
 #if defined(__clang__) || defined(__GNUC__)
     typedef float Vector __attribute__((vector_size(16), aligned(4), may_alias));
     typedef std::int32_t Mask __attribute__((vector_size(16), aligned(4), may_alias));
@@ -15214,41 +15243,10 @@ AculeleEngine::BodyOutput AculeleEngine::BodyBank::render(float force, float mom
     {
         __builtin_memcpy(values.data() + index, &value, sizeof(value));
     };
-    // IEEE binary32 magnitude bits increase with finite positive value.
-    // 0x0da24260 is exactly the float 1e-30 threshold; equality is retained.
-    // NaN/Inf magnitudes lie above it, while either zero sign flushes to +0.
-    const auto flush = [] (Vector value)
-    {
-        static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559,
-                      "body state flush requires IEEE binary32");
-        const Mask bits = reinterpret_cast<Mask>(value);
-        const Mask magnitude = bits & 0x7fffffff;
-        const Mask tiny = magnitude < 0x0da24260;
-        return reinterpret_cast<Vector>(bits & ~tiny);
-    };
     const Vector forceLanes = { force, force, force, force };
     const Vector momentLanes = { moment, moment, moment, moment };
-    // L/R are independent accumulators, advanced in the original mode order.
-    // The SDK vector contract requires 16 bytes; the upper sums are not returned.
-    Vector stereo = { output.left, output.right, 0.0f, 0.0f };
-    const auto addStereo = [&] (Vector pair)
-    {
-#if defined(__clang__)
-#pragma clang fp contract(off)
-#pragma clang fp reassociate(off)
-#endif
-        stereo += 2.0f * pair;
-    };
-    const auto addScaledStereo = [&] (Vector pair)
-    {
-#if defined(__clang__)
-#pragma clang fp contract(off)
-#pragma clang fp reassociate(off)
-#endif
-        stereo += pair;
-    };
     // One group of four lanes advanced; its contributions to the two sums.
-    // A silent group's states advanced, as advance does, without its sums.
+    // A resting group's states advanced, as advance does, without its sums.
     const auto rest = [&] (int index)
     {
         const Vector pr = load(poleReal, index);
@@ -15257,12 +15255,15 @@ AculeleEngine::BodyOutput AculeleEngine::BodyBank::render(float force, float mom
         const Vector im = load(imaginary, index);
         const Vector mr = load(momentReal, index);
         const Vector mi = load(momentImaginary, index);
-        store(real, index, flush(forceLanes + pr * re - pim * im));
-        store(imaginary, index, flush(pim * re + pr * im));
-        store(momentReal, index, flush(momentLanes + pr * mr - pim * mi));
-        store(momentImaginary, index, flush(pim * mr + pr * mi));
+        store(real, index, forceLanes + pr * re - pim * im);
+        store(imaginary, index, pim * re + pr * im);
+        store(momentReal, index, momentLanes + pr * mr - pim * mi);
+        store(momentImaginary, index, pim * mr + pr * mi);
     };
-    const auto advance = [&] (int index, Vector& leftPart, Vector& rightPart)
+    Vector leftSum = { 0.0f, 0.0f, 0.0f, 0.0f };
+    Vector rightSum = { 0.0f, 0.0f, 0.0f, 0.0f };
+    // The first `valid` lanes of a group advanced and summed.
+    const auto add = [&] (int index, int valid)
     {
         const Vector pr = load(poleReal, index);
         const Vector pim = load(poleImaginary, index);
@@ -15276,118 +15277,82 @@ AculeleEngine::BodyOutput AculeleEngine::BodyBank::render(float force, float mom
                                     - pim * mi;
         const Vector nextMomentImaginary = pim * mr
                                          + pr * mi;
-        leftPart = load(leftReal, index) * nextReal
+        Vector leftPart = load(leftReal, index) * nextReal
             - load(leftImaginary, index) * nextImaginary
             + load(leftMomentReal, index) * nextMomentReal
             - load(leftMomentImaginary, index) * nextMomentImaginary;
-        rightPart = load(rightReal, index) * nextReal
+        Vector rightPart = load(rightReal, index) * nextReal
             - load(rightImaginary, index) * nextImaginary
             + load(rightMomentReal, index) * nextMomentReal
             - load(rightMomentImaginary, index) * nextMomentImaginary;
-        store(real, index, flush(nextReal));
-        store(imaginary, index, flush(nextImaginary));
-        store(momentReal, index, flush(nextMomentReal));
-        store(momentImaginary, index, flush(nextMomentImaginary));
-    };
-    // One ordered group, the first valid of its lanes summed in order. A
-    // constant valid lets the full groups keep their products in vector
-    // registers.
-    const auto group = [&] (int index, int valid)
-    {
-        Vector leftPart, rightPart;
-        advance(index, leftPart, rightPart);
-        if (valid == lanes)
+        store(real, index, nextReal);
+        store(imaginary, index, nextImaginary);
+        store(momentReal, index, nextMomentReal);
+        store(momentImaginary, index, nextMomentImaginary);
+        if (valid < lanes)
         {
-#if defined(__clang__)
-#pragma clang fp contract(off)
-#pragma clang fp reassociate(off)
-#endif
-            // Scale each unchanged contribution exactly once, then interleave
-            // constant lane pairs. Only the lower L/R sums become output.
-            const Vector leftScaled = 2.0f * leftPart;
-            const Vector rightScaled = 2.0f * rightPart;
-            const Vector zip01 = { leftScaled[0], rightScaled[0], leftScaled[1], rightScaled[1] };
-            const Vector zip23 = { leftScaled[2], rightScaled[2], leftScaled[3], rightScaled[3] };
-            const Vector swap01 = { zip01[2], zip01[3], zip01[0], zip01[1] };
-            const Vector swap23 = { zip23[2], zip23[3], zip23[0], zip23[1] };
-            addScaledStereo(zip01);
-            addScaledStereo(swap01);
-            addScaledStereo(zip23);
-            addScaledStereo(swap23);
+            const Mask lane = { 0, 1, 2, 3 };
+            const Mask summed = lane < valid;
+            leftPart = reinterpret_cast<Vector>(reinterpret_cast<Mask>(leftPart) & summed);
+            rightPart = reinterpret_cast<Vector>(reinterpret_cast<Mask>(rightPart) & summed);
         }
-        else
-        {
-            if (valid > 0)
-                addStereo(Vector { leftPart[0], rightPart[0], 0.0f, 0.0f });
-            if (valid > 1)
-                addStereo(Vector { leftPart[1], rightPart[1], 0.0f, 0.0f });
-            if (valid > 2)
-                addStereo(Vector { leftPart[2], rightPart[2], 0.0f, 0.0f });
-        }
+        leftSum += leftPart;
+        rightSum += rightPart;
     };
-    // Runs of sounding and of silent groups, each in its own loop. A group
-    // index is its first mode's over lanes.
-    const auto run = [this] (int index, int limit, bool& groupSilent)
+    // Runs of sounding, resting and unheard groups, each in its own loop,
+    // from index to limit, a whole number of groups. A group index is its
+    // first mode's over lanes.
+    const auto runs = [&] (int index, int limit)
     {
-        const auto slot = static_cast<std::size_t>(index) / lanes;
-        groupSilent = silentGroup[slot];
-        return std::min(static_cast<int>(runEnd[slot]) * lanes, limit);
-    };
-    const int fullOrdered = soundingOrdered / lanes * lanes;
-    int index = 0;
-    while (index < fullOrdered)
-    {
-        bool groupSilent = false;
-        const int end = run(index, fullOrdered, groupSilent);
-        if (groupSilent)
-            for (; index < end; index += lanes)
-                rest(index);
-        else
-            for (; index < end; index += lanes)
-                group(index, lanes);
-    }
-    if (index < soundingOrdered)
-        group(index, soundingOrdered - index);
-    index = (ordered + lanes - 1) / lanes * lanes;
-    if (index < count)
-    {
-        Vector leftSum = { 0.0f, 0.0f, 0.0f, 0.0f };
-        Vector rightSum = { 0.0f, 0.0f, 0.0f, 0.0f };
-        const int fullCount = count / lanes * lanes;
-        while (index < fullCount)
+        while (index < limit)
         {
-            bool groupSilent = false;
-            const int end = run(index, fullCount, groupSilent);
-            if (groupSilent)
+            const auto slot = static_cast<std::size_t>(index) / lanes;
+            const GroupKind kind = groupKind[slot];
+            const int end = std::min(static_cast<int>(runEnd[slot]) * lanes, limit);
+            if (kind == unheardGroup)
+                index = end;
+            else if (kind == restingGroup)
                 for (; index < end; index += lanes)
                     rest(index);
             else
                 for (; index < end; index += lanes)
-                {
-                    Vector leftPart, rightPart;
-                    advance(index, leftPart, rightPart);
-                    leftSum += leftPart;
-                    rightSum += rightPart;
-                }
+                    add(index, lanes);
         }
-        if (index < count)
+    };
+    const int fullOrdered = soundingOrdered / lanes * lanes;
+    runs(0, fullOrdered);
+    if (fullOrdered < soundingOrdered)
+        add(fullOrdered, soundingOrdered - fullOrdered);
+    const int parallel = (ordered + lanes - 1) / lanes * lanes;
+    const int fullCount = std::max(parallel, count / lanes * lanes);
+    runs(parallel, fullCount);
+    if (fullCount < count)
+        add(fullCount, count - fullCount);
+    output.left = 2.0f * ((leftSum[0] + leftSum[1]) + (leftSum[2] + leftSum[3]));
+    output.right = 2.0f * ((rightSum[0] + rightSum[1]) + (rightSum[2] + rightSum[3]));
+    if (flushing)
+    {
+        // IEEE binary32 magnitude bits increase with finite positive value.
+        // 0x0da24260 is exactly the float 1e-30 threshold; equality is
+        // retained. NaN/Inf magnitudes lie above it, while either zero sign
+        // flushes to +0.
+        static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559,
+                      "body state flush requires IEEE binary32");
+        const auto flush = [&] (Lanes& values, int index)
         {
-            Vector leftPart, rightPart;
-            advance(index, leftPart, rightPart);
-            const Mask lane = { 0, 1, 2, 3 };
-            const Mask summed = lane < (count - index);
-            leftPart = reinterpret_cast<Vector>(reinterpret_cast<Mask>(leftPart) & summed);
-            rightPart = reinterpret_cast<Vector>(reinterpret_cast<Mask>(rightPart) & summed);
-            leftSum += leftPart;
-            rightSum += rightPart;
+            const Mask bits = reinterpret_cast<Mask>(load(values, index));
+            const Mask magnitude = bits & 0x7fffffff;
+            const Mask tiny = magnitude < 0x0da24260;
+            store(values, index, reinterpret_cast<Vector>(bits & ~tiny));
+        };
+        for (int index = 0; index < count; index += lanes)
+        {
+            flush(real, index);
+            flush(imaginary, index);
+            flush(momentReal, index);
+            flush(momentImaginary, index);
         }
-        const float leftTail = (leftSum[0] + leftSum[1]) + (leftSum[2] + leftSum[3]);
-        const float rightTail = (rightSum[0] + rightSum[1]) + (rightSum[2] + rightSum[3]);
-        const Vector pair = { leftTail, rightTail, 0.0f, 0.0f };
-        addStereo(pair);
     }
-    output.left = stereo[0];
-    output.right = stereo[1];
 #else
     for (int index = 0; index < count; ++index)
     {
@@ -15404,11 +15369,25 @@ AculeleEngine::BodyOutput AculeleEngine::BodyBank::render(float force, float mom
             + leftMomentReal[i] * nextMomentReal - leftMomentImaginary[i] * nextMomentImaginary);
         output.right += 2.0f * (rightReal[i] * nextReal - rightImaginary[i] * nextImaginary
             + rightMomentReal[i] * nextMomentReal - rightMomentImaginary[i] * nextMomentImaginary);
-        real[i] = exact::abs(nextReal) < 1.0e-30f ? 0.0f : nextReal;
-        imaginary[i] = exact::abs(nextImaginary) < 1.0e-30f ? 0.0f : nextImaginary;
-        momentReal[i] = exact::abs(nextMomentReal) < 1.0e-30f ? 0.0f : nextMomentReal;
-        momentImaginary[i] = exact::abs(nextMomentImaginary) < 1.0e-30f
-            ? 0.0f : nextMomentImaginary;
+        real[i] = nextReal;
+        imaginary[i] = nextImaginary;
+        momentReal[i] = nextMomentReal;
+        momentImaginary[i] = nextMomentImaginary;
+    }
+    if (flushing)
+    {
+        const auto flushed = [] (float value)
+        {
+            return exact::abs(value) < 1.0e-30f ? 0.0f : value;
+        };
+        for (int index = 0; index < count; ++index)
+        {
+            const auto i = static_cast<std::size_t>(index);
+            real[i] = flushed(real[i]);
+            imaginary[i] = flushed(imaginary[i]);
+            momentReal[i] = flushed(momentReal[i]);
+            momentImaginary[i] = flushed(momentImaginary[i]);
+        }
     }
 #endif
     captureFilter.render(output);

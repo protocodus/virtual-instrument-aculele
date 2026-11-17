@@ -1509,6 +1509,21 @@ private:
             // rewritten: the quiet-string gate (renderStringAxialForce).
             float drive { 0.0f };
             float drivePeak { 0.0f };
+            // Each loop's cells (renderStringAxialForce) for the period,
+            // round trip, stride and axial waves they were laid out at.
+            struct Cells
+            {
+                std::uint32_t periodBits { 0 }, roundTripBits { 0 };
+                int stride { 0 };
+                bool axialWaves { false };
+                float shear { 0.0f }, retarded { 0.0f };
+                float outgoingStep { 0.0f }, returningStep { 0.0f };
+                float width { 0.0f }, lastWidth { 0.0f };
+                float returningSpan { 0.0f };
+                float outgoingScale { 0.0f }, returningScale { 0.0f };
+                int count { 1 };
+            };
+            std::array<Cells, 2> cells {};
             std::array<float, ringSize> ring {};
             void lineRewritten() noexcept
             {
@@ -1893,9 +1908,8 @@ private:
         static constexpr int capacity = (bodyModeCount + lanes - 1) / lanes * lanes;
         using Lanes = std::array<float, capacity>;
         int count { 0 };
-        // The first `ordered` modes (a bank's own) are summed in index order;
-        // the rest (the steel blend's parallel parts, starting on a group of
-        // four) in vector accumulators.
+        // The first `ordered` modes are a bank's own; the rest (the steel
+        // blend's parallel parts) start on a group of four.
         int ordered { 0 };
         // The ordered modes up to the last that sounds. A mode this rate
         // cannot sound, at or above 0.46 fs, has no residues
@@ -1905,13 +1919,21 @@ private:
         // there at 48 kHz.
         int soundingOrdered { 0 };
         bool silent { true };
-        // A group of four rendered modes none of which has residues in this
-        // bank adds exactly zero to both sums, so render only advances its
-        // states: a later Shape or Wood may sound them (sameBodyBank).
-        std::array<bool, capacity / lanes> silentGroup {};
-        // The group after each one's run of equally silent or sounding
-        // groups, so render tests silence once a run, not once a group.
-        std::array<std::uint8_t, capacity / lanes> runEnd {};
+        // Samples since the states' last flush (render).
+        static constexpr int flushPeriod = 16;
+        int flushPhase { 0 };
+        static constexpr int groups = capacity / lanes;
+        // How render takes a group of four modes. One none of whose modes
+        // has residues in this bank adds exactly zero to both sums, so
+        // render only advances its states (rests): a later Shape or Wood may
+        // sound them (sameBodyBank). One that no Shape and Wood sounds at
+        // this rate (unheard) never reaches the output, so render leaves its
+        // states at rest.
+        enum GroupKind : std::uint8_t { soundingGroup, restingGroup, unheardGroup };
+        std::array<GroupKind, groups> groupKind {};
+        // The group after each one's run of groups of one kind, so render
+        // tests the kind once a run, not once a group.
+        std::array<std::uint8_t, groups> runEnd {};
         CaptureFilter captureFilter {};
         Lanes real {}, imaginary {}, momentReal {}, momentImaginary {};
         Lanes poleReal {}, poleImaginary {};
@@ -1919,10 +1941,20 @@ private:
         Lanes leftMomentReal {}, leftMomentImaginary {};
         Lanes rightMomentReal {}, rightMomentImaginary {};
 
+        // Whether a mode has residues: one without adds exactly zero.
+        static bool heard(const BodyMode& mode) noexcept
+        {
+            return mode.leftReal != 0.0f || mode.leftImaginary != 0.0f
+                || mode.rightReal != 0.0f || mode.rightImaginary != 0.0f
+                || mode.leftMomentReal != 0.0f || mode.leftMomentImaginary != 0.0f
+                || mode.rightMomentReal != 0.0f || mode.rightMomentImaginary != 0.0f;
+        }
         // The first modeCount modes' coefficients, their states kept. Slots
-        // past the bank are zero.
+        // past the bank are zero. heardGroups: whether any Shape and Wood
+        // sounds a group's modes at this rate (prepareBodyConfigurations).
         void load(const std::array<BodyMode, bodyModeCount>& modes,
-                  int modeCount, int orderedCount) noexcept;
+                  int modeCount, int orderedCount,
+                  const std::array<bool, groups>& heardGroups) noexcept;
         void reset() noexcept
         {
             real.fill(0.0f);
@@ -1931,12 +1963,11 @@ private:
             momentImaginary.fill(0.0f);
             captureFilter.reset();
             silent = true;
+            flushPhase = 0;
         }
         // Every mode's two-pole state advanced by the force and moment and
-        // summed into the left and right residues, then a flush of tiny
-        // states. The ordered modes' sums accumulate in index order, as ever;
-        // with vector extensions the modes after them gather four lanes
-        // across their parts and are added to those sums once per sample.
+        // summed into the left and right residues, and every flushPeriod
+        // samples a flush of tiny states.
         BodyOutput render(float force, float moment) noexcept;
     };
 
@@ -2721,6 +2752,8 @@ private:
     std::array<DispersionSolve, preparedDispersionCount> preparedDispersion_ {};
     std::array<BodyMode, bodyModeCount> bodyModes_ {};
     std::array<BodyConfiguration, 12> bodyConfigurations_ {};
+    // Whether any of the twelve sounds a BodyBank group of four modes.
+    std::array<bool, BodyBank::groups> bodyGroupsHeard_ {};
     std::array<Voice, stringCount> voices_ {};
     // writePickRelease's two released waves at every sample of the loop.
     DelayHistory<maximumDelaySamples> pickReleaseDisplacement_ {};

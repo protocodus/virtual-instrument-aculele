@@ -5,6 +5,42 @@ the repository's `CLAUDE.md`, and the owner's product decisions. A choice made
 by ear is recorded as made by ear, never written up as though a measurement
 had settled it; an entry settled by a measurement says so and quotes it.
 
+## 2026-11-17 — a played string stops summing its stretch 30 dB down, not 40 dB, 0.4.70 (A/B set; the owner chose B)
+
+**What was decided.** A played string sums its own lengthwise stretch
+(`renderStringAxialForce`) until its bridge force has fallen a set distance
+from its peak. After that the ring rings out on what it holds, and a re-pluck
+starts the sum again. Since 0.4.56 that distance had been 40 dB, where the
+force the stretch would still add stands 80 dB under its own peak. The CPU
+pass of 2026-11-16 measured a 30 dB gate, where that force stands 60 dB under.
+On the 63 test renders, the largest null against 40 dB is 59.0 dB under the
+render's RMS, with a peak of -41.4 dBFS. That render is the hand-then-bend
+phrase, where struck strings are let go and bent two octaves. Every demo stays
+80.7 dB or more under. That grades it a listening decision, not a measured
+inaudible one ([measurement](benchmarks/cpu-2026-11-16.md)).
+
+**Letters.** A: 0.4.69 (`bf7308f`), built the way Reason builds the device.
+B: A with `quietDrive` at 0.0316 (-30 dB) in place of 0.01 (-40 dB). The
+material is Concert Strum as it loads, at 48 kHz in 256-sample blocks through
+the Performer, 15 s, 24-bit:
+- two chords, each held 4 s and bent up a whole tone and back;
+- then C5 and E5 alone, each held and bent.
+
+The bends come while the strings ring 30-40 dB down, where the two gates
+differ. Both files are -30.7 dBFS on whole-file RMS, so B's trim was 0.00 dB.
+The null of B against A is 71.3 dB under A's RMS, with a peak of -74.0 dBFS.
+Its largest part falls during the first chord's bend, 47 dB under that
+second's level. The set is in the project files under
+`aculele/listening/2026-11-16-bent-ring/` with its `key.md`, not committed.
+
+**Chosen.** B, by ear. The owner's verdict on 2026-11-17 was "b is ok".
+
+**What it licensed.** The 30 dB gate (`quietDrive` 0.0316228) as 0.4.70, for
+1.5% less CPU than 0.4.69 on the Reason-like build: 1.0-2.4% on the demos and
+2.0-3.3% on the stress phrases.
+The gate trades a force 60 dB under its own peak for CPU. It is not a physical
+constant fitted by ear, and no gate under 30 dB was measured or offered.
+
 ## 2026-11-16 — a soft pluck takes its force off the saddle over its own release, 0.4.68 (measured on the model; adopted under the owner's standing rule, not yet heard)
 
 **What was decided.** Before a pluck lets go, the saddle carries the string's

@@ -22,6 +22,10 @@ One demo per factory preset, all seven, each phrase written for what its preset 
 
 ## Version history
 
+### 0.4.70 — 2026-11-17 — A ringing string stops summing its stretch 10 dB sooner
+
+A played string stops summing its own lengthwise stretch once its bridge force has fallen 30 dB from its peak, instead of 40 dB. The ring then rings out on what it holds, and a re-pluck starts the sum again. At 30 dB, the force the stretch would still add stands 60 dB under its own peak, against 80 dB before. On the 63 test renders the largest difference from 0.4.69 is 59.0 dB under the render's RMS, on strings let go and then bent two octaves, and every demo stays 80.7 dB or more under. On a build at Reason's compiler tier, CPU falls a further 1.5% from 0.4.69, and 12.8% from 0.4.68. The owner chose it by ear from an A/B set against 0.4.69 ([decision](Docs/decisions.md), [measurement](Docs/benchmarks/cpu-2026-11-16.md)).
+
 ### 0.4.69 — 2026-11-16 — Less CPU in the body and the strings' stretch, the sound kept
 
 Seven of the body bank's groups of four modes have residues in no Shape and Wood at 44.1-192 kHz, so they cannot reach the output; they are no longer stepped. The remaining modes add into four running sums instead of one and flush their tiny states every 16 samples instead of every sample. Under the Rack SDK and on ARM64, each string's stretch sum now gathers in four partial sums, as it already did on native x86-64, and each string loop keeps its cells' layout while its period holds instead of laying the cells out again every sample. The skip, the flush and the kept layout change no sample of 63 test renders (seven presets: the demos at 44.1, 48 and 96 kHz, the stress phrase and five gesture and control sweeps). The reordered sums change only last bits: every render stays 122 dB or more under its RMS on the Reason-like build and 132 dB on the native one. CPU falls 11.3% over the seven demos and stress phrases on a build at Reason's compiler tier, and 8.2% on the native build ([measurement](Docs/benchmarks/cpu-2026-11-16.md)).

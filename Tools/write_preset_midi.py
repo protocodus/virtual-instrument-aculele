@@ -38,6 +38,7 @@ SONG_DIR = MIDI_DIR / "songs"
 
 DOWN, UP = 24, 25  # Performer::keyswitchDownstroke, keyswitchUpstroke
 CHUCK = 29  # Performer::keyswitchChuck: held down, a swept stroke's strings take dead strokes
+TAP = 32  # Performer::keyswitchBodyTap: a hand taps the body, with force set by velocity
 # What a phrase may play: the stroke keyswitches C0-D0, and the strings from
 # the Low G string's G3 to the A string's 18th fret.
 KEYSWITCHES = range(24, 27)
@@ -51,7 +52,15 @@ SHAPES = {
     "C": (0, 0, 0, 3), "Am": (2, 0, 0, 0), "F": (2, 0, 1, 0), "G": (0, 2, 3, 2),
     "G7": (0, 2, 1, 2), "Em": (0, 4, 3, 2), "Dm": (2, 2, 1, 0), "D7": (2, 2, 2, 3),
     "C7": (0, 0, 0, 1), "E7": (1, 2, 0, 2), "B7": (2, 3, 2, 2), "B": (4, 3, 2, 2),
+    "Bm": (4, 2, 2, 2), "F#": (3, 1, 2, 1), "F#7": (3, 4, 2, 4), "D": (2, 2, 2, 0), "A7": (0, 1, 0, 0),
 }
+TUNINGS = {"Standard": STANDARD, "LowG": LOW_G, "DTuning": D_TUNING}
+# The highest fret a song's player reaches on each body: where the neck
+# meets the body, the 12th fret on a soprano and the 14th on a concert or
+# a tenor. These are typical builds, not one maker's. The engine frets to
+# the 18th on every body, but a tune that climbs past the joint is one no
+# player would take there, and on a soprano it thins to a squeak.
+JOINT_FRET = {"Soprano": 12, "Concert": 14, "Tenor": 14}
 
 
 class Phrase:
@@ -629,7 +638,9 @@ def tarantella():
     transcription in La ricreazione per tutti (ed. Domenico Ghinassi, 1859),
     whose two pages are leaves n180 and n181 of the Internet Archive's copy
     (bub_gb_Fo65eQm5t9YC, Public Domain Mark; Wikimedia Commons' "Tarantella
-    di Piedigrotta.jpg" is a small scan of the first page). It is in E minor.
+    di Piedigrotta.jpg" is a small scan of the first page). The print is in
+    E minor; the arrangement plays it a fourth down, in B minor, so that no
+    ukulele plays above the fret where its neck meets the body (JOINT_FRET).
 
     The arrangement plays the print's first page and the first two systems
     of its second, abridged where the harmony joins: the call (B5 and C6
@@ -642,14 +653,17 @@ def tarantella():
     three bars as a tag.
 
     Seven factory ukuleles share the print's two hands. Where a hand goes
-    below a ukulele's G3 the line moves up an octave: the broken chords are
-    voiced across the low-G tenor's strings, an octave or so above the
-    print. The small note before each C5-E5 third in the G-major strain is
+    below a ukulele's G3 the line moves up an octave or to the low-G tenor:
+    the broken chords are voiced across the low-G tenor's strings, an
+    octave or so above the print; the call's drum keeps the print's B3,
+    now the tonic; the scale lands on B3 and the strain's pedal is the
+    picked tenor's. The small note before each C5-E5 third in the G-major strain is
     read as F#5; the scan leaves its pitch uncertain. The song's second half, which the print doubles below a
     ukulele's range, has a strum and chord roots instead (Am, Em, B7, Em),
     and the closing riff a soprano thumb a third below the tune; those
-    chords, the strums and the piezo concert's dead strokes, played as a
-    tambourine, are this arrangement's, not the print's.
+    chords, the strums, the piezo concert's dead strokes, played as a
+    tambourine, and a hand tapping a tenor's top as the drum are this
+    arrangement's, not the print's.
 
     Each player keeps a clock of their own, a lean and a slow wander
     (Performance.feel); the second and third eighths of every beat come a
@@ -714,16 +728,21 @@ def tarantella():
         [(0, AC, 2), (2, 62, 1), (3, AC, 2), (5, 60, 1)],
         [(0, GB, 2)],
     ]
+    # The piece is played a fourth down from the print, in B minor, so the
+    # soprano's tune peaks on B5 at its 12th fret, where its neck meets the
+    # body, instead of E6 at the 17th (JOINT_FRET); the pitches above stay
+    # the print's and KEY moves them. Everything below is written in B minor.
+    KEY = -5
     # The print's left hand under the riff and the strain, one chord a bar.
-    riff_chords = ["Em", "Em", "Am", "Em", "B", "Em", "B7", "Em"]
-    thirds_chords = ["G", "D7", "D7", "G", "G", "D7", "D7", "G"]
-    song_chords = ["Am", "Em", "B7", "Em"]  # this arrangement's, under the song's second half
-    song_roots = {"Am": ((0, 57), (2, 64)), "Em": ((1, 64), (0, 59)), "B7": ((0, 59), (2, 66))}  # root, fifth
+    riff_chords = ["Bm", "Bm", "Em", "Bm", "F#", "Bm", "F#7", "Bm"]
+    thirds_chords = ["D", "A7", "A7", "D", "D", "A7", "A7", "D"]
+    song_chords = ["Em", "Bm", "F#7", "Bm"]  # this arrangement's, under the song's second half
+    song_roots = {"Em": ((1, 64), (0, 59)), "Bm": ((0, 59), (2, 66)), "F#7": ((2, 66), (1, 61))}  # root, fifth
     # The broken chords on the low-G tenor's strings (G3 C4 E4 A4): (string, note), low to high.
-    arps = {"Em": ((0, 59), (1, 64), (2, 67)), "Am": ((0, 57), (1, 60), (2, 64)),
-            "B": ((0, 59), (1, 63), (2, 66)), "B7": ((0, 59), (1, 63), (2, 69)),
-            "G": ((0, 55), (1, 62), (2, 67)), "D7": ((1, 62), (2, 66), (3, 69))}
-    tones = {"Em": (4, 7, 11), "Am": (9, 0, 4), "B": (11, 3, 6), "B7": (11, 3, 6, 9)}
+    arps = {"Bm": ((0, 59), (1, 62), (2, 66)), "Em": ((0, 59), (1, 64), (2, 67)),
+            "F#": ((0, 58), (1, 61), (2, 66)), "F#7": ((0, 58), (1, 61), (2, 64)),
+            "D": ((0, 57), (1, 62), (2, 66)), "A7": ((0, 57), (1, 61), (2, 67))}
+    tones = {"Bm": (11, 2, 6), "Em": (4, 7, 11), "F#": (6, 10, 1), "F#7": (6, 10, 1, 4)}
 
     # Where each section's first bar starts, in beats.
     INTRO, SCALE, SONG, RIFF, LOW, THIRDS, FINAL, TAG, CLOSE = 0, 18, 34, 50, 66, 82, 98, 114, 120
@@ -738,12 +757,12 @@ def tarantella():
              + [(97.3, 124), (FINAL, 134), (106, 138), (TAG, 142), (118.5, 145), (119.4, 132),
                 (CLOSE, 112), (CLOSE + 2, 88)])
     feel = {"high": (0.002, 0.007), "lead": (0.0, 0.006), "thumb": (0.006, 0.007), "fingers": (0.003, 0.007),
-            "strum": (0.004, 0.006), "piezo": (0.0, 0.005), "bass": (-0.004, 0.005)}
+            "strum": (0.004, 0.006), "piezo": (0.0, 0.005), "bass": (-0.004, 0.005), "taps": (-0.002, 0.004)}
     # How far each player's touch wanders, in velocity steps. Between
     # velocities 70 and 110 a note's level moves only about 0.1 dB a step
     # (one note of each of four presets alone through AculeleProbe: -2.2 dB
     # at 70, +1.7 at 110, against 90), so the dance's dynamics take wide steps.
-    touch = {"high": 8, "lead": 8, "fingers": 7, "thumb": 6, "strum": 7, "piezo": 8, "bass": 7}
+    touch = {"high": 8, "lead": 8, "fingers": 7, "thumb": 6, "strum": 7, "piezo": 8, "bass": 7, "taps": 6}
     p = Performance(tempo, seed=1852, timing=0.005, dynamics=4.5, feel=feel, touch=touch)
 
     def beat_of(start, bar, eighth):
@@ -808,9 +827,9 @@ def tarantella():
                 # and no two the same.
                 held = length / 3 * min(0.95, (0.88 if length >= 2 else clip) + p.random.gauss(0.0, 0.06))
                 if len(item) > 3:
-                    grace(onset, item[3] + shift, velocity)
+                    grace(onset, item[3] + shift + KEY, velocity)
                 for index, note in enumerate(sorted(chord, reverse=True)):
-                    p.play(onset, held, beat, note + shift, velocity - 5 * index)
+                    p.play(onset, held, beat, note + shift + KEY, velocity - 5 * index)
 
     def strum(part, beat, chord, direction, velocity, held, chuck=False):
         p.voice = part
@@ -857,15 +876,19 @@ def tarantella():
             (3 * (h % 2) + k, note, 1) for k, note in enumerate((top, step_up[top], top)))
     melody("high", INTRO, {bar: notes for bar, notes in scale.items() if bar <= 11}, 84, shape=scale_shape)
     melody("lead", INTRO, {bar: notes for bar, notes in scale.items() if bar >= 12}, 80, shape=scale_shape)
-    melody("lead", INTRO, {16: [(0, 59, 2)]}, 86, shape=scale_shape)
-    # The print doubles the scale an octave down from bar 12's second half:
-    # the low-G tenor while it can reach, then the fingerstyle tenor an
-    # octave up instead.
-    lower = {bar: [n for n in notes if bar > 12 or n[0] >= 3] for bar, notes in scale.items() if 12 <= bar <= 13}
-    upper = {bar: notes for bar, notes in scale.items() if bar >= 14}
+    # The print lands the scale on B3; a fourth down that is F#3, below the
+    # low G, so it lands on the tonic B3 instead (the print's E4).
+    melody("lead", INTRO, {16: [(0, 64, 2)]}, 86, shape=scale_shape)
+    # The print doubles the scale an octave down from bar 12's second half.
+    # In B minor that octave is below every ukulele's G3, so the fingerstyle
+    # tenor doubles it an octave up instead.
+    upper = {bar: [n for n in notes if bar > 12 or n[0] >= 3] for bar, notes in scale.items() if bar >= 12}
     melody("fingers", INTRO, upper, 66, shift=12, shape=scale_shape)
     melody("high", SONG, {-1: [(5, 88, 1)], **{bar: song[bar] for bar in range(4)}}, 82, shape=song_shape)
-    melody("fingers", SONG, {-1: [(5, 88, 1)], **{bar: song[bar] for bar in range(4)}}, 74, shift=-12,
+    # The octave below the song's first half reaches B3, under the
+    # fingerstyle tenor's C4: the low-G tenor that carries the second half
+    # plays it, from the same register.
+    melody("lead", SONG, {-1: [(5, 88, 1)], **{bar: song[bar] for bar in range(4)}}, 76, shift=-12,
            shape=song_shape)
     melody("lead", SONG, {bar: song[bar] for bar in range(4, 8)}, 84, shape=song_shape)
     melody("high", SONG, {7: riff_pickup}, 88, shape=song_shape)
@@ -873,7 +896,12 @@ def tarantella():
     melody("lead", RIFF, {7: riff_pickup}, 84, shift=-12, shape=low_shape)
     melody("lead", LOW, dict(enumerate(riff)), 88, shift=-12, shape=low_shape)
     melody("fingers", LOW, {7: [(3, GB, 2), (5, AC, 1)]}, 74, shape=low_shape)
-    melody("fingers", THIRDS, dict(enumerate(thirds)), 76, clip=0.62, shape=thirds_shape)
+    # The strain's D pedal, A3 in B minor, is under the fingerstyle tenor's
+    # C4: the low-G tenor plucks it.
+    melody("fingers", THIRDS, {bar: [n for n in notes if isinstance(n[1], tuple)] for bar, notes in enumerate(thirds)},
+           76, clip=0.62, shape=thirds_shape)
+    melody("lead", THIRDS, {bar: [n for n in notes if not isinstance(n[1], tuple)] for bar, notes in enumerate(thirds)},
+           70, clip=0.62, shape=thirds_shape)
     final = dict(enumerate(riff))
     tag = dict(enumerate(riff[4:7] + [[(0, 76, 7)]]))
     for part, shift, loud in (("high", 0, 96), ("lead", -12, 82)):
@@ -882,10 +910,11 @@ def tarantella():
         melody(part, TAG, tag, loud, shift=shift, shape=final_shape)
     # A soprano thumb a third (or a fourth) below the tune in the closing riff.
     p.voice = "thumb"
-    for start, bars, chords in ((FINAL, final, riff_chords), (TAG, tag, riff_chords[4:7] + ["Em"])):
+    for start, bars, chords in ((FINAL, final, riff_chords), (TAG, tag, riff_chords[4:7] + ["Bm"])):
         for bar, notes in bars.items():
             for eighth, note, length in notes:
-                chord = chords[bar] if bar < len(chords) else "Em"
+                note += KEY
+                chord = chords[bar] if bar < len(chords) else "Bm"
                 below = [n for n in range(note - 5, note - 2) if n % 12 in tones[chord]]
                 beat = beat_of(start, bar, eighth)
                 held = length / 3 * min(0.95, (0.88 if length >= 2 else 0.66) + p.random.gauss(0.0, 0.06))
@@ -897,35 +926,65 @@ def tarantella():
         p.voice = part
         p.message(0.0, (0xB0, 126, 4), 0)
     for bar in range(5, 9):  # the tambourine fades in under the second call
-        strum_bars("piezo", INTRO, ["Em"] * 9, tambourine, 44 + 4 * (bar - 5), chuck=True, bars=[bar])
-    strum_bars("piezo", INTRO, ["Em"] * 17, tambourine, 58, chuck=True, bars=range(9, 17))
-    strum_bars("piezo", SONG, ["Em"] * 8, tambourine, 64, chuck=True)
+        strum_bars("piezo", INTRO, ["Bm"] * 9, tambourine, 44 + 4 * (bar - 5), chuck=True, bars=[bar])
+    strum_bars("piezo", INTRO, ["Bm"] * 17, tambourine, 58, chuck=True, bars=range(9, 17))
+    strum_bars("piezo", SONG, ["Bm"] * 8, tambourine, 64, chuck=True)
     strum_bars("piezo", RIFF, riff_chords, tambourine, 70, chuck=True)
     strum_bars("piezo", LOW, riff_chords, tambourine, 64, chuck=True)
     strum_bars("piezo", FINAL, riff_chords, tambourine, 76, chuck=True, shape=final_shape)
     strum_bars("piezo", TAG, riff_chords[4:7], tambourine, 76, chuck=True, shape=final_shape)
-    strum_bars("strum", SONG, ["Em"] * 4 + song_chords, soft, 58, bars=range(4, 8))
+    strum_bars("strum", SONG, ["Bm"] * 4 + song_chords, soft, 58, bars=range(4, 8))
     strum_bars("strum", LOW, riff_chords, soft, 66, shape=low_shape)
     strum_bars("strum", THIRDS, thirds_chords, soft, 52, shape=thirds_shape)
     strum_bars("strum", FINAL, riff_chords, full, 78, shape=final_shape)
     strum_bars("strum", TAG, riff_chords[4:7], full, 78, shape=final_shape)
-    strum("strum", CLOSE, "Em", "D", 102, 2.6)
+    strum("strum", CLOSE, "Bm", "D", 102, 2.6)
     # The tambourine's last hit is a dead stroke too: a full piezo stroke
     # here was the loudest peak of the piece by 2 dB.
-    strum("piezo", CLOSE, "Em", "D", 84, 0.06, chuck=True)
+    strum("piezo", CLOSE, "Bm", "D", 84, 0.06, chuck=True)
 
-    # ---- the low-G tenor: the call's drum, its share of the scale, the
-    # song's roots and the print's broken chords, each string sounding one
-    # note at a time
+    # ---- a hand on a mahogany tenor's top (G#0, Performer::keyswitchBodyTap):
+    # the dance's drum. It answers the call's drum on the downbeats, takes
+    # each bar's two beats from the song's second half, adds a pickup tap
+    # into every bar of the riffs, keeps to the downbeats under the strain
+    # and thumps the close. Like the strums and the tambourine, it is this
+    # arrangement's, not the print's.
+    p.voice = "taps"
+    downbeats = [(0, 0)]
+    beats = [(0, 0), (3, -12)]
+    pickup = [(0, 0), (3, -12), (5, -20)]
+
+    def taps(start, bars, pattern, loud, shape=None):
+        for bar in bars:
+            for eighth, lift in pattern:
+                beat = beat_of(start, bar, eighth)
+                onset = p.at(beat, lean=lilt(eighth), scale=loose(beat))
+                velocity = (loud + lift + 4 * math.sin(math.pi * (bar % 4 + 0.5) / 4)
+                            + (interpolate(shape, beat) if shape else 0))
+                p.message(onset, (0x90, TAP, p.velocity(velocity + p.lift(beat))))
+                p.message(onset + 0.03, (0x80, TAP, 0), 0)
+
+    taps(INTRO, range(9, 16), downbeats, 60, shape=scale_shape)
+    taps(SONG, range(4, 8), beats, 70, shape=song_shape)
+    taps(RIFF, range(8), pickup, 80, shape=riff_shape)
+    taps(LOW, range(8), pickup, 76, shape=low_shape)
+    taps(THIRDS, range(7), downbeats, 66, shape=thirds_shape)
+    taps(THIRDS, [7], [(3, -6), (5, -12)], 66, shape=thirds_shape)
+    taps(FINAL, range(8), pickup, 86, shape=final_shape)
+    taps(TAG, range(3), pickup, 86, shape=final_shape)
+    taps(CLOSE, [0], downbeats, 100)
+
+    # ---- the low-G tenor: the call's drum, the song's roots and the
+    # print's broken chords, each string sounding one note at a time
     plucks = []  # (beat, string, note, velocity, beats held, grace note)
+    # The drum keeps the print's B3 and A#3 graces: a fourth down they would
+    # be F#3, below the low G, so in B minor it drums the tonic instead of
+    # the dominant.
     for bar, notes in drum.items():
         for eighth, note, length, *ornament in notes:
             beat = beat_of(INTRO, bar, eighth)
             plucks.append((beat, 0, note, 84 + accent(eighth) + interpolate(drum_shape, beat), length / 3 * 0.8,
                            ornament[0] if ornament else None))
-    for bar, notes in lower.items():
-        for eighth, note, length in notes:
-            plucks.append((beat_of(INTRO, bar, eighth), 0, note - 12, 70 + accent(eighth), 0.3, None))
     for bar, chord in enumerate(song_chords[:3], 4):
         (root_string, root), (fifth_string, fifth) = song_roots[chord]
         plucks.append((beat_of(SONG, bar, 0), root_string, root, 74, 0.95, None))
@@ -939,14 +998,14 @@ def tarantella():
                     velocity = loud + accent(3 * half + k) + (interpolate(shape, beat) if shape else 0)
                     plucks.append((beat, string, note, velocity, 1.0, None))
 
-    broken(SONG, ["Em"] * 8, 58, bars=[7], shape=song_shape)
+    broken(SONG, ["Bm"] * 8, 58, bars=[7], shape=song_shape)
     broken(RIFF, riff_chords, 58, shape=riff_shape)
     broken(LOW, riff_chords, 56, bars=range(7), shape=low_shape)
-    plucks.append((beat_of(LOW, 7, 0), 1, 64, 70, 0.9, None))  # the print's E under the riff's last E
+    plucks.append((beat_of(LOW, 7, 0), 0, 59, 70, 0.9, None))  # the print's E under the riff's last note, as B
     broken(THIRDS, thirds_chords, 52, shape=thirds_shape)
     broken(FINAL, riff_chords, 66, shape=final_shape)
     broken(TAG, riff_chords[4:7], 66, shape=final_shape)
-    for k, (string, note) in enumerate(arps["Em"]):
+    for k, (string, note) in enumerate(arps["Bm"]):
         plucks.append((CLOSE + 0.04 * k, string, note, 96 - 4 * k, 2.6, None))
 
     p.voice = "bass"
@@ -980,6 +1039,7 @@ SONGS = {
         "strum": ("concert-strum", [], -0.5, -7.0),
         "piezo": ("concert-piezo-stage", [], 0.55, 2.0),
         "bass": ("low-g-tenor", [], -0.12, -4.0),
+        "taps": ("low-g-tenor", [], 0.0, 3.0),
     }),
     "minuet-in-g": (minuet_in_g, {
         "tune": ("tenor-fluorocarbon-fingerstyle", ["--shape", "0", "--wood", "2", "--strings", "0"], 0.3, 0.0),
@@ -1008,6 +1068,31 @@ def preset_slugs():
     return re.findall(r'\{ "[^"]+", "([a-z0-9-]+)",', header)
 
 
+def preset_builds():
+    """{slug: (body shape, tuning)} from the factory bank."""
+    header = (ROOT / "Source/DSP/AculelePresets.h").read_text(encoding="utf-8")
+    found = re.findall(r'\{ "[^"]+", "([a-z0-9-]+)",\s*BodyShape::(\w+),[^}]*?Tuning::(\w+),', header)
+    return {slug: (shape, tuning) for slug, shape, tuning in found}
+
+
+def out_of_reach(events, shape, tuning):
+    """The note-ons in `events` that a player of this body and tuning could
+    not fret below its neck joint: off its own string in a string-per-channel
+    part (CC126 = 4 on channel 1), off every string otherwise. Keyswitches
+    and hand gestures (C0 to A0) are not strings' notes."""
+    opens, top = TUNINGS[tuning], JOINT_FRET[shape]
+    tab = any(data[:3] == bytes([0xB0, 126, 4]) for _, _, data in events)
+    wrong = []
+    for seconds, _, data in events:
+        if data[0] & 0xF0 != 0x90 or 24 <= data[1] <= 33:
+            continue
+        channel, note = data[0] & 0x0F, data[1]
+        strings = [opens[channel]] if tab and channel < 4 else opens
+        if not any(0 <= note - open_ <= top for open_ in strings):
+            wrong.append((seconds, channel, note))
+    return wrong
+
+
 def last_event_seconds(phrase):
     return max(tick for tick, _, _ in phrase.events) / PPQ * 60 / phrase.bpm
 
@@ -1033,12 +1118,17 @@ def files():
 
 def song_files():
     slugs = preset_slugs()
+    builds = preset_builds()
     written = {}
     for song, (build, parts) in SONGS.items():
         performance = build()
         for part, (preset, _, _, _) in parts.items():
             if preset not in slugs:
                 sys.exit(f"error: {song}'s {part} names {preset}, which is not in the bank")
+            wrong = out_of_reach([e[:3] for e in performance.events if e[3] == part], *builds[preset])
+            if wrong:
+                sys.exit(f"error: {song}'s {part} plays {len(wrong)} notes {preset} cannot fret below"
+                         f" its neck joint, the first {wrong[0][2]} at {wrong[0][0]:.2f} s")
             written[f"{song}-{part}.mid"] = performance.smf(part)
     return written
 
